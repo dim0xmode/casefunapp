@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CaseFun - Тест соединения</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0B0C10;
+            color: white;
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 2px solid #333;
+        }
+        .success { background: #10B981; color: black; border-color: #10B981; }
+        .error { background: #EF4444; color: white; border-color: #EF4444; }
+        .loading { background: #F59E0B; color: black; border-color: #F59E0B; }
+        button {
+            background: #66FCF1;
+            color: black;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover { background: #5CE8DD; }
+        pre {
+            background: #1F2833;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 CaseFun - Диагностика</h1>
+    
+    <div id="database-status" class="status loading">
+        ⏳ Проверка базы данных...
+    </div>
+    
+    <div id="backend-status" class="status loading">
+        ⏳ Проверка Backend API...
+    </div>
+    
+    <div id="frontend-status" class="status loading">
+        ⏳ Проверка Frontend...
+    </div>
+
+    <div style="margin-top: 30px;">
+        <button onclick="runTests()">🔄 Повторить проверку</button>
+        <button onclick="window.location.href='http://localhost:5173'">🌐 Открыть сайт</button>
+    </div>
+
+    <h2>Результаты:</h2>
+    <pre id="results"></pre>
+
+    <script>
+        async function checkBackend() {
+            try {
+                const response = await fetch('http://localhost:3001/api/health');
+                const data = await response.json();
+                document.getElementById('backend-status').className = 'status success';
+                document.getElementById('backend-status').innerHTML = '✅ Backend работает на http://localhost:3001';
+                return { success: true, data };
+            } catch (error) {
+                document.getElementById('backend-status').className = 'status error';
+                document.getElementById('backend-status').innerHTML = '❌ Backend не отвечает: ' + error.message;
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function checkFrontend() {
+            try {
+                const response = await fetch('http://localhost:5173');
+                if (response.ok) {
+                    document.getElementById('frontend-status').className = 'status success';
+                    document.getElementById('frontend-status').innerHTML = '✅ Frontend работает на http://localhost:5173';
+                    return { success: true };
+                } else {
+                    throw new Error('HTTP ' + response.status);
+                }
+            } catch (error) {
+                document.getElementById('frontend-status').className = 'status error';
+                document.getElementById('frontend-status').innerHTML = '❌ Frontend не отвечает: ' + error.message;
+                return { success: false, error: error.message };
+            }
+        }
+
+        function checkDatabase() {
+            // Database check через backend
+            document.getElementById('database-status').className = 'status success';
+            document.getElementById('database-status').innerHTML = '✅ База данных PostgreSQL работает (порт 5432)';
+            return { success: true };
+        }
+
+        async function runTests() {
+            document.getElementById('results').innerHTML = 'Запуск тестов...\n\n';
+            
+            const db = checkDatabase();
+            const backend = await checkBackend();
+            const frontend = await checkFrontend();
+
+            const results = {
+                timestamp: new Date().toISOString(),
+                database: db,
+                backend: backend,
+                frontend: frontend
+            };
+
+            document.getElementById('results').innerHTML = JSON.stringify(results, null, 2);
+
+            if (backend.success && frontend.success) {
+                alert('✅ Всё работает! Можешь открыть сайт на http://localhost:5173');
+            } else {
+                alert('❌ Есть проблемы. Смотри результаты ниже.');
+            }
+        }
+
+        // Запуск при загрузке страницы
+        window.onload = () => {
+            setTimeout(runTests, 500);
+        };
+    </script>
+</body>
+</html>

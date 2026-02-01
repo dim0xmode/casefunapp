@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { 
+  background: linear-gradient(45deg, #66FCF1, #8B5CF6, #10B981);
+  height: 200vh;
+  margin: 0;
+  padding-top: 100px;
+}
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: rgba(11, 12, 16, 0.3);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  color: white;
+  font-size: 24px;
+}
+.content {
+  padding: 20px;
+  color: white;
+  font-size: 48px;
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+<header>Test Header - Scroll Down</header>
+<div class="content">
+<p>SCROLL ME UNDER THE HEADER</p>
+<p>THIS TEXT SHOULD BE BLURRED</p>
+<p style="margin-top: 500px">MORE TEXT</p>
+</div>
+</body>
+</html>

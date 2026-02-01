@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum InventoryStatus {
+  ACTIVE
+  BURNT
+}
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  walletAddress String   @unique
+  balance       Float    @default(5000)
+  role          UserRole @default(USER)
+  isBanned      Boolean  @default(false)
+  banReason     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  cases         Case[]
+  inventory     InventoryItem[]
+  openings      CaseOpening[]
+  transactions  Transaction[]
+  battles       Battle[]
+  sessions      Session[]
+  auditLogs     AdminAuditLog[] @relation("AdminAuditLogs")
+  rtuEvents     RtuEvent[]
+  
+  @@index([walletAddress])
+  @@map("users")
+}
+
+model Case {
+  id            String   @id @default(cuid())
+  name          String
+  currency      String
+  tokenTicker   String?
+  tokenPrice    Float?
+  price         Float
+  imageUrl      String?
+  rtu           Float    @default(96) // Return to User %
+  openDurationHours Int?
+  isActive      Boolean  @default(true)
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  createdBy     User     @relation(fields: [createdById], references: [id])
+  drops         CaseDrop[]
+  openings      CaseOpening[]
+  rtuLedgers    RtuLedger[]
+  rtuEvents     RtuEvent[]
+  inventoryItems InventoryItem[]
+  
+  @@index([createdById])
+  @@map("cases")
+}
+
+model CaseDrop {
+  id        String @id @default(cuid())
+  caseId    String
+  name      String
+  value     Float
+  currency  String
+  rarity    String // COMMON, UNCOMMON, RARE, LEGENDARY, MYTHIC
+  probability Float // 0-100
+  color     String
+  image     String?
+
+  // Relations
+  case      Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([caseId])
+  @@map("case_drops")
+}
+
+model CaseOpening {
+  id          String   @id @default(cuid())
+  userId      String
+  caseId      String
+  wonDropId   String
+  wonValue    Float
+  timestamp   DateTime @default(now())
+
+  // Relations
+  case        Case     @relation(fields: [caseId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([caseId])
+  @@map("case_openings")
+}
+
+model InventoryItem {
+  id        String   @id @default(cuid())
+  userId    String
+  caseId    String?
+  name      String
+  value     Float
+  currency  String
+  rarity    String
+  color     String
+  image     String?
+  status    InventoryStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([caseId])
+  @@index([status])
+  @@map("inventory_items")
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // DEPOSIT, WITHDRAW, CASE_OPEN, UPGRADE, BATTLE
+  amount    Float
+  currency  String   @default("USDT")
+  status    String   @default("completed") // pending, completed, failed
+  metadata  Json?    // Additional data
+  timestamp DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([type])
+  @@map("transactions")
+}
+
+model Battle {
+  id          String   @id @default(cuid())
+  userId      String
+  opponentId  String?  // null if bot
+  result      String   // WIN, LOSS
+  cost        Float
+  wonValue    Float
+  wonItems    Json     // Array of items won
+  timestamp   DateTime @default(now())
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("battles")
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  token       String   @unique
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  lastSeenAt  DateTime @default(now())
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model WalletNonce {
+  id            String   @id @default(cuid())
+  walletAddress String
+  nonce         String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress])
+  @@index([expiresAt])
+  @@map("wallet_nonces")
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  // Relations
+  admin     User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([action])
+  @@map("admin_audit_logs")
+}
+
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
+model RtuLedger {
+  id               String   @id @default(cuid())
+  caseId           String
+  tokenSymbol      String
+  tokenPriceUsdt   Float
+  rtuPercent       Float
+  totalSpentUsdt   Float    @default(0)
+  totalTokenIssued Float    @default(0)
+  bufferDebtToken  Float    @default(0)
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  // Relations
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  events           RtuEvent[]
+
+  @@index([caseId])
+  @@index([tokenSymbol])
+  @@unique([caseId, tokenSymbol])
+  @@map("rtu_ledgers")
+}
+
+model RtuEvent {
+  id             String   @id @default(cuid())
+  ledgerId       String?
+  caseId         String
+  userId         String?
+  tokenSymbol    String
+  type           String
+  deltaSpentUsdt Float    @default(0)
+  deltaToken     Float    @default(0)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  // Relations
+  case           Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ledger         RtuLedger? @relation(fields: [ledgerId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@index([ledgerId])
+  @@index([userId])
+  @@index([tokenSymbol])
+  @@index([type])
+  @@map("rtu_events")
+}
