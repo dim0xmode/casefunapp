@@ -11,9 +11,10 @@ interface CaseViewProps {
   userName: string;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin: boolean;
 }
 
-export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, onOpenTopUp, userName, isAuthenticated, onOpenWalletConnect }) => {
+export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, onOpenTopUp, userName, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
 
   const handleSelectCase = (caseData: Case) => {
@@ -35,6 +36,7 @@ export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, 
           onOpenTopUp={onOpenTopUp}
           isAuthenticated={isAuthenticated}
           onOpenWalletConnect={onOpenWalletConnect}
+          isAdmin={isAdmin}
         />
       ) : (
         <CaseListView cases={cases} onSelectCase={handleSelectCase} userName={userName} />

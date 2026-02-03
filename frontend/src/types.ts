@@ -58,7 +58,7 @@ export interface User {
   walletAddress: string;
   balance: number;
   role?: 'USER' | 'ADMIN' | 'MODERATOR';
-  avatar: string;
+  avatar?: string;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {

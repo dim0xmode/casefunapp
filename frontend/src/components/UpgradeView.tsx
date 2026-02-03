@@ -16,9 +16,10 @@ interface UpgradeViewProps {
   onUpgrade: (originalItem: Item, multiplier: number) => Promise<{ success: boolean; targetValue: number }>;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin: boolean;
 }
 
-export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, isAuthenticated, onOpenWalletConnect }) => {
+export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [displayItem, setDisplayItem] = useState<Item | null>(null);
   const [lastResult, setLastResult] = useState<{ item: Item; value: number; success: boolean } | null>(null);
@@ -69,6 +70,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
       onOpenWalletConnect();
       return;
     }
+    if (!isAdmin) return;
     if (!selectedItem || isSpinning || isUpgradeBlocked) return;
 
     setIsSpinning(true);
@@ -318,12 +320,17 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
 
             <div className="w-full max-w-xs text-center">
               <button 
-                disabled={isSpinning || isUpgradeBlocked || (!selectedItem && isAuthenticated)} 
+                disabled={isSpinning || isUpgradeBlocked || (!selectedItem && isAuthenticated) || (isAuthenticated && !isAdmin)} 
                 onClick={handleRoll}
                 className={`w-full py-3 text-lg tracking-widest uppercase shadow-[0_0_20px_rgba(102,252,241,0.18)] font-black rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.5)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${isSpinning ? 'opacity-50' : 'animate-pulse-fast'}`}
               >
-                {isSpinning ? 'ROLLING...' : !isAuthenticated ? 'CONNECT WALLET' : 'UPGRADE'}
+                {isSpinning ? 'ROLLING...' : !isAuthenticated ? 'CONNECT WALLET' : !isAdmin ? 'ADMINS ONLY' : 'UPGRADE'}
               </button>
+              {isAuthenticated && !isAdmin && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-500">
+                  Only admins can upgrade
+                </div>
+              )}
 
               <button 
                 onClick={() => !isSpinning && setFastUpgrade(!fastUpgrade)}

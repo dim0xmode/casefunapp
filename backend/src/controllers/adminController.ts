@@ -2,6 +2,13 @@ import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 
+const normalizeParam = (value: string | string[] | undefined): string => {
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+  return value ?? '';
+};
+
 const logAdminAction = async (adminId: string, action: string, metadata?: Record<string, any>, entity?: string, entityId?: string) => {
   await prisma.adminAuditLog.create({
     data: {
@@ -27,7 +34,10 @@ export const listUsers = async (req: Request, res: Response, next: NextFunction)
 
 export const getUserDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('User id is required', 400));
+    }
     const user = await prisma.user.findUnique({
       where: { id },
       include: {
@@ -91,7 +101,10 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
 export const updateUserRole = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('User id is required', 400));
+    }
     const { role } = req.body;
 
     if (!role) {
@@ -123,7 +136,10 @@ export const updateUserRole = async (req: Request, res: Response, next: NextFunc
 export const updateUserBan = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('User id is required', 400));
+    }
     const { isBanned, reason } = req.body;
 
     const target = await prisma.user.findUnique({ where: { id } });
@@ -151,7 +167,10 @@ export const updateUserBan = async (req: Request, res: Response, next: NextFunct
 export const updateUserBalance = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('User id is required', 400));
+    }
     const { balance } = req.body;
     const nextBalance = Number(balance);
 
@@ -195,7 +214,10 @@ export const listCases = async (req: Request, res: Response, next: NextFunction)
 
 export const getCaseDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('Case id is required', 400));
+    }
     const caseItem = await prisma.case.findUnique({
       where: { id },
       include: {
@@ -243,7 +265,10 @@ export const getCaseDetail = async (req: Request, res: Response, next: NextFunct
 export const updateCase = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('Case id is required', 400));
+    }
     const {
       name,
       price,
@@ -413,7 +438,7 @@ export const listSettings = async (req: Request, res: Response, next: NextFuncti
 export const upsertSetting = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
-    const { key } = req.params;
+    const key = normalizeParam(req.params.key);
     const { value } = req.body;
 
     if (!key) {

@@ -1,4 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+export const API_BASE_URL = API_URL.replace(/\/api\/?$/, '');
+export const resolveAssetUrl = (value?: string) => {
+  if (!value) return '';
+  if (value.startsWith('/')) return `${API_BASE_URL}${value}`;
+  return value;
+};
 
 interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -17,10 +23,10 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const headers: HeadersInit = isFormData
+      ? { ...options.headers }
+      : { 'Content-Type': 'application/json', ...options.headers };
 
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -107,6 +113,22 @@ class ApiClient {
     });
   }
 
+  async updateProfile(username: string) {
+    return this.request<{ user: any }>('/user/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  async uploadAvatar(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return this.request<{ avatarUrl: string; user: any }>('/user/avatar', {
+      method: 'POST',
+      body: form,
+    });
+  }
+
   // Case endpoints
   async getCases() {
     return this.request<{ cases: any[] }>('/cases');
@@ -120,6 +142,15 @@ class ApiClient {
     return this.request<{ case: any }>('/cases', {
       method: 'POST',
       body: JSON.stringify(caseData),
+    });
+  }
+
+  async uploadCaseImage(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return this.request<{ imageUrl: string }>('/cases/upload', {
+      method: 'POST',
+      body: form,
     });
   }
 

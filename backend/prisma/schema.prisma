@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -23,6 +24,7 @@ model User {
   username      String   @unique
   walletAddress String   @unique
   balance       Float    @default(5000)
+  avatarUrl     String?
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?

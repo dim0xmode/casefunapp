@@ -1,0 +1,10 @@
+www.casefun.net {
+  redir https://casefun.net{uri} 301
+}
+
+casefun.net {
+  encode gzip zstd
+  reverse_proxy /api/* backend:3001
+  reverse_proxy /uploads/* backend:3001
+  reverse_proxy frontend:80
+}

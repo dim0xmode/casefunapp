@@ -14,9 +14,10 @@ interface HeaderProps {
   onLogout: () => void;
   isAuthLoading?: boolean;
   isAuthenticated?: boolean;
+  isAdmin?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, onOpenWalletConnect, balance, onOpenTopUp, onLogout, isAuthLoading = false, isAuthenticated = false }) => {
+export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, onOpenWalletConnect, balance, onOpenTopUp, onLogout, isAuthLoading = false, isAuthenticated = false, isAdmin = false }) => {
   const { address, isConnected, disconnectWallet, formatAddress } = useWallet();
 
   const handleDisconnect = () => {
@@ -98,7 +99,12 @@ export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, o
           {/* Top-up */}
           <button
             onClick={onOpenTopUp}
-            className="w-10 h-10 rounded-xl bg-web3-accent/20 border border-web3-accent/40 flex items-center justify-center text-web3-accent hover:bg-web3-accent/30 hover:scale-105 transition-all"
+            disabled={!isAdmin}
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+              isAdmin
+                ? 'bg-web3-accent/20 border-web3-accent/40 text-web3-accent hover:bg-web3-accent/30 hover:scale-105'
+                : 'bg-white/5 border-white/[0.12] text-gray-500 cursor-not-allowed'
+            }`}
             title="Top up"
             aria-label="Top up balance"
           >
@@ -154,14 +160,22 @@ export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, o
                   ? 'border-web3-accent shadow-[0_0_15px_rgba(102,252,241,0.3)] scale-110' 
                   : 'border-gray-700/50 group-hover:border-web3-accent/60 group-hover:scale-110'
               }`}>
-                <UserIcon 
-                  size={20} 
-                  className={`transition-all duration-300 ${
-                    activeTab === 'profile' 
-                      ? 'text-web3-accent drop-shadow-[0_0_6px_rgba(102,252,241,0.5)]' 
-                      : 'text-gray-400 group-hover:text-web3-accent'
-                  }`} 
-                />
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt="avatar"
+                    className="w-full h-full rounded-full object-cover"
+                  />
+                ) : (
+                  <UserIcon 
+                    size={20} 
+                    className={`transition-all duration-300 ${
+                      activeTab === 'profile' 
+                        ? 'text-web3-accent drop-shadow-[0_0_6px_rgba(102,252,241,0.5)]' 
+                        : 'text-gray-400 group-hover:text-web3-accent'
+                    }`} 
+                  />
+                )}
               </div>
             </div>
           </div>

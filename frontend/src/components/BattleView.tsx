@@ -15,9 +15,10 @@ interface BattleViewProps {
   onOpenTopUp: () => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin: boolean;
 }
 
-export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect }) => {
+export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const [gameState, setGameState] = useState<'SETUP' | 'BATTLE' | 'RESULT'>('SETUP');
   const [selectedCases, setSelectedCases] = useState<Case[]>([]);
   const [currentRound, setCurrentRound] = useState(0);
@@ -168,6 +169,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       onOpenWalletConnect();
       return;
     }
+    if (!isAdmin) return;
     if (!createConfirm) {
       if (balance < createTotalCost) {
         onOpenTopUp();
@@ -203,6 +205,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       onOpenWalletConnect();
       return;
     }
+    if (!isAdmin) return;
     if (!startConfirm) {
       if (!canAffordBattle) {
         onOpenTopUp();
@@ -363,11 +366,21 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
           </h2>
             <button
               onClick={() => setCreateBattleOpen(true)}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs hover:scale-105 transition shadow-[0_0_18px_rgba(102,252,241,0.35)]"
+              disabled={!isAdmin}
+              className={`px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs transition shadow-[0_0_18px_rgba(102,252,241,0.35)] ${
+                isAdmin
+                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+                  : 'bg-white/5 border border-white/[0.12] text-gray-500 cursor-not-allowed'
+              }`}
             >
-              Create Battle
+              {isAdmin ? 'Create Battle' : 'Admins only'}
             </button>
           </div>
+          {isAuthenticated && !isAdmin && (
+            <div className="mb-4 text-[10px] uppercase tracking-widest text-gray-500">
+              Only admins can create or join battles
+            </div>
+          )}
 
           <div className="mb-4">
             <input
@@ -418,14 +431,33 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         const shortfall = Math.max(0, battleCost - balance);
                         return (
                           <button
-                            onClick={!isAuthenticated ? onOpenWalletConnect : canAfford ? () => joinBattle(battle) : onOpenTopUp}
+                            onClick={
+                              !isAuthenticated
+                                ? onOpenWalletConnect
+                                : !isAdmin
+                                  ? undefined
+                                  : canAfford
+                                    ? () => joinBattle(battle)
+                                    : onOpenTopUp
+                            }
+                            disabled={isAuthenticated && !isAdmin}
                             className={`w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition ${
-                              !isAuthenticated || canAfford
+                              !isAuthenticated
                                 ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                                : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
+                                : isAdmin && canAfford
+                                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+                                  : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
                             }`}
                           >
-                            {!isAuthenticated ? <>Connect Wallet</> : canAfford ? <>Join Battle <ChevronRight size={16} /></> : <>Need {shortfall} ₮ more • Top up</>}
+                            {!isAuthenticated ? (
+                              <>Connect Wallet</>
+                            ) : !isAdmin ? (
+                              <>Admins only</>
+                            ) : canAfford ? (
+                              <>Join Battle <ChevronRight size={16} /></>
+                            ) : (
+                              <>Need {shortfall} ₮ more • Top up</>
+                            )}
                           </button>
                         );
                       })()}
@@ -472,14 +504,33 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   </div>
 
                   <button
-                    onClick={!isAuthenticated ? onOpenWalletConnect : canAfford ? () => joinBattle(battle) : onOpenTopUp}
+                    onClick={
+                      !isAuthenticated
+                        ? onOpenWalletConnect
+                        : !isAdmin
+                          ? undefined
+                          : canAfford
+                            ? () => joinBattle(battle)
+                            : onOpenTopUp
+                    }
+                    disabled={isAuthenticated && !isAdmin}
                     className={`w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition ${
-                      !isAuthenticated || canAfford
+                      !isAuthenticated
                         ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                        : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
+                        : isAdmin && canAfford
+                          ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+                          : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
                     }`}
                   >
-                    {!isAuthenticated ? <>Connect Wallet</> : canAfford ? <>Join Battle <ChevronRight size={16} /></> : <>Need {shortfall} ₮ more • Top up</>}
+                    {!isAuthenticated ? (
+                      <>Connect Wallet</>
+                    ) : !isAdmin ? (
+                      <>Admins only</>
+                    ) : canAfford ? (
+                      <>Join Battle <ChevronRight size={16} /></>
+                    ) : (
+                      <>Need {shortfall} ₮ more • Top up</>
+                    )}
                   </button>
                 </div>
               );
@@ -669,10 +720,16 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
             </div>
                     <button
                       onClick={handleCreateBattle}
-                      disabled={createSelectedCases.length === 0}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={createSelectedCases.length === 0 || (isAuthenticated && !isAdmin)}
+                      className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                        !isAuthenticated
+                          ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+                          : isAdmin
+                            ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+                            : 'bg-white/5 border border-white/[0.12] text-gray-500'
+                      }`}
                     >
-                      {!isAuthenticated ? 'Connect Wallet' : 'Create Battle'}
+                      {!isAuthenticated ? 'Connect Wallet' : !isAdmin ? 'Admins only' : 'Create Battle'}
                     </button>
           </div>
         </div>
@@ -810,18 +867,23 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
               <div className="relative mt-20 flex flex-col items-center animate-fade-in">
                 <button
                   onClick={handleStartBattle}
+                  disabled={isAuthenticated && !isAdmin}
                   className={`w-32 h-32 rounded-full border-2 flex items-center justify-center transition ${
-                    !isAuthenticated || canAffordBattle
+                    !isAuthenticated
                       ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
-                      : 'border-red-500/40 bg-gray-800/50'
-                  } ${startConfirm ? 'opacity-40' : ''}`}
+                      : isAdmin && canAffordBattle
+                        ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
+                        : 'border-red-500/40 bg-gray-800/50'
+                  } ${startConfirm ? 'opacity-40' : ''} ${isAuthenticated && !isAdmin ? 'cursor-not-allowed' : ''}`}
                   aria-label="Join Battle"
                 >
                   <span className={`text-xs uppercase tracking-widest font-bold text-center px-2 ${
-                    !isAuthenticated || canAffordBattle ? 'text-web3-accent' : 'text-gray-400'
+                    !isAuthenticated || (isAdmin && canAffordBattle) ? 'text-web3-accent' : 'text-gray-400'
                   }`}>
                     {!isAuthenticated
                       ? 'Connect'
+                      : !isAdmin
+                        ? 'Admins only'
                       : !canAffordBattle
                         ? `Need ${battleShortfall} ₮ more • Top up`
                         : isOwnBattle

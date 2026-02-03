@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, Item } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, Coins, User as UserIcon } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, Coins, User as UserIcon, Settings } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 
 const formatWalletAddress = (address: string): string => {
@@ -24,9 +24,21 @@ interface ProfileViewProps {
   burntItems: Item[];
   battleHistory: BattleRecord[];
   balance: number;
+  isEditable?: boolean;
+  onUpdateUsername?: (username: string) => Promise<void> | void;
+  onUploadAvatar?: (file: File) => Promise<string | void> | string | void;
 }
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ user, inventory, burntItems, battleHistory, balance }) => {
+export const ProfileView: React.FC<ProfileViewProps> = ({
+  user,
+  inventory,
+  burntItems,
+  battleHistory,
+  balance,
+  isEditable = false,
+  onUpdateUsername,
+  onUploadAvatar,
+}) => {
   const [tab, setTab] = useState<'inventory' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
@@ -34,6 +46,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, inventory, burnt
   const [inventoryPage, setInventoryPage] = useState(0);
   const [burntPage, setBurntPage] = useState(0);
   const [battlePage, setBattlePage] = useState(0);
+  const [editName, setEditName] = useState(user?.username || '');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;
@@ -133,6 +152,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, inventory, burnt
     }
   }, [battleTotalPages, battlePage]);
 
+  React.useEffect(() => {
+    setEditName(user?.username || '');
+  }, [user?.username]);
+
+  React.useEffect(() => {
+    return () => {
+      if (avatarPreview) {
+        URL.revokeObjectURL(avatarPreview);
+      }
+    };
+  }, [avatarPreview]);
+
+  React.useEffect(() => {
+    if (user?.avatar) {
+      setAvatarPreview(null);
+      setAvatarError(null);
+    }
+  }, [user?.avatar]);
+
+  const handleSaveName = async () => {
+    if (!onUpdateUsername) return;
+    const nextName = (editName || '').trim().toUpperCase();
+    if (!nextName) {
+      setNameError('Enter a username.');
+      return;
+    }
+    if (!/^[A-Z0-9 ]{3,20}$/.test(nextName)) {
+      setNameError('Use 3-20 chars (A-Z, 0-9, spaces).');
+      return;
+    }
+    if (/^\d+$/.test(nextName)) {
+      setNameError('Username cannot be only numbers.');
+      return;
+    }
+    setNameError(null);
+    setIsSavingName(true);
+    try {
+      await onUpdateUsername(nextName);
+    } catch (error) {
+      setNameError('Failed to update username.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleAvatarChange = async (file?: File | null) => {
+    if (!file || !onUploadAvatar) return;
+    setAvatarError(null);
+    if (file.size > 1024 * 1024) {
+      setAvatarError('Avatar too large (max 1MB).');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview(previewUrl);
+    setIsUploadingAvatar(true);
+    try {
+      const nextUrl = await onUploadAvatar(file);
+      if (typeof nextUrl === 'string' && nextUrl) {
+        setAvatarPreview(nextUrl);
+      }
+    } catch (error) {
+      setAvatarError('Failed to upload avatar.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const successRate = useMemo(() => {
     try {
       if (!user?.stats) return '0.0';
@@ -206,11 +292,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, inventory, burnt
         <div className="lg:col-span-4 flex flex-col gap-6">
           <div className="bg-black/20 border border-white/[0.12] p-8 rounded-2xl flex flex-col items-center text-center relative overflow-hidden backdrop-blur-2xl">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-web3-accent to-web3-purple"></div>
+            {isEditable && (
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="absolute right-4 top-4 w-9 h-9 rounded-full bg-white/5 border border-white/[0.12] flex items-center justify-center text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                aria-label="Open settings"
+              >
+                <Settings size={16} />
+              </button>
+            )}
             
             <div className="relative mb-6">
               <div className="absolute inset-0 bg-web3-accent/20 blur-xl rounded-full"></div>
-              <div className="w-32 h-32 rounded-full bg-gray-800 border-4 border-web3-accent flex items-center justify-center relative z-10">
-                <UserIcon size={64} className="text-web3-accent" />
+              <div className="w-32 h-32 rounded-full bg-gray-800 border-4 border-web3-accent flex items-center justify-center relative z-10 overflow-hidden">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <UserIcon size={64} className="text-web3-accent" />
+                )}
               </div>
             </div>
             
@@ -498,6 +597,75 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, inventory, burnt
           </div>
         </div>
       </div>
+
+      {isEditable && isSettingsOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[92%] max-w-md bg-black/40 border border-white/[0.12] rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="text-xs uppercase tracking-widest text-gray-500">Profile Settings</div>
+            <div className="text-2xl font-black text-white mt-1">Edit Profile</div>
+
+            <div className="mt-6">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Avatar</div>
+              <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-black/40 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition">
+                <div className="w-10 h-10 rounded-full bg-gray-800 border border-white/[0.12] overflow-hidden flex items-center justify-center">
+                  {avatarPreview || user?.avatar ? (
+                    <img src={avatarPreview || user.avatar} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <UserIcon size={18} className="text-web3-accent" />
+                  )}
+                </div>
+                <span className="text-xs uppercase tracking-widest text-gray-300">
+                  {isUploadingAvatar ? 'Uploading...' : 'Upload Avatar'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleAvatarChange(e.target.files?.[0])}
+                  disabled={isUploadingAvatar}
+                />
+              </label>
+              <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-600">
+                PNG/JPG/WebP/GIF • up to 1MB • max 1024px
+              </div>
+              {avatarError && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">{avatarError}</div>
+              )}
+            </div>
+
+            <div className="mt-6">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Display Name</div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value.toUpperCase())}
+                  className="flex-1 px-3 py-2 rounded-lg bg-black/40 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 text-xs uppercase tracking-widest"
+                  placeholder="USERNAME"
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={isSavingName}
+                  className="px-3 py-2 rounded-lg bg-web3-accent/20 border border-web3-accent/40 text-[10px] uppercase tracking-widest text-web3-accent hover:border-web3-accent/70 disabled:opacity-60"
+                >
+                  {isSavingName ? 'Saving' : 'Save'}
+                </button>
+              </div>
+              {nameError && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">{nameError}</div>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-4 py-2 rounded-lg bg-white/5 border border-white/[0.12] text-[10px] uppercase tracking-widest text-gray-300 hover:text-white transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

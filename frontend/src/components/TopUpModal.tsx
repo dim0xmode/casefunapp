@@ -4,13 +4,15 @@ interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTopUp: (amount: number) => void;
+  isAdmin: boolean;
 }
 
-export const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, onTopUp }) => {
+export const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, onTopUp, isAdmin }) => {
   const [amount, setAmount] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) return;
     const value = Number(amount.replace(/,/g, '.').trim());
     if (!Number.isFinite(value) || value <= 0) return;
     onTopUp(value);
@@ -28,6 +30,11 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, onTopUp
       >
         <div className="text-xs uppercase tracking-widest text-gray-400 mb-4">Top up balance</div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!isAdmin && (
+            <div className="text-[11px] uppercase tracking-widest text-gray-500">
+              Only admins can top up
+            </div>
+          )}
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-gray-500 mb-2">Amount (₮)</label>
             <input
@@ -49,10 +56,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, onTopUp
             </button>
             <button
               type="submit"
-              disabled={!amount.trim() || Number(amount.replace(/,/g, '.')) <= 0}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black text-xs uppercase tracking-widest hover:scale-[1.02] transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              disabled={!isAdmin || !amount.trim() || Number(amount.replace(/,/g, '.')) <= 0}
+              className={`flex-1 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${
+                isAdmin
+                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-[1.02]'
+                  : 'bg-white/5 border border-white/10 text-gray-500'
+              }`}
             >
-              Top up
+              {isAdmin ? 'Top up' : 'Admins only'}
             </button>
           </div>
         </form>

@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
+import { saveImage } from '../utils/upload.js';
 
 export const topUpBalance = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -63,25 +64,22 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
       let newItem = null;
       if (isSuccess) {
         const rarity = getRarityByValue(targetValue);
-        newItem = await tx.inventoryItem.create({
+        newItem = await tx.inventoryItem.update({
+          where: { id: item.id },
           data: {
-            userId,
-            caseId: item.caseId,
             name: `${targetValue} ${item.currency}`,
             value: targetValue,
-            currency: item.currency,
             rarity,
             color: (RARITY_COLORS as Record<string, string>)[rarity],
-            image: item.image || null,
             status: 'ACTIVE',
           },
         });
+      } else {
+        await tx.inventoryItem.update({
+          where: { id: item.id },
+          data: { status: 'BURNT' },
+        });
       }
-
-      await tx.inventoryItem.update({
-        where: { id: item.id },
-        data: { status: 'BURNT' },
-      });
 
       await tx.transaction.create({
         data: {
@@ -130,7 +128,84 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
         success: isSuccess,
         targetValue,
         newItem: result.newItem,
-        burntItemId: item.id,
+        burntItemId: isSuccess ? null : item.id,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateProfile = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const rawUsername = String(req.body?.username || '').trim().toUpperCase();
+    if (!rawUsername) {
+      return next(new AppError('Username is required', 400));
+    }
+    if (!/^[A-Z0-9 ]{3,20}$/.test(rawUsername)) {
+      return next(new AppError('Username must be 3-20 chars (A-Z, 0-9, spaces)', 400));
+    }
+    if (/^\d+$/.test(rawUsername)) {
+      return next(new AppError('Username cannot be only numbers', 400));
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: { username: rawUsername, NOT: { id: userId } },
+    });
+    if (existing) {
+      return next(new AppError('Username is already taken', 400));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { username: rawUsername },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: {
+          id: user.id,
+          username: user.username,
+          walletAddress: user.walletAddress,
+          balance: user.balance,
+          role: user.role,
+          avatar: user.avatarUrl,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadAvatar = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    if (!req.file) {
+      return next(new AppError('Avatar file is required', 400));
+    }
+
+    const avatarUrl = await saveImage(req.file, 'avatar');
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        avatarUrl,
+        user: {
+          id: user.id,
+          username: user.username,
+          walletAddress: user.walletAddress,
+          balance: user.balance,
+          role: user.role,
+          avatar: user.avatarUrl,
+        },
       },
     });
   } catch (error) {

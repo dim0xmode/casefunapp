@@ -14,7 +14,7 @@ import { INITIAL_USER } from './constants';
 import { User, Item, Rarity, Case } from './types';
 import { useWallet } from './hooks/useWallet';
 import { BrowserProvider } from 'ethers';
-import { api } from './services/api';
+import { api, resolveAssetUrl } from './services/api';
 
 const NOW = Date.now();
 
@@ -230,8 +230,24 @@ interface BattleRecord {
   wonItems: Item[];
 }
 
+const TAB_PATHS: Record<string, string> = {
+  home: '/',
+  createcase: '/create',
+  case: '/cases',
+  upgrade: '/upgrade',
+  casebattle: '/battles',
+  profile: '/profile',
+  admin: '/admin',
+};
+
+const getTabFromPath = (pathname: string) => {
+  const normalized = pathname.toLowerCase();
+  const match = Object.entries(TAB_PATHS).find(([, path]) => path === normalized);
+  return match?.[0] || 'home';
+};
+
 const App = () => {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => getTabFromPath(window.location.pathname));
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
@@ -257,8 +273,10 @@ const App = () => {
   const [lastAuthAddress, setLastAuthAddress] = useState<string | null>(null);
 
   const { address: walletAddress, isConnected } = useWallet();
+  const isAdmin = user.role === 'ADMIN';
 
   const addBalance = async (amount: number) => {
+    if (!isAdmin) return;
     if (!Number.isFinite(amount) || amount <= 0) return;
     try {
       const response = await api.topUp(amount);
@@ -297,7 +315,7 @@ const App = () => {
     tokenTicker: caseData.tokenTicker || caseData.currency,
     tokenPrice: caseData.tokenPrice,
     price: caseData.price,
-    image: caseData.imageUrl || caseData.image || '',
+    image: resolveAssetUrl(caseData.imageUrl || caseData.image || ''),
     rtu: caseData.rtu,
     openDurationHours: caseData.openDurationHours,
     createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : undefined,
@@ -308,7 +326,7 @@ const App = () => {
       value: drop.value,
       currency: drop.currency,
       rarity: drop.rarity,
-      image: drop.image || caseData.imageUrl || caseData.image || '',
+        image: resolveAssetUrl(drop.image || caseData.imageUrl || caseData.image || ''),
       color: drop.color,
       caseId: caseData.id,
     })),
@@ -334,7 +352,7 @@ const App = () => {
         setInventory(
           response.data.inventory.map((item: any) => ({
             ...item,
-            image: item.image || '',
+            image: resolveAssetUrl(item.image || ''),
           }))
         );
       }
@@ -342,7 +360,7 @@ const App = () => {
         setBurntItems(
           response.data.burntItems.map((item: any) => ({
             ...item,
-            image: item.image || '',
+            image: resolveAssetUrl(item.image || ''),
           }))
         );
       }
@@ -435,6 +453,15 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    const handlePopState = () => {
+      const nextTab = getTabFromPath(window.location.pathname);
+      handleTabChange(nextTab, 'none');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [lastAuthAddress]);
+
+  useEffect(() => {
     const normalized = walletAddress?.toLowerCase() || null;
     if (!isConnected || !normalized) return;
     if (!lastAuthAddress) return;
@@ -456,32 +483,45 @@ const App = () => {
     loadCases();
   }, []);
 
-  const handleTabChange = (tab: string) => {
+  const updateUrl = (tab: string, mode: 'push' | 'replace' | 'none' = 'push') => {
+    const nextPath = TAB_PATHS[tab] || '/';
+    if (mode === 'none') return;
+    if (mode === 'replace') {
+      window.history.replaceState({ tab }, '', nextPath);
+      return;
+    }
+    window.history.pushState({ tab }, '', nextPath);
+  };
+
+  const handleTabChange = (tab: string, mode: 'push' | 'replace' | 'none' = 'push') => {
     const requiresAuth = tab === 'profile' || tab === 'admin';
     if (requiresAuth && !lastAuthAddress) {
       setIsWalletConnectOpen(true);
       setActiveTab('home');
       setProfileView(null);
+      updateUrl('home', 'replace');
       return;
     }
     setActiveTab(tab);
+    updateUrl(tab, mode);
     if (tab !== 'profile') {
       setProfileView(null);
     }
   };
 
   const handleCreateCase = () => {
-    setActiveTab('createcase');
+    handleTabChange('createcase');
   };
 
   const handleCaseCreated = (newCase: Case) => {
     setCases(prev => [newCase, ...prev]);
-    setActiveTab('case');
+    handleTabChange('case');
     setCreatedCaseNotice(newCase);
   };
 
 
   const handleOpenCase = async (caseId: string, count: number) => {
+    if (!isAdmin) return [];
     const winners: Item[] = [];
     let latestBalance = balance;
     for (let i = 0; i < count; i++) {
@@ -519,13 +559,16 @@ const App = () => {
   };
 
   const handleUpgrade = async (originalItem: Item, multiplier: number) => {
+    if (!isAdmin) {
+      return { success: false, targetValue: 0 };
+    }
     const response = await api.upgradeItem(originalItem.id, multiplier);
     const success = response.data?.success;
     const targetValue = response.data?.targetValue;
     const newItem = response.data?.newItem;
     const burntItemId = response.data?.burntItemId;
 
-    if (burntItemId) {
+    if (!success && burntItemId) {
       setInventory(prev => prev.filter((item) => item.id !== burntItemId));
       const burnt = inventory.find((item) => item.id === burntItemId);
       if (burnt) {
@@ -544,7 +587,15 @@ const App = () => {
         color: newItem.color,
         caseId: newItem.caseId,
       };
-      setInventory(prev => [upgradedItem, ...prev]);
+      setInventory(prev => {
+        const index = prev.findIndex((item) => item.id === upgradedItem.id);
+        if (index === -1) {
+          return [upgradedItem, ...prev];
+        }
+        const copy = [...prev];
+        copy[index] = upgradedItem;
+        return copy;
+      });
       setUser(prev => ({
         ...prev,
         stats: {
@@ -567,6 +618,7 @@ const App = () => {
   };
 
   const handleBattleFinish = async (wonItems: Item[], totalCost: number) => {
+    if (!isAdmin) return;
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
@@ -592,7 +644,36 @@ const App = () => {
     }
   };
 
+  const handleUpdateUsername = async (username: string) => {
+    const response = await api.updateProfile(username);
+    if (response.data?.user) {
+      setUser(prev => ({ ...prev, ...response.data?.user }));
+      if (profileView) {
+        setProfileView({
+          ...profileView,
+          user: { ...profileView.user, ...response.data.user },
+        });
+      }
+    }
+  };
+
+  const handleUploadAvatar = async (file: File) => {
+    const response = await api.uploadAvatar(file);
+    const avatarUrl = response.data?.avatarUrl;
+    if (avatarUrl) {
+      setUser(prev => ({ ...prev, avatar: resolveAssetUrl(avatarUrl) }));
+      if (profileView) {
+        setProfileView({
+          ...profileView,
+          user: { ...profileView.user, avatar: resolveAssetUrl(avatarUrl) },
+        });
+      }
+    }
+    return avatarUrl ? resolveAssetUrl(avatarUrl) : undefined;
+  };
+
   const handleChargeBattle = async (amount: number) => {
+    if (!isAdmin) return false;
     try {
       const response = await api.chargeBattle(amount);
       if (response.data?.balance !== undefined) {
@@ -733,10 +814,14 @@ const App = () => {
           setActiveTab={handleTabChange} 
           onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
           balance={balance}
-          onOpenTopUp={() => setIsTopUpOpen(true)}
+          onOpenTopUp={() => {
+            if (!isAdmin) return;
+            setIsTopUpOpen(true);
+          }}
           onLogout={handleLogout}
           isAuthLoading={isAuthLoading}
           isAuthenticated={Boolean(lastAuthAddress)}
+          isAdmin={isAdmin}
         />
 
         {/* Live Feed Sidebar - Left side, hidden on home */}
@@ -754,10 +839,14 @@ const App = () => {
                   onCreate={handleCaseCreated}
                   creatorName={user.username}
                   balance={balance}
-                  onOpenTopUp={() => setIsTopUpOpen(true)}
+                  onOpenTopUp={() => {
+                    if (!isAdmin) return;
+                    setIsTopUpOpen(true);
+                  }}
                   onBalanceUpdate={setBalance}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -768,10 +857,14 @@ const App = () => {
                   cases={cases}
                   onOpenCase={handleOpenCase}
                   balance={balance}
-                  onOpenTopUp={() => setIsTopUpOpen(true)}
+                  onOpenTopUp={() => {
+                    if (!isAdmin) return;
+                    setIsTopUpOpen(true);
+                  }}
                   userName={user.username}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -783,6 +876,7 @@ const App = () => {
                   onUpgrade={handleUpgrade}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -795,9 +889,13 @@ const App = () => {
                   onBattleFinish={handleBattleFinish}
                   balance={balance}
                   onChargeBattle={handleChargeBattle}
-                  onOpenTopUp={() => setIsTopUpOpen(true)}
+                  onOpenTopUp={() => {
+                    if (!isAdmin) return;
+                    setIsTopUpOpen(true);
+                  }}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -810,6 +908,9 @@ const App = () => {
                   burntItems={profileView?.burntItems || burntItems}
                   battleHistory={profileView?.battleHistory || battleHistory}
                   balance={balance}
+                  isEditable={!profileView}
+                  onUpdateUsername={handleUpdateUsername}
+                  onUploadAvatar={handleUploadAvatar}
                 />
               </div>
             )}
@@ -834,6 +935,7 @@ const App = () => {
         isOpen={isTopUpOpen}
         onClose={() => setIsTopUpOpen(false)}
         onTopUp={addBalance}
+        isAdmin={isAdmin}
       />
 
       {createdCaseNotice && (

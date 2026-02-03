@@ -20,9 +20,10 @@ interface CaseOpeningViewProps {
   onOpenTopUp: () => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin: boolean;
 }
 
-export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect }) => {
+export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const getRemainingTime = () => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
@@ -50,7 +51,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
   const shortfall = Math.max(0, cost - balance);
 
   const handleSpin = async () => {
-    if (isSpinning || isExpired || !canAfford) return;
+    if (isSpinning || isExpired || !canAfford || !isAdmin) return;
 
     const prevCount = prevOpenCountRef.current;
     setCurrentRevealFrom(prevCount);
@@ -165,12 +166,22 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
 
           {/* Center: Open Button */}
           <button
-            onClick={!isAuthenticated ? onOpenWalletConnect : canAfford ? handleSpin : onOpenTopUp}
-            disabled={isSpinning || isExpired}
+            onClick={
+              !isAuthenticated
+                ? onOpenWalletConnect
+                : !isAdmin
+                  ? undefined
+                  : canAfford
+                    ? handleSpin
+                    : onOpenTopUp
+            }
+            disabled={isSpinning || isExpired || (isAuthenticated && !isAdmin)}
             className={`group relative px-8 py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${
-              !isAuthenticated || canAfford
+              !isAuthenticated
                 ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
-                : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
+                : isAdmin && canAfford
+                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
+                  : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
             }`}
           >
             <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
@@ -181,6 +192,8 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
                 'Opening...'
               ) : !isAuthenticated ? (
                 <>Connect Wallet</>
+              ) : !isAdmin ? (
+                <>Admins only</>
               ) : !canAfford ? (
                 <>
                   Need {shortfall} ₮ more • Top up
@@ -198,6 +211,11 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
               <span className="absolute -inset-2 rounded-xl bg-web3-accent/30 animate-ping opacity-75"></span>
             )}
           </button>
+          {isAuthenticated && !isAdmin && (
+            <div className="col-span-3 mt-2 text-center text-[10px] uppercase tracking-widest text-gray-500">
+              Only admins can open cases
+            </div>
+          )}
 
           {/* Right Side: Open Mode Toggle */}
           <div className="flex items-center justify-start gap-1">

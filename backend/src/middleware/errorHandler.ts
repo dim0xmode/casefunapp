@@ -18,6 +18,14 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
+  if (err && (err as any).name === 'MulterError') {
+    const code = (err as any).code;
+    const message = code === 'LIMIT_FILE_SIZE' ? 'File too large (max 1MB)' : 'Upload failed';
+    return res.status(400).json({
+      status: 'error',
+      message,
+    });
+  }
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       status: 'error',

@@ -145,6 +145,7 @@ export const loginWithWallet = async (
           walletAddress: user.walletAddress,
           balance: user.balance,
           role: user.role,
+          avatar: user.avatarUrl,
         },
       },
     });
@@ -195,6 +196,7 @@ export const getProfile = async (
         walletAddress: true,
         balance: true,
         role: true,
+        avatarUrl: true,
         createdAt: true,
         inventory: {
           where: { status: 'ACTIVE' },
@@ -228,6 +230,7 @@ export const getProfile = async (
           walletAddress: user.walletAddress,
           balance: user.balance,
           role: user.role,
+          avatar: user.avatarUrl,
           createdAt: user.createdAt,
         },
         inventory: user.inventory,

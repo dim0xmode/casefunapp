@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Case, Item, Rarity } from '../types';
-import { Plus, Trash2, Sparkles, ChevronDown, Smile } from 'lucide-react';
+import { Plus, Trash2, Sparkles, ChevronDown, UploadCloud, Smile } from 'lucide-react';
 import { ItemCard } from './ItemCard';
-import { api } from '../services/api';
+import { api, resolveAssetUrl } from '../services/api';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -27,16 +27,19 @@ interface CreateCaseViewProps {
   onBalanceUpdate?: (balance: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin: boolean;
 }
 
-export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creatorName, balance, onOpenTopUp, onBalanceUpdate, isAuthenticated, onOpenWalletConnect }) => {
+export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creatorName, balance, onOpenTopUp, onBalanceUpdate, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const [name, setName] = useState('');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
   const [rtu, setRtu] = useState('');
   const [tokenPrice, setTokenPrice] = useState('');
   const [openDurationHours, setOpenDurationHours] = useState(24);
-  const [image, setImage] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [isImageUploading, setIsImageUploading] = useState(false);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -71,11 +74,11 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         value: safeValue,
         rarity,
         currency: tokenTicker || 'TOKEN',
-        image: image || '',
+        image: imageUrl || '',
         color: RARITY_COLORS[rarity],
       };
     }) as Item[];
-  }, [drops, tokenTicker, image]);
+  }, [drops, tokenTicker, imageUrl]);
 
   const addDrop = () => {
     setDrops((prev) => {
@@ -98,8 +101,42 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     setDrops((prev) => prev.map((drop) => (drop.id === id ? { ...drop, ...patch } : drop)));
   };
 
+  const handleImageUpload = async (file?: File | null) => {
+    if (!file) return;
+    setImageError(null);
+    if (file.size > 1024 * 1024) {
+      setImageError('Image too large (max 1MB).');
+      return;
+    }
+    setIsImageUploading(true);
+    try {
+      const response = await api.uploadCaseImage(file);
+      const url = response.data?.imageUrl;
+      if (!url) {
+        setImageError('Upload failed. Try another image.');
+        return;
+      }
+      setImageUrl(url);
+    } catch (error) {
+      setImageError('Upload failed. Try another image.');
+    } finally {
+      setIsImageUploading(false);
+    }
+  };
+
+  const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/u;
+  const isEmoji = (value: string) => emojiRegex.test(value);
+
   const handleSubmit = async () => {
     setSubmitError(null);
+    if (isImageUploading) {
+      setSubmitError('Wait for image upload to finish.');
+      return;
+    }
+    if (!isAdmin) {
+      setSubmitError('Admins only.');
+      return;
+    }
     if (!name.trim()) return setSubmitError('Enter a case name.');
     const nameTrimmed = name.trim();
     if (/^\d+$/.test(nameTrimmed)) {
@@ -121,17 +158,13 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     if (valueSet.size !== drops.length) {
       return setSubmitError('Drop values must be unique.');
     }
-    if (!image.trim()) {
-      setSubmitError('Add a logo (emoji or image URL).');
+    const imageTrimmed = imageUrl.trim();
+    if (!imageTrimmed) {
+      setSubmitError('Upload a case logo or choose an emoji.');
       return;
     }
-    const imageTrimmed = image.trim();
-    const isUrl = imageTrimmed.startsWith('http://') || imageTrimmed.startsWith('https://');
-    // Check for emoji: Unicode ranges for emojis and common symbols
-    const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/u;
-    const isEmoji = !isUrl && emojiRegex.test(imageTrimmed);
-    if (!isUrl && !isEmoji) {
-      setSubmitError('Logo must be an emoji or a valid image URL.');
+    if (!imageTrimmed.startsWith('http') && !isEmoji(imageTrimmed)) {
+      setSubmitError('Logo must be an emoji or an uploaded image.');
       return;
     }
     if (balance < CREATE_CASE_FEE) {
@@ -150,7 +183,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         rtu: rtuValue,
         tokenPrice: tokenPriceValue,
         openDurationHours,
-        imageUrl: image,
+        imageUrl: imageTrimmed,
         drops: normalizedDrops.map((drop) => ({
           name: drop.name,
           value: drop.value,
@@ -172,7 +205,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         tokenTicker: caseData.tokenTicker || caseData.currency,
         tokenPrice: caseData.tokenPrice,
         price: caseData.price,
-        image: caseData.imageUrl || image,
+        image: resolveAssetUrl(caseData.imageUrl || imageTrimmed),
         rtu: caseData.rtu,
         openDurationHours: caseData.openDurationHours,
         createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : Date.now(),
@@ -183,7 +216,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
           value: drop.value,
           currency: drop.currency,
           rarity: drop.rarity,
-          image: drop.image || image,
+          image: resolveAssetUrl(drop.image || imageTrimmed),
           color: drop.color,
         })),
       };
@@ -197,14 +230,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       setSubmitError('Failed to create case. Try again.');
     }
   };
-
-  const emojiOptions = [
-    '🚀', '💎', '🔥', '✨', '🌙', '🐕', '🐸', '🪙', '🎯', '⚡️', '👑', '🧊',
-    '🧠', '🦊', '🐧', '🐳', '🦈', '🦄', '🐼', '🐯', '🦁', '🐙', '🐲', '🦂',
-    '⭐️', '🌟', '☀️', '🌈', '🌊', '🌋', '❄️', '🍀', '🌵', '🍄', '🎲', '🧩',
-    '⚔️', '🛡️', '🏆', '🎮', '🎯', '🧪', '🧬', '💫', '🪐', '📈', '💰', '🧿',
-    '💥', '🔮', '🎁', '🧨', '🔱', '🗿', '🪙', '🧧', '🔔', '🪄', '🛸', '🚨',
-  ];
 
   return (
     <div className="w-full min-h-screen text-white px-6 py-12 relative">
@@ -289,41 +314,69 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 </div>
               </label>
               <label className="space-y-2 md:col-span-2">
-                <div className="text-xs uppercase tracking-widest text-gray-500">Token Logo (URL or emoji)</div>
-                <div className="relative">
-                  <input
-                    value={image}
-                    onChange={(e) => setImage(e.target.value)}
-                    placeholder="https://... or 🚀"
-                    className="w-full px-4 py-3 pr-12 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
-                  />
+                <div className="text-xs uppercase tracking-widest text-gray-500">Token Logo (Upload or Emoji)</div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition">
+                    <UploadCloud size={16} className="text-web3-accent" />
+                    <span className="text-xs uppercase tracking-widest text-gray-300">
+                      {isImageUploading ? 'Uploading...' : 'Choose Image'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleImageUpload(e.target.files?.[0])}
+                      disabled={isImageUploading}
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={() => setIsEmojiOpen((prev) => !prev)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition"
-                    aria-label="Pick emoji"
+                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] text-xs uppercase tracking-widest text-gray-300 hover:border-web3-accent/50 transition"
                   >
-                    <Smile size={18} />
+                    <Smile size={16} className="text-web3-accent" />
+                    Choose Emoji
                   </button>
-                  {isEmojiOpen && (
-                    <div className="absolute right-0 mt-2 w-72 max-h-64 p-3 rounded-xl bg-black/70 border border-white/[0.12] shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl z-[60] overflow-y-auto">
-                      <div className="grid grid-cols-7 gap-2 text-white text-lg">
-                        {emojiOptions.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => {
-                              setImage(emoji);
-                              setIsEmojiOpen(false);
-                            }}
-                            className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] transition flex items-center justify-center"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  {imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('')}
+                      className="text-[10px] uppercase tracking-widest text-gray-500 hover:text-white transition"
+                    >
+                      Remove
+                    </button>
                   )}
+                </div>
+                {isEmojiOpen && (
+                  <div className="mt-3 w-80 max-h-64 p-3 rounded-xl bg-black/70 border border-white/[0.12] shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl z-[60] overflow-y-auto">
+                    <div className="grid grid-cols-8 gap-2 text-white text-lg">
+                      {[
+                        '🚀','💎','🔥','✨','🌙','🐕','🐸','🪙','🎯','⚡️','👑','🧊',
+                        '🧠','🦊','🐧','🐳','🦈','🦄','🐼','🐯','🦁','🐙','🐲','🦂',
+                        '⭐️','🌟','☀️','🌈','🌊','🌋','❄️','🍀','🌵','🍄','🎲','🧩',
+                        '⚔️','🛡️','🏆','🎮','🧪','🧬','💫','🪐','📈','💰','🧿',
+                        '💥','🔮','🎁','🧨','🔱','🗿','🧧','🔔','🪄','🛸','🚨',
+                      ].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setImageUrl(emoji);
+                            setIsEmojiOpen(false);
+                          }}
+                          className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] transition flex items-center justify-center"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {imageError && (
+                  <div className="text-[11px] uppercase tracking-widest text-red-400">{imageError}</div>
+                )}
+                <div className="text-[10px] uppercase tracking-widest text-gray-600">
+                  PNG/JPG/WebP/GIF • up to 1MB • max 1024px
                 </div>
               </label>
             </div>
@@ -333,11 +386,11 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
             <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Preview</div>
             <div className="flex flex-col items-center gap-4">
               <div className="w-20 h-20 rounded-full border border-white/[0.12] bg-black/30 flex items-center justify-center backdrop-blur-xl">
-                {image ? (
-                  image.startsWith('http') ? (
-                    <img src={image} alt="token logo" className="w-12 h-12 object-contain" />
+                {imageUrl ? (
+                  imageUrl.startsWith('http') || imageUrl.startsWith('/') ? (
+                    <img src={resolveAssetUrl(imageUrl)} alt="token logo" className="w-12 h-12 object-contain" />
                   ) : (
-                    <span className="text-3xl">{image}</span>
+                    <span className="text-3xl">{imageUrl}</span>
                   )
                 ) : (
                   <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>
@@ -407,14 +460,20 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
             {submitError && (
               <div className="text-[11px] uppercase tracking-widest text-red-400">{submitError}</div>
             )}
+            {isAuthenticated && !isAdmin && (
+              <div className="text-[11px] uppercase tracking-widest text-gray-500">Only admins can create cases</div>
+            )}
             <div className="flex items-center gap-2">
               <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-web3-accent/25 to-web3-purple/25 text-xs font-black text-web3-accent border border-web3-accent/50 shadow-[0_0_14px_rgba(102,252,241,0.3)]">
                 {CREATE_CASE_FEE} ₮
               </div>
               <button
-                onClick={!isAuthenticated ? onOpenWalletConnect : balance < CREATE_CASE_FEE ? onOpenTopUp : handleSubmit}
+                onClick={!isAuthenticated ? onOpenWalletConnect : !isAdmin ? undefined : balance < CREATE_CASE_FEE ? onOpenTopUp : handleSubmit}
+                disabled={isAuthenticated && !isAdmin}
                 className={`group relative px-8 py-3 text-sm font-black rounded-xl overflow-hidden transform transition-all duration-300 ${
-                  !isAuthenticated || balance >= CREATE_CASE_FEE
+                  !isAuthenticated
+                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
+                    : isAdmin && balance >= CREATE_CASE_FEE
                     ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
                     : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
                 }`}
@@ -423,6 +482,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 <span className="relative flex items-center gap-2 uppercase tracking-wide">
                   {!isAuthenticated ? (
                     <>Connect Wallet</>
+                  ) : !isAdmin ? (
+                    <>Admins only</>
                   ) : balance < CREATE_CASE_FEE ? (
                     <>Need {(CREATE_CASE_FEE - balance).toFixed(1)} ₮ more • Top up</>
                   ) : (

@@ -1,9 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database.js';
 import { recordRtuEvent } from '../services/rtuService.js';
+import { saveImage } from '../utils/upload.js';
 
 const CREATE_CASE_FEE = 1.5;
 import { AppError } from '../middleware/errorHandler.js';
+
+const normalizeParam = (value: string | string[] | undefined): string => {
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+  return value ?? '';
+};
 
 export const getAllCases = async (
   req: Request,
@@ -35,7 +43,10 @@ export const getCaseById = async (
   next: NextFunction
 ) => {
   try {
-    const { id } = req.params;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('Case id is required', 400));
+    }
 
     const caseItem = await prisma.case.findUnique({
       where: { id },
@@ -153,7 +164,10 @@ export const openCase = async (
 ) => {
   try {
     const userId = (req as any).userId;
-    const { caseId } = req.params;
+    const caseId = normalizeParam(req.params.caseId);
+    if (!caseId) {
+      return next(new AppError('Case id is required', 400));
+    }
 
     // Get case with drops
     const caseItem = await prisma.case.findUnique({
@@ -281,6 +295,27 @@ export const openCase = async (
         },
         balance: updatedUser?.balance ?? 0,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadCaseImage = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.file) {
+      return next(new AppError('Image file is required', 400));
+    }
+
+    const imageUrl = await saveImage(req.file, 'case');
+
+    res.json({
+      status: 'success',
+      data: { imageUrl },
     });
   } catch (error) {
     next(error);
