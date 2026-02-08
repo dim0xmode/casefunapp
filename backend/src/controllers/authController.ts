@@ -146,6 +146,7 @@ export const loginWithWallet = async (
           balance: user.balance,
           role: user.role,
           avatar: user.avatarUrl,
+          avatarMeta: user.avatarMeta,
         },
       },
     });
@@ -197,6 +198,7 @@ export const getProfile = async (
         balance: true,
         role: true,
         avatarUrl: true,
+        avatarMeta: true,
         createdAt: true,
         inventory: {
           where: { status: 'ACTIVE' },
@@ -221,6 +223,24 @@ export const getProfile = async (
       orderBy: { createdAt: 'desc' },
     });
 
+    const [caseOpeningsAgg, upgradesAttempted, upgradesSuccess] = await Promise.all([
+      prisma.caseOpening.aggregate({
+        where: { userId },
+        _count: { _all: true },
+        _sum: { wonValue: true },
+      }),
+      prisma.transaction.count({
+        where: { userId, type: 'UPGRADE' },
+      }),
+      prisma.transaction.count({
+        where: {
+          userId,
+          type: 'UPGRADE',
+          metadata: { path: ['success'], equals: true },
+        },
+      }),
+    ]);
+
     res.json({
       status: 'success',
       data: {
@@ -231,7 +251,14 @@ export const getProfile = async (
           balance: user.balance,
           role: user.role,
           avatar: user.avatarUrl,
+          avatarMeta: user.avatarMeta,
           createdAt: user.createdAt,
+          stats: {
+            casesOpened: caseOpeningsAgg._count._all,
+            totalWon: caseOpeningsAgg._sum.wonValue ?? 0,
+            upgradesAttempted,
+            upgradeSuccessCount: upgradesSuccess,
+          },
         },
         inventory: user.inventory,
         burntItems,

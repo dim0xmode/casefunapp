@@ -19,6 +19,7 @@ export const getAllCases = async (
   next: NextFunction
 ) => {
   try {
+    const includeStats = normalizeParam(req.query.includeStats as any) === '1';
     const cases = await prisma.case.findMany({
       where: { isActive: true },
       include: {
@@ -28,9 +29,88 @@ export const getAllCases = async (
       orderBy: { createdAt: 'desc' },
     });
 
+    const casesWithStats = includeStats
+      ? await Promise.all(
+          cases.map(async (caseItem) => {
+            const openingsAgg = await prisma.caseOpening.aggregate({
+              where: { caseId: caseItem.id },
+              _count: { _all: true },
+              _sum: { wonValue: true },
+            });
+
+            const totalOpenings = openingsAgg._count._all;
+            const totalTokenFromOpens = openingsAgg._sum.wonValue ?? 0;
+            const totalSpentUsdt = totalOpenings * Number(caseItem.price || 0);
+
+            const [upgradeAgg, battleAgg] = await Promise.all([
+              prisma.rtuEvent.aggregate({
+                where: { caseId: caseItem.id, type: 'UPGRADE' },
+                _count: { _all: true },
+                _sum: { deltaToken: true },
+              }),
+              prisma.rtuEvent.aggregate({
+                where: { caseId: caseItem.id, type: 'BATTLE' },
+                _count: { _all: true },
+                _sum: { deltaToken: true },
+              }),
+            ]);
+
+            const totalTokenFromUpgrades = upgradeAgg._sum.deltaToken ?? 0;
+            const totalTokenFromBattles = battleAgg._sum.deltaToken ?? 0;
+            const totalTokenIssued =
+              totalTokenFromOpens + totalTokenFromBattles + Math.max(0, totalTokenFromUpgrades);
+
+            const actualRtu =
+              totalSpentUsdt > 0 && Number(caseItem.tokenPrice || 0) > 0
+                ? (totalTokenIssued * Number(caseItem.tokenPrice || 0)) / totalSpentUsdt * 100
+                : null;
+
+            const holders = await prisma.inventoryItem.groupBy({
+              by: ['userId'],
+              where: { caseId: caseItem.id, status: 'ACTIVE' },
+              _sum: { value: true },
+              orderBy: { _sum: { value: 'desc' } },
+              take: 3,
+            });
+
+            const holderUsers = holders.length
+              ? await prisma.user.findMany({
+                  where: { id: { in: holders.map((holder) => holder.userId) } },
+                  select: { id: true, username: true },
+                })
+              : [];
+
+            const topHolders = holders.map((holder) => {
+              const user = holderUsers.find((entry) => entry.id === holder.userId);
+              return {
+                userId: holder.userId,
+                username: user?.username || 'Unknown',
+                total: Number(holder._sum.value || 0),
+              };
+            });
+
+            return {
+              ...caseItem,
+              stats: {
+                totalOpenings,
+                totalSpentUsdt,
+                totalTokenFromOpens,
+                totalTokenFromUpgrades,
+                totalTokenFromBattles,
+                totalTokenIssued,
+                upgradesUsed: upgradeAgg._count._all,
+                battlesUsed: battleAgg._count._all,
+                actualRtu,
+                topHolders,
+              },
+            };
+          })
+        )
+      : cases;
+
     res.json({
       status: 'success',
-      data: { cases },
+      data: { cases: casesWithStats },
     });
   } catch (error) {
     next(error);
@@ -84,12 +164,56 @@ export const createCase = async (
       price,
       rtu,
       imageUrl,
+      imageMeta,
       openDurationHours,
       drops,
     } = req.body;
 
     if (!name || !currency || !price || !drops || drops.length === 0) {
       return next(new AppError('Missing required fields', 400));
+    }
+
+    const normalizedName = String(name).trim().toUpperCase();
+    const normalizedCurrency = String(currency).trim().toUpperCase();
+    const normalizedTicker = String(tokenTicker || currency).trim().toUpperCase();
+
+    if (!/^[A-Z][A-Z0-9 ]*$/.test(normalizedName)) {
+      return next(new AppError('Invalid case name', 400));
+    }
+    if (!/^[A-Z]+$/.test(normalizedTicker)) {
+      return next(new AppError('Invalid token ticker', 400));
+    }
+
+    const priceValue = Number(price);
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+      return next(new AppError('Invalid open price', 400));
+    }
+
+    const rtuValue = rtu === undefined || rtu === null ? 96 : Number(rtu);
+    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) {
+      return next(new AppError('Invalid RTU', 400));
+    }
+
+    const tokenPriceValue = tokenPrice === undefined || tokenPrice === null ? undefined : Number(tokenPrice);
+    if (tokenPriceValue !== undefined && (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0)) {
+      return next(new AppError('Invalid token price', 400));
+    }
+
+    const existing = await prisma.case.findFirst({
+      where: {
+        OR: [
+          { name: normalizedName },
+          { name: normalizedTicker },
+          { currency: normalizedTicker },
+          { tokenTicker: normalizedTicker },
+          { currency: normalizedName },
+          { tokenTicker: normalizedName },
+        ],
+      },
+    });
+
+    if (existing) {
+      return next(new AppError('Case name or token ticker already exists', 400));
     }
 
     const newCase = await prisma.$transaction(async (tx) => {
@@ -118,13 +242,14 @@ export const createCase = async (
 
       return tx.case.create({
         data: {
-          name,
-          currency,
-          tokenTicker,
-          tokenPrice,
-          price,
-          rtu: rtu || 96,
+          name: normalizedName,
+          currency: normalizedCurrency,
+          tokenTicker: normalizedTicker,
+          tokenPrice: tokenPriceValue,
+          price: priceValue,
+          rtu: rtuValue,
           imageUrl,
+          imageMeta,
           openDurationHours,
           createdById: userId,
           drops: {

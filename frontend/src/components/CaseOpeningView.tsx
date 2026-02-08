@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { Case, Item } from '../types';
-import { ArrowLeft, Package, Sparkles, ChevronRight, ChevronsRight, Zap } from 'lucide-react';
+import { ArrowLeft, Package, ChevronRight, ChevronsRight, Zap } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
+import { AdminActionButton } from './ui/AdminActionButton';
 
 // Open Modes
 type OpenMode = 'normal' | 'fast' | 'instant';
@@ -21,9 +22,10 @@ interface CaseOpeningViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
+  viewMode?: 'open' | 'stats';
 }
 
-export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin, viewMode = 'open' }) => {
   const getRemainingTime = () => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
@@ -36,6 +38,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
 
   const remainingTime = getRemainingTime();
   const isExpired = remainingTime === 'Expired';
+  const isStatsView = viewMode === 'stats';
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [openMode, setOpenMode] = useState<OpenMode>('normal');
@@ -48,10 +51,9 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
 
   const cost = caseData.price * multiOpen;
   const canAfford = balance >= cost;
-  const shortfall = Math.max(0, cost - balance);
 
   const handleSpin = async () => {
-    if (isSpinning || isExpired || !canAfford || !isAdmin) return;
+    if (isSpinning || isExpired || !canAfford || !isAdmin || isStatsView) return;
 
     const prevCount = prevOpenCountRef.current;
     setCurrentRevealFrom(prevCount);
@@ -103,11 +105,76 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
         )}
       </div>
 
-      {/* Roulettes Container */}
+      {isStatsView && (
+        <div className="max-w-5xl mx-auto mb-8">
+          <div className="bg-web3-card/50 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-xl">
+            <div className="text-xs uppercase tracking-widest text-gray-500 mb-4">Case Statistics</div>
+            {caseData.stats ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Opened</div>
+                  <div className="text-lg font-black">{caseData.stats.totalOpenings}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Spent</div>
+                  <div className="text-lg font-black">{caseData.stats.totalSpentUsdt.toFixed(2)} ₮</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Opens</div>
+                  <div className="text-lg font-black">{caseData.stats.totalTokenFromOpens.toFixed(2)}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Upgrades</div>
+                  <div className="text-lg font-black">{caseData.stats.totalTokenFromUpgrades.toFixed(2)}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Battles</div>
+                  <div className="text-lg font-black">{caseData.stats.totalTokenFromBattles.toFixed(2)}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Tokens</div>
+                  <div className="text-lg font-black">{caseData.stats.totalTokenIssued.toFixed(2)}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Upgrades Used</div>
+                  <div className="text-lg font-black">{caseData.stats.upgradesUsed}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Battles Used</div>
+                  <div className="text-lg font-black">{caseData.stats.battlesUsed}</div>
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Actual RTU</div>
+                  <div className="text-lg font-black">
+                    {caseData.stats.actualRtu != null ? `${caseData.stats.actualRtu.toFixed(1)}%` : '—'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs uppercase tracking-widest text-gray-500">No statistics yet</div>
+            )}
+            {caseData.stats?.topHolders && caseData.stats.topHolders.length > 0 && (
+              <div className="mt-6">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Top 3 Holders</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {caseData.stats.topHolders.map((holder) => (
+                    <div key={holder.userId} className="bg-black/30 border border-white/[0.08] rounded-xl p-3 flex items-center justify-between text-xs">
+                      <span className="truncate">{holder.username}</span>
+                      <span className="text-gray-200">{holder.total.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isStatsView && (
       <div className="max-w-5xl mx-auto mb-8">
         {multiResults.length > 0 ? (
           multiResults.map((result, idx) => (
-            <CaseRoulette
+              <CaseRoulette
               key={`${openingKey}-${idx}`}
               caseData={caseData}
               winner={result}
@@ -117,19 +184,19 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
             />
           ))
         ) : (
-          // Показываем рулетку сразу, даже без winner
-          <CaseRoulette
+            <CaseRoulette
             key="placeholder"
             caseData={caseData}
-            winner={null} // Нет winner, просто показываем заполненную рулетку
+              winner={null}
             openMode={openMode}
             index={0}
             skipReveal={false}
           />
         )}
       </div>
+      )}
 
-      {/* Controls */}
+      {!isStatsView && (
       <div className="max-w-7xl mx-auto">
         {/* Multi-Open Selector - по центру рулетки */}
         <div className="flex justify-center mb-4">
@@ -165,52 +232,24 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
           </div>
 
           {/* Center: Open Button */}
-          <button
-            onClick={
-              !isAuthenticated
-                ? onOpenWalletConnect
-                : !isAdmin
-                  ? undefined
-                  : canAfford
-                    ? handleSpin
-                    : onOpenTopUp
+          <AdminActionButton
+            isAuthenticated={isAuthenticated}
+            isAdmin={isAdmin}
+            balance={balance}
+            cost={cost}
+            onConnect={onOpenWalletConnect}
+            onTopUp={onOpenTopUp}
+            onAction={handleSpin}
+            readyLabel={
+              hasOpened ? 'Open Again' : 'Open'
             }
-            disabled={isSpinning || isExpired || (isAuthenticated && !isAdmin)}
-            className={`group relative px-8 py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${
-              !isAuthenticated
-                ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
-                : isAdmin && canAfford
-                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
-                  : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
-            }`}
-          >
-            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-            <span className="relative flex items-center gap-2 uppercase tracking-wide">
-              {isExpired ? (
-                'Closed'
-              ) : isSpinning ? (
-                'Opening...'
-              ) : !isAuthenticated ? (
-                <>Connect Wallet</>
-              ) : !isAdmin ? (
-                <>Admins only</>
-              ) : !canAfford ? (
-                <>
-                  Need {shortfall} ₮ more • Top up
-                </>
-              ) : hasOpened ? (
-                <>Open Again</>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Open
-                </>
-              )}
-            </span>
-            {!isSpinning && canAfford && (
-              <span className="absolute -inset-2 rounded-xl bg-web3-accent/30 animate-ping opacity-75"></span>
-            )}
-          </button>
+            topUpLabel={(shortfallValue) => `Need ${shortfallValue} ₮ more • Top up`}
+            labelOverride={isExpired ? 'Closed' : isSpinning ? 'Opening...' : undefined}
+            forceLabel={Boolean(isExpired || isSpinning)}
+            disabled={isSpinning || isExpired}
+            showPing={!isSpinning && canAfford && !isExpired}
+            className="group px-8 py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300"
+          />
           {isAuthenticated && !isAdmin && (
             <div className="col-span-3 mt-2 text-center text-[10px] uppercase tracking-widest text-gray-500">
               Only admins can open cases
@@ -248,13 +287,14 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
                 openMode === 'instant'
                   ? 'bg-web3-purple/20 border border-web3-purple text-web3-purple shadow-[0_0_12px_rgba(139,92,246,0.3)]'
                   : 'bg-web3-card/30 border border-gray-800 text-gray-600 hover:text-web3-purple/70 hover:border-web3-purple/30'
-            } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+              } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               <Zap size={18} />
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Possible Items List */}
       <div className="max-w-5xl mx-auto mt-10">

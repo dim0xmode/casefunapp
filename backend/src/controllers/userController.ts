@@ -52,6 +52,18 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
       return next(new AppError('Item not found', 404));
     }
 
+    if (item.caseId) {
+      const caseInfo = await prisma.case.findUnique({
+        where: { id: item.caseId },
+      });
+      if (caseInfo?.openDurationHours && caseInfo.createdAt) {
+        const endAt = new Date(caseInfo.createdAt).getTime() + caseInfo.openDurationHours * 60 * 60 * 1000;
+        if (Date.now() >= endAt) {
+          return next(new AppError('Case expired', 400));
+        }
+      }
+    }
+
     const rawChance = (1 / mult) * 100;
     if (rawChance > 90) {
       return next(new AppError('Upgrade blocked', 400));
@@ -143,11 +155,11 @@ export const updateProfile = async (req: Request, res: Response, next: NextFunct
     if (!rawUsername) {
       return next(new AppError('Username is required', 400));
     }
-    if (!/^[A-Z0-9 ]{3,20}$/.test(rawUsername)) {
-      return next(new AppError('Username must be 3-20 chars (A-Z, 0-9, spaces)', 400));
+    if (!/^[A-Z0-9_-]{3,20}$/.test(rawUsername)) {
+      return next(new AppError('Username must be 3-20 chars (A-Z, 0-9, _ or -)', 400));
     }
-    if (/^\d+$/.test(rawUsername)) {
-      return next(new AppError('Username cannot be only numbers', 400));
+    if (rawUsername.startsWith('USER_')) {
+      return next(new AppError('Username is reserved', 400));
     }
 
     const existing = await prisma.user.findFirst({
@@ -172,9 +184,37 @@ export const updateProfile = async (req: Request, res: Response, next: NextFunct
           balance: user.balance,
           role: user.role,
           avatar: user.avatarUrl,
+          avatarMeta: user.avatarMeta,
         },
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const checkUsernameAvailability = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const rawUsername = String(req.query?.username || req.query?.value || '').trim().toUpperCase();
+    if (!rawUsername) {
+      return res.json({ status: 'success', data: { available: false, reason: 'required' } });
+    }
+    if (!/^[A-Z0-9_-]{3,20}$/.test(rawUsername)) {
+      return res.json({ status: 'success', data: { available: false, reason: 'invalid' } });
+    }
+    if (rawUsername.startsWith('USER_')) {
+      return res.json({ status: 'success', data: { available: false, reason: 'reserved' } });
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        username: rawUsername,
+        NOT: { id: userId },
+      },
+    });
+
+    res.json({ status: 'success', data: { available: !existing } });
   } catch (error) {
     next(error);
   }
@@ -187,11 +227,20 @@ export const uploadAvatar = async (req: Request, res: Response, next: NextFuncti
       return next(new AppError('Avatar file is required', 400));
     }
 
+    let avatarMeta: any = undefined;
+    if (req.body?.meta) {
+      try {
+        avatarMeta = JSON.parse(req.body.meta);
+      } catch (error) {
+        return next(new AppError('Invalid avatar meta format', 400));
+      }
+    }
+
     const avatarUrl = await saveImage(req.file, 'avatar');
 
     const user = await prisma.user.update({
       where: { id: userId },
-      data: { avatarUrl },
+      data: { avatarUrl, ...(avatarMeta ? { avatarMeta } : {}) },
     });
 
     res.json({
@@ -205,6 +254,39 @@ export const uploadAvatar = async (req: Request, res: Response, next: NextFuncti
           balance: user.balance,
           role: user.role,
           avatar: user.avatarUrl,
+          avatarMeta: user.avatarMeta,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateAvatarMeta = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const { meta } = req.body;
+    if (!meta || typeof meta !== 'object') {
+      return next(new AppError('Avatar meta is required', 400));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { avatarMeta: meta },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: {
+          id: user.id,
+          username: user.username,
+          walletAddress: user.walletAddress,
+          balance: user.balance,
+          role: user.role,
+          avatar: user.avatarUrl,
+          avatarMeta: user.avatarMeta,
         },
       },
     });
@@ -225,6 +307,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
       ? wonItems.reduce((sum: number, item: any) => sum + Number(item.value || 0), 0)
       : 0;
 
+    const createdItems: any[] = [];
     await prisma.$transaction(async (tx) => {
       await tx.battle.create({
         data: {
@@ -239,7 +322,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
       if (Array.isArray(wonItems)) {
         for (const item of wonItems) {
           const rarity = item.rarity || getRarityByValue(Number(item.value || 0));
-          await tx.inventoryItem.create({
+          const created = await tx.inventoryItem.create({
             data: {
               userId,
               caseId: item.caseId ?? null,
@@ -252,6 +335,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
               status: 'ACTIVE',
             },
           });
+          createdItems.push(created);
 
           if (item.caseId) {
             const caseInfo = await tx.case.findUnique({
@@ -278,7 +362,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
       }
     });
 
-    res.json({ status: 'success' });
+    res.json({ status: 'success', data: { items: createdItems } });
   } catch (error) {
     next(error);
   }

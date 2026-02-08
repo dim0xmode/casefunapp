@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PrimaryButton } from './ui/PrimaryButton';
 
 interface TopUpModalProps {
   isOpen: boolean;
@@ -47,24 +48,17 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, onTopUp
             />
           </div>
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white text-xs uppercase tracking-widest"
-            >
+            <PrimaryButton variant="ghost" onClick={onClose} className="flex-1">
               Cancel
-            </button>
-            <button
+            </PrimaryButton>
+            <PrimaryButton
               type="submit"
               disabled={!isAdmin || !amount.trim() || Number(amount.replace(/,/g, '.')) <= 0}
-              className={`flex-1 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${
-                isAdmin
-                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-[1.02]'
-                  : 'bg-white/5 border border-white/10 text-gray-500'
-              }`}
+              variant={isAdmin ? 'primary' : 'secondary'}
+              className="flex-1"
             >
               {isAdmin ? 'Top up' : 'Admins only'}
-            </button>
+            </PrimaryButton>
           </div>
         </form>
       </div>

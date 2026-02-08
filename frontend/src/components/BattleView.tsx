@@ -3,6 +3,11 @@ import { Case, Item } from '../types';
 import { Swords, Bot, Trophy, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Sparkles, Trash2 } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
+import { SearchInput } from './ui/SearchInput';
+import { Pagination } from './ui/Pagination';
+import { ConfirmModal } from './ui/ConfirmModal';
+import { AdminActionButton } from './ui/AdminActionButton';
+import { CaseIcon } from './CaseIcon';
 
 const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Orion', 'Helix'];
 
@@ -42,6 +47,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const [currentBattleIsBot, setCurrentBattleIsBot] = useState(false);
   const [priceFilter, setPriceFilter] = useState('');
 
+  const isCaseExpired = (caseData: Case) => {
+    if (!caseData.openDurationHours || !caseData.createdAt) return false;
+    const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
+    return endAt <= Date.now();
+  };
+
   const totalCost = selectedCases.reduce((sum, c) => sum + c.price, 0);
   const canAffordBattle = balance >= totalCost;
   const battleShortfall = Math.max(0, totalCost - balance);
@@ -62,8 +73,13 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const ownBattles = filteredBattles.filter(battle => battle.host === userName);
   const otherBattles = filteredBattles.filter(battle => battle.host !== userName);
 
+  const activeCases = useMemo(
+    () => cases.filter((caseData) => !isCaseExpired(caseData)),
+    [cases]
+  );
+
   const buildMockBattle = (seed = Date.now()) => {
-    const pool = cases.length ? cases : [];
+    const pool = activeCases.length ? activeCases : [];
     if (!pool.length) return null;
     const count = Math.min(5, Math.max(2, Math.floor(Math.random() * 4) + 2));
     const battleCases = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
@@ -77,11 +93,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   };
 
   useEffect(() => {
-    if (!cases.length) return;
+    if (!activeCases.length) return;
     const initial = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx))
       .filter(Boolean) as { id: string; host: string; cases: Case[]; createdAt: number }[];
     setAvailableBattles(initial);
-  }, [cases]);
+  }, [activeCases]);
 
   const joinBattle = (battle: { id: string; host: string; cases: Case[] }) => {
     setSelectedCases(battle.cases);
@@ -120,7 +136,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     const tokenSearch = hasTokenFilter ? searchTrimmed.slice(1).toLowerCase() : '';
     const hasNameFilter = searchLower.length > 0 && !hasPriceFilter && !hasTokenFilter;
 
-    let base = cases;
+    let base = cases.filter((caseData) => !isCaseExpired(caseData));
 
     if (hasPriceFilter) {
       base = base.filter(c => c.price <= priceQuery);
@@ -337,13 +353,6 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     setGameState('SETUP');
   };
 
-  const renderCaseIcon = (value: string) => {
-    if (!value) return <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>;
-    if (value.startsWith('http')) {
-      return <img src={value} alt="token logo" className="w-8 h-8 object-contain" />;
-    }
-    return <span className="text-lg">{value}</span>;
-  };
 
   const getRemainingTime = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
@@ -360,21 +369,21 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     return (
       <div className="h-full flex flex-col">
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col items-center gap-4 mb-6">
             <h2 className="text-2xl font-bold flex items-center gap-2">
               <Swords className="text-web3-accent" /> Available Battles
-          </h2>
-            <button
-              onClick={() => setCreateBattleOpen(true)}
-              disabled={!isAdmin}
-              className={`px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs transition shadow-[0_0_18px_rgba(102,252,241,0.35)] ${
-                isAdmin
-                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                  : 'bg-white/5 border border-white/[0.12] text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              {isAdmin ? 'Create Battle' : 'Admins only'}
-            </button>
+            </h2>
+            <AdminActionButton
+              isAuthenticated={isAuthenticated}
+              isAdmin={isAdmin}
+              balance={balance}
+              cost={0}
+              onConnect={onOpenWalletConnect}
+              onTopUp={() => {}}
+              onAction={() => setCreateBattleOpen(true)}
+              readyLabel="Create Battle"
+              className="px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs shadow-[0_0_18px_rgba(102,252,241,0.35)]"
+            />
           </div>
           {isAuthenticated && !isAdmin && (
             <div className="mb-4 text-[10px] uppercase tracking-widest text-gray-500">
@@ -383,11 +392,10 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
           )}
 
           <div className="mb-4">
-            <input
+            <SearchInput
               value={priceFilter}
-              onChange={(e) => setPriceFilter(e.target.value)}
+              onChange={setPriceFilter}
               placeholder="Search by max price (e.g. 500)"
-              className="w-full md:w-[320px] px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] focus:outline-none focus:border-web3-accent/50 text-sm"
             />
           </div>
 
@@ -410,7 +418,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                       <div className="flex items-center gap-2 mb-3">
                         {battle.cases.slice(0, 4).map((caseData, idx) => (
                           <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                            {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                            <CaseIcon
+                              value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                              size="sm"
+                              meta={caseData.imageMeta}
+                            />
                           </div>
                         ))}
                         {battle.cases.length > 4 && (
@@ -426,41 +438,22 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                       </div>
 
-                      {(() => {
-                        const canAfford = balance >= battleCost;
-                        const shortfall = Math.max(0, battleCost - balance);
-                        return (
-                          <button
-                            onClick={
-                              !isAuthenticated
-                                ? onOpenWalletConnect
-                                : !isAdmin
-                                  ? undefined
-                                  : canAfford
-                                    ? () => joinBattle(battle)
-                                    : onOpenTopUp
-                            }
-                            disabled={isAuthenticated && !isAdmin}
-                            className={`w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition ${
-                              !isAuthenticated
-                                ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                                : isAdmin && canAfford
-                                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                                  : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
-                            }`}
-                          >
-                            {!isAuthenticated ? (
-                              <>Connect Wallet</>
-                            ) : !isAdmin ? (
-                              <>Admins only</>
-                            ) : canAfford ? (
-                              <>Join Battle <ChevronRight size={16} /></>
-                            ) : (
-                              <>Need {shortfall} ₮ more • Top up</>
-                            )}
-                          </button>
-                        );
-                      })()}
+                      <AdminActionButton
+                        isAuthenticated={isAuthenticated}
+                        isAdmin={isAdmin}
+                        balance={balance}
+                        cost={battleCost}
+                        onConnect={onOpenWalletConnect}
+                        onTopUp={onOpenTopUp}
+                        onAction={() => joinBattle(battle)}
+                        readyLabel={
+                          <>
+                            Join Battle <ChevronRight size={16} />
+                          </>
+                        }
+                        topUpLabel={(shortfall) => `Need ${Math.max(0, shortfall)} ₮ more • Top up`}
+                        className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                      />
                     </div>
                   );
                 })}
@@ -487,7 +480,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <div className="flex items-center gap-2 mb-3">
                     {battle.cases.slice(0, 4).map((caseData, idx) => (
                       <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                        {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                        <CaseIcon
+                          value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                          size="sm"
+                          meta={caseData.imageMeta}
+                        />
               </div>
             ))}
                     {battle.cases.length > 4 && (
@@ -503,35 +500,22 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                     <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                   </div>
 
-                  <button
-                    onClick={
-                      !isAuthenticated
-                        ? onOpenWalletConnect
-                        : !isAdmin
-                          ? undefined
-                          : canAfford
-                            ? () => joinBattle(battle)
-                            : onOpenTopUp
+                  <AdminActionButton
+                    isAuthenticated={isAuthenticated}
+                    isAdmin={isAdmin}
+                    balance={balance}
+                    cost={battleCost}
+                    onConnect={onOpenWalletConnect}
+                    onTopUp={onOpenTopUp}
+                    onAction={() => joinBattle(battle)}
+                    readyLabel={
+                      <>
+                        Join Battle <ChevronRight size={16} />
+                      </>
                     }
-                    disabled={isAuthenticated && !isAdmin}
-                    className={`w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition ${
-                      !isAuthenticated
-                        ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                        : isAdmin && canAfford
-                          ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                          : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
-                    }`}
-                  >
-                    {!isAuthenticated ? (
-                      <>Connect Wallet</>
-                    ) : !isAdmin ? (
-                      <>Admins only</>
-                    ) : canAfford ? (
-                      <>Join Battle <ChevronRight size={16} /></>
-                    ) : (
-                      <>Need {shortfall} ₮ more • Top up</>
-                    )}
-                  </button>
+                    topUpLabel={(shortfall) => `Need ${Math.max(0, shortfall)} ₮ more • Top up`}
+                    className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                  />
                 </div>
               );
             })}
@@ -555,37 +539,24 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                 </button>
               </div>
               {createConfirm && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 rounded-2xl">
-                  <div className="w-[420px] px-12 py-10 rounded-3xl bg-black/70 border border-white/[0.12] shadow-[0_25px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm text-center">
-                    <div className="text-xs uppercase tracking-widest text-gray-400 mb-2">Confirm</div>
-                    <div className="text-lg font-black text-white mb-6">{createTotalCost} ₮</div>
-                    <div className="flex items-center justify-center gap-3">
-                      <button
-                        onClick={() => setCreateConfirm(false)}
-                        className="px-5 py-2 rounded-2xl bg-white/5 border border-white/10 text-gray-400 hover:text-white text-xs uppercase tracking-widest"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleCreateBattle}
-                        className="px-7 py-2 rounded-2xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs hover:scale-105 transition"
-                      >
-                        Create
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <ConfirmModal
+                  title="Confirm"
+                  message={`${createTotalCost} ₮`}
+                  confirmLabel="Create"
+                  cancelLabel="Cancel"
+                  onConfirm={handleCreateBattle}
+                  onCancel={() => setCreateConfirm(false)}
+                />
               )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
                 <div className="lg:col-span-2 flex flex-col h-full min-h-0">
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-xs uppercase tracking-widest text-gray-500">Pick cases</div>
-                    <input
+                    <SearchInput
                       value={createSearchFilter}
-                      onChange={(e) => setCreateSearchFilter(sanitizeCreateSearch(e.target.value))}
+                      onChange={(value) => setCreateSearchFilter(sanitizeCreateSearch(value))}
                       placeholder="Search by name, token ($DOGE) or max price (500)"
-                      className="w-full md:w-[320px] px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] focus:outline-none focus:border-web3-accent/50 text-sm"
                     />
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
@@ -609,7 +580,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               )}
                               <div className="flex-1 flex items-center justify-center">
                                 <div className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                                  {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                                  <CaseIcon
+                                    value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                                    size="sm"
+                                    meta={caseData.imageMeta}
+                                  />
                                 </div>
                               </div>
                               <div className="text-[10px] text-gray-400 font-bold">
@@ -642,7 +617,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               )}
                               <div className="flex-1 flex items-center justify-center">
                                 <div className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                                  {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                                  <CaseIcon
+                                    value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                                    size="sm"
+                                    meta={caseData.imageMeta}
+                                  />
                                 </div>
                               </div>
                               <div className="text-[10px] text-gray-400 font-bold">
@@ -655,25 +634,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center justify-center gap-3 mt-auto pt-3">
-                    <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                      Page {createCasesPage + 1} / {createCasesTotalPages}
-                    </span>
-                    <button
-                      onClick={() => setCreateCasesPage((prev) => Math.max(0, prev - 1))}
-                      disabled={createCasesPage === 0}
-                      className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Prev
-                    </button>
-                    <button
-                      onClick={() => setCreateCasesPage((prev) => Math.min(createCasesTotalPages - 1, prev + 1))}
-                      disabled={createCasesPage >= createCasesTotalPages - 1}
-                      className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Next
-                    </button>
-                  </div>
+                  <Pagination
+                    className="mt-auto pt-3"
+                    currentPage={createCasesPage}
+                    totalPages={createCasesTotalPages}
+                    onPageChange={setCreateCasesPage}
+                  />
                 </div>
 
                 <div className="flex flex-col h-full min-h-0">
@@ -692,7 +658,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         </button>
                         <div className="flex items-center w-full">
                           <div className="w-10 h-10 rounded-md border border-white/[0.08] bg-black/40 flex items-center justify-center">
-                            {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                            <CaseIcon
+                              value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                              size="sm"
+                              meta={caseData.imageMeta}
+                            />
                           </div>
                           <div className="flex-1 flex flex-col items-center justify-center leading-none">
                             <div className="text-[9px] text-gray-400 font-bold">
@@ -718,19 +688,18 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                     <div className="text-lg font-black text-white mb-4">
                       {createTotalCost} ₮
             </div>
-                    <button
-                      onClick={handleCreateBattle}
-                      disabled={createSelectedCases.length === 0 || (isAuthenticated && !isAdmin)}
-                      className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-xs transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                        !isAuthenticated
-                          ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                          : isAdmin
-                            ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
-                            : 'bg-white/5 border border-white/[0.12] text-gray-500'
-                      }`}
-                    >
-                      {!isAuthenticated ? 'Connect Wallet' : !isAdmin ? 'Admins only' : 'Create Battle'}
-                    </button>
+                    <AdminActionButton
+                      isAuthenticated={isAuthenticated}
+                      isAdmin={isAdmin}
+                      balance={balance}
+                      cost={0}
+                      onConnect={onOpenWalletConnect}
+                      onTopUp={() => {}}
+                      onAction={handleCreateBattle}
+                      readyLabel="Create Battle"
+                      disabled={createSelectedCases.length === 0}
+                      className="w-full py-3 rounded-xl font-black uppercase tracking-widest text-xs"
+                    />
           </div>
         </div>
               </div>
@@ -836,7 +805,11 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                     }`}
                   >
                     <span className={isActive ? 'drop-shadow-[0_0_10px_rgba(102,252,241,0.9)]' : ''}>
-                      {renderCaseIcon(caseData.image || caseData.possibleDrops[0]?.image || '')}
+                      <CaseIcon
+                        value={caseData.image || caseData.possibleDrops[0]?.image || ''}
+                        size="sm"
+                        meta={caseData.imageMeta}
+                      />
                     </span>
                   </div>
                 );

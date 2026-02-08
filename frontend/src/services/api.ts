@@ -100,7 +100,7 @@ class ApiClient {
   }
 
   async recordBattle(result: string, cost: number, wonItems: any[]) {
-    return this.request('/user/battles/record', {
+    return this.request<{ items: any[] }>('/user/battles/record', {
       method: 'POST',
       body: JSON.stringify({ result, cost, wonItems }),
     });
@@ -120,18 +120,35 @@ class ApiClient {
     });
   }
 
-  async uploadAvatar(file: File) {
+  async uploadAvatar(file: File, meta?: Record<string, any>) {
     const form = new FormData();
     form.append('file', file);
+    if (meta) {
+      form.append('meta', JSON.stringify(meta));
+    }
     return this.request<{ avatarUrl: string; user: any }>('/user/avatar', {
       method: 'POST',
       body: form,
     });
   }
 
+  async updateAvatarMeta(meta: Record<string, any>) {
+    return this.request<{ user: any }>('/user/avatar-meta', {
+      method: 'PATCH',
+      body: JSON.stringify({ meta }),
+    });
+  }
+
+  async checkUsernameAvailability(username: string) {
+    return this.request<{ available: boolean; reason?: string }>(
+      `/user/username/check?username=${encodeURIComponent(username)}`
+    );
+  }
+
   // Case endpoints
-  async getCases() {
-    return this.request<{ cases: any[] }>('/cases');
+  async getCases(includeStats = false) {
+    const query = includeStats ? '?includeStats=1' : '';
+    return this.request<{ cases: any[] }>(`/cases${query}`);
   }
 
   async getCaseById(id: string) {
@@ -139,7 +156,7 @@ class ApiClient {
   }
 
   async createCase(caseData: any) {
-    return this.request<{ case: any }>('/cases', {
+    return this.request<{ case: any; balance?: number }>('/cases', {
       method: 'POST',
       body: JSON.stringify(caseData),
     });

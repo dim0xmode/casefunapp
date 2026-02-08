@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import { SearchInput } from './ui/SearchInput';
+import { Pagination } from './ui/Pagination';
+import { StatCard } from './ui/StatCard';
 
 type TabKey =
   | 'overview'
@@ -30,7 +33,13 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const IMMUTABLE_ADMIN_WALLET = '0xc459241D1AC02250dE56b8B7165ebEDF59236524';
 
-export const AdminView: React.FC = () => {
+type AdminViewProps = {
+  currentUser?: { walletAddress?: string | null };
+};
+
+export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
+  const canEditRoles =
+    (currentUser?.walletAddress || '').toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase();
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +92,12 @@ export const AdminView: React.FC = () => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleString();
+  };
+
+  const shortWallet = (value?: string) => {
+    if (!value) return '-';
+    if (value.length <= 12) return value;
+    return `${value.slice(0, 6)}…${value.slice(-4)}`;
   };
 
   const sortList = (items: any[], key: string, dir: 'asc' | 'desc') => {
@@ -321,11 +336,11 @@ export const AdminView: React.FC = () => {
             <div className="text-xs uppercase tracking-widest text-gray-500">{activeTab}</div>
             <div className="flex items-center gap-2">
               {(activeTab === 'users' || activeTab === 'cases' || activeTab === 'battles' || activeTab === 'inventory' || activeTab === 'transactions') && (
-                <input
+                <SearchInput
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={setSearch}
                   placeholder="Search..."
-                  className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  className="md:w-auto text-xs"
                 />
               )}
               {activeTab === 'users' && (
@@ -504,41 +519,69 @@ export const AdminView: React.FC = () => {
           {error && <div className="text-red-400 text-sm">{error}</div>}
 
           {!loading && !error && activeTab === 'overview' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                {[
-                  { label: 'Users', value: overview?.stats?.users },
-                  { label: 'Cases', value: overview?.stats?.cases },
-                  { label: 'Battles', value: overview?.stats?.battles },
-                  { label: 'Inventory', value: overview?.stats?.inventory },
-                  { label: 'Transactions', value: overview?.stats?.transactions },
-                  { label: 'RTU Ledgers', value: overview?.stats?.rtuLedgers },
-                ].map((item) => (
-                  <div key={item.label} className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">{item.label}</div>
-                    <div className="text-lg font-black text-white">{item.value ?? 0}</div>
-                  </div>
-                ))}
+            <div className="space-y-6">
+              <div>
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Key Metrics</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {[
+                    { label: 'Users', value: overview?.stats?.users ?? 0 },
+                    { label: 'Cases', value: overview?.stats?.cases ?? 0 },
+                    { label: 'Battles', value: overview?.stats?.battles ?? 0 },
+                    { label: 'Inventory', value: overview?.stats?.inventory ?? 0 },
+                    { label: 'Transactions', value: overview?.stats?.transactions ?? 0 },
+                    { label: 'RTU Ledgers', value: overview?.stats?.rtuLedgers ?? 0 },
+                  ].map((item) => (
+                    <StatCard key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
               </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                  <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Top Spenders</div>
+                  {(overview?.topUsersBySpend ?? []).length === 0 ? (
+                    <div className="text-xs text-gray-500">No data yet.</div>
+                  ) : (
+                    (overview?.topUsersBySpend ?? []).map((user: any) => (
+                      <div key={user.userId} className="flex items-center justify-between text-xs text-gray-400 py-1 border-b border-white/[0.04]">
+                        <span className="truncate max-w-[160px]">{user.username}</span>
+                        <span className="text-gray-500">{shortWallet(user.walletAddress)}</span>
+                        <span className="text-white font-bold">{Number(user.spent || 0).toFixed(2)} ₮</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
                   <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Recent Transactions</div>
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 pb-2">
+                    <span>Type</span>
+                    <span>User</span>
+                    <span>Amount</span>
+                  </div>
                   {(overview?.recentTransactions ?? []).map((tx: any) => (
                     <div key={tx.id} className="flex items-center justify-between text-xs text-gray-400 py-1 border-b border-white/[0.04]">
                       <span>{tx.type}</span>
+                      <span className="truncate max-w-[120px]">{tx.user?.username || shortWallet(tx.user?.walletAddress)}</span>
                       <span>{tx.amount} {tx.currency}</span>
                     </div>
                   ))}
                 </div>
-                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
-                  <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Recent Openings</div>
-                  {(overview?.recentOpenings ?? []).map((open: any) => (
-                    <div key={open.id} className="flex items-center justify-between text-xs text-gray-400 py-1 border-b border-white/[0.04]">
-                      <span>{open.caseId}</span>
-                      <span>{open.wonValue}</span>
-                    </div>
-                  ))}
+              </div>
+
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Recent Openings</div>
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 pb-2">
+                  <span>Case</span>
+                  <span>User</span>
+                  <span>Won</span>
                 </div>
+                {(overview?.recentOpenings ?? []).map((open: any) => (
+                  <div key={open.id} className="flex items-center justify-between text-xs text-gray-400 py-1 border-b border-white/[0.04]">
+                    <span>{open.case?.name || open.caseId}</span>
+                    <span className="truncate max-w-[140px]">{open.user?.username || shortWallet(open.user?.walletAddress)}</span>
+                    <span>{open.wonValue} ${open.case?.tokenTicker || open.case?.currency || ''}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -561,7 +604,7 @@ export const AdminView: React.FC = () => {
                     <div>
                       <select
                         value={user.role}
-                        disabled={user.walletAddress?.toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase()}
+                        disabled={!canEditRoles || user.walletAddress?.toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase()}
                         onChange={async (e) => {
                           setSaving(user.id);
                           await api.updateAdminUserRole(user.id, e.target.value);
@@ -602,30 +645,11 @@ export const AdminView: React.FC = () => {
                     </div>
                   </div>
                 ))}
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>
-                    Page {pages.users + 1} / {totalPages(applyUserFilters)}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setPages((prev) => ({ ...prev, users: Math.max(0, prev.users - 1) }))}
-                      className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                    >
-                      Prev
-                    </button>
-                    <button
-                      onClick={() =>
-                        setPages((prev) => ({
-                          ...prev,
-                          users: Math.min(totalPages(applyUserFilters) - 1, prev.users + 1),
-                        }))
-                      }
-                      className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
+                <Pagination
+                  currentPage={pages.users}
+                  totalPages={totalPages(applyUserFilters)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, users: next }))}
+                />
               </div>
               <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3 min-h-[200px] min-w-0 overflow-hidden">
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">User Detail</div>
@@ -709,30 +733,11 @@ export const AdminView: React.FC = () => {
                     </div>
                   );
                 })}
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>
-                    Page {pages.cases + 1} / {totalPages(applyCaseFilters)}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setPages((prev) => ({ ...prev, cases: Math.max(0, prev.cases - 1) }))}
-                      className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                    >
-                      Prev
-                    </button>
-                    <button
-                      onClick={() =>
-                        setPages((prev) => ({
-                          ...prev,
-                          cases: Math.min(totalPages(applyCaseFilters) - 1, prev.cases + 1),
-                        }))
-                      }
-                      className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
+                <Pagination
+                  currentPage={pages.cases}
+                  totalPages={totalPages(applyCaseFilters)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, cases: next }))}
+                />
               </div>
               <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3 min-h-[200px] min-w-0 overflow-hidden">
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Case Detail</div>
@@ -756,30 +761,11 @@ export const AdminView: React.FC = () => {
                   <div>{formatDate(battle.timestamp)}</div>
                 </div>
               ))}
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {pages.battles + 1} / {totalPages(sortedBattles)}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPages((prev) => ({ ...prev, battles: Math.max(0, prev.battles - 1) }))}
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    onClick={() =>
-                      setPages((prev) => ({
-                        ...prev,
-                        battles: Math.min(totalPages(sortedBattles) - 1, prev.battles + 1),
-                      }))
-                    }
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                currentPage={pages.battles}
+                totalPages={totalPages(sortedBattles)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, battles: next }))}
+              />
             </div>
           )}
 
@@ -795,30 +781,11 @@ export const AdminView: React.FC = () => {
                   <div>{formatDate(item.createdAt)}</div>
                 </div>
               ))}
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {pages.inventory + 1} / {totalPages(sortedInventory)}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPages((prev) => ({ ...prev, inventory: Math.max(0, prev.inventory - 1) }))}
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    onClick={() =>
-                      setPages((prev) => ({
-                        ...prev,
-                        inventory: Math.min(totalPages(sortedInventory) - 1, prev.inventory + 1),
-                      }))
-                    }
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                currentPage={pages.inventory}
+                totalPages={totalPages(sortedInventory)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, inventory: next }))}
+              />
             </div>
           )}
 
@@ -834,30 +801,11 @@ export const AdminView: React.FC = () => {
                   <div>{formatDate(tx.timestamp)}</div>
                 </div>
               ))}
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {pages.transactions + 1} / {totalPages(sortedTransactions)}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPages((prev) => ({ ...prev, transactions: Math.max(0, prev.transactions - 1) }))}
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    onClick={() =>
-                      setPages((prev) => ({
-                        ...prev,
-                        transactions: Math.min(totalPages(sortedTransactions) - 1, prev.transactions + 1),
-                      }))
-                    }
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                currentPage={pages.transactions}
+                totalPages={totalPages(sortedTransactions)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, transactions: next }))}
+              />
             </div>
           )}
 
@@ -946,30 +894,11 @@ export const AdminView: React.FC = () => {
                     </div>
                     );
                   })}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>
-                      Page {pages.rtuLedgers + 1} / {totalPages(rtuLedgers)}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPages((prev) => ({ ...prev, rtuLedgers: Math.max(0, prev.rtuLedgers - 1) }))}
-                        className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() =>
-                          setPages((prev) => ({
-                            ...prev,
-                            rtuLedgers: Math.min(totalPages(rtuLedgers) - 1, prev.rtuLedgers + 1),
-                          }))
-                        }
-                        className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
+                  <Pagination
+                    currentPage={pages.rtuLedgers}
+                    totalPages={totalPages(rtuLedgers)}
+                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuLedgers: next }))}
+                  />
                 </div>
               </div>
               <div>
@@ -985,30 +914,11 @@ export const AdminView: React.FC = () => {
                       <div>{formatDate(event.createdAt)}</div>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>
-                      Page {pages.rtuEvents + 1} / {totalPages(rtuEvents)}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setPages((prev) => ({ ...prev, rtuEvents: Math.max(0, prev.rtuEvents - 1) }))}
-                        className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() =>
-                          setPages((prev) => ({
-                            ...prev,
-                            rtuEvents: Math.min(totalPages(rtuEvents) - 1, prev.rtuEvents + 1),
-                          }))
-                        }
-                        className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
+                  <Pagination
+                    currentPage={pages.rtuEvents}
+                    totalPages={totalPages(rtuEvents)}
+                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuEvents: next }))}
+                  />
                 </div>
               </div>
             </div>
@@ -1090,30 +1000,11 @@ export const AdminView: React.FC = () => {
                   <div>{formatDate(log.createdAt)}</div>
                 </div>
               ))}
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Page {pages.audit + 1} / {totalPages(audit)}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPages((prev) => ({ ...prev, audit: Math.max(0, prev.audit - 1) }))}
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    onClick={() =>
-                      setPages((prev) => ({
-                        ...prev,
-                        audit: Math.min(totalPages(audit) - 1, prev.audit + 1),
-                      }))
-                    }
-                    className="px-2 py-1 rounded bg-white/5 border border-white/10"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                currentPage={pages.audit}
+                totalPages={totalPages(audit)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
+              />
             </div>
           )}
 

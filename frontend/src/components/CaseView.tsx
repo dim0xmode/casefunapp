@@ -16,9 +16,13 @@ interface CaseViewProps {
 
 export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, onOpenTopUp, userName, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [selectedMode, setSelectedMode] = useState<'open' | 'stats'>('open');
+  const [listViewMode, setListViewMode] = useState<'active' | 'inactive'>('active');
 
-  const handleSelectCase = (caseData: Case) => {
+  const handleSelectCase = (caseData: Case, mode: 'open' | 'stats' = 'open') => {
     setSelectedCase(caseData);
+    setSelectedMode(mode);
+    setListViewMode(mode === 'stats' ? 'inactive' : 'active');
   };
 
   const handleBackToList = () => {
@@ -37,9 +41,16 @@ export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, 
           isAuthenticated={isAuthenticated}
           onOpenWalletConnect={onOpenWalletConnect}
           isAdmin={isAdmin}
+          viewMode={selectedMode}
         />
       ) : (
-        <CaseListView cases={cases} onSelectCase={handleSelectCase} userName={userName} />
+        <CaseListView
+          cases={cases}
+          onSelectCase={handleSelectCase}
+          userName={userName}
+          viewMode={listViewMode}
+          onViewModeChange={setListViewMode}
+        />
       )}
     </>
   );

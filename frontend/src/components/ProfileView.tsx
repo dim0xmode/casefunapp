@@ -1,7 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { User, Item } from '../types';
+import { User, Item, Case, ImageMeta } from '../types';
 import { Copy, ArrowUp, ArrowDown, Swords, Package, Coins, User as UserIcon, Settings } from 'lucide-react';
 import { ItemCard } from './ItemCard';
+import { SearchInput } from './ui/SearchInput';
+import { Pagination } from './ui/Pagination';
+import { EmptyState } from './ui/EmptyState';
+import { Tabs } from './ui/Tabs';
+import { StatCard } from './ui/StatCard';
+import { ItemGrid } from './ui/ItemGrid';
+import { ImageAdjustModal } from './ui/ImageAdjustModal';
+import { ImageWithMeta } from './ui/ImageWithMeta';
+import { usePagination } from '../hooks/usePagination';
+import { useSearchFilter } from '../hooks/useSearchFilter';
 
 const formatWalletAddress = (address: string): string => {
   if (!address) return '';
@@ -24,9 +34,11 @@ interface ProfileViewProps {
   burntItems: Item[];
   battleHistory: BattleRecord[];
   balance: number;
+  cases: Case[];
   isEditable?: boolean;
   onUpdateUsername?: (username: string) => Promise<void> | void;
-  onUploadAvatar?: (file: File) => Promise<string | void> | string | void;
+  onUploadAvatar?: (file: File, meta?: ImageMeta) => Promise<string | void> | string | void;
+  onUpdateAvatarMeta?: (meta: ImageMeta) => Promise<void> | void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -35,11 +47,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   burntItems,
   battleHistory,
   balance,
+  cases,
   isEditable = false,
   onUpdateUsername,
   onUploadAvatar,
+  onUpdateAvatarMeta,
 }) => {
-  const [tab, setTab] = useState<'inventory' | 'burnt' | 'battles'>('inventory');
+  const [tab, setTab] = useState<'inventory' | 'burnt' | 'battles' | 'expired'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
   const [portfolioSearch, setPortfolioSearch] = useState('');
@@ -53,14 +67,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [avatarMeta, setAvatarMeta] = useState<ImageMeta>(
+    user?.avatarMeta || { fit: 'cover', scale: 1, x: 0, y: 0 }
+  );
+  const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;
 
+  const casesById = useMemo(() => {
+    return new Map((cases || []).map((caseData) => [caseData.id, caseData]));
+  }, [cases]);
+
+  const isCaseExpired = (caseId?: string) => {
+    if (!caseId) return false;
+    const caseData = casesById.get(caseId);
+    if (!caseData) return true;
+    if (!caseData.openDurationHours || !caseData.createdAt) return false;
+    const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
+    return endAt <= Date.now();
+  };
+
+  const activeInventory = useMemo(() => {
+    if (!inventory || !Array.isArray(inventory)) return [];
+    return inventory.filter((item) => !isCaseExpired(item.caseId));
+  }, [inventory, casesById]);
+
   const sortedInventory = useMemo(() => {
     try {
-      if (!inventory || !Array.isArray(inventory)) return [];
-      return [...inventory].sort((a, b) => {
+      if (!activeInventory || !Array.isArray(activeInventory)) return [];
+      return [...activeInventory].sort((a, b) => {
         const aValue = Number(a?.value) || 0;
         const bValue = Number(b?.value) || 0;
         return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
@@ -69,7 +105,46 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       console.error('Error sorting inventory:', error);
       return [];
     }
-  }, [inventory, sortOrder]);
+  }, [activeInventory, sortOrder]);
+
+  const groupedExpired = useMemo(() => {
+    const groups = new Map<string, Item & { count: number }>();
+    if (!inventory || !Array.isArray(inventory)) return [];
+    for (const item of inventory) {
+      if (!item || !isCaseExpired(item.caseId)) continue;
+      const currencyKey = item.currency || 'UNKNOWN';
+      const existing = groups.get(currencyKey);
+      if (!existing) {
+        groups.set(currencyKey, {
+          ...item,
+          id: `expired-${currencyKey}`,
+          name: `${Number(item.value || 0)} ${currencyKey}`,
+          value: Number(item.value || 0),
+          count: 1,
+        });
+      } else {
+        const nextValue = Number(existing.value || 0) + Number(item.value || 0);
+        groups.set(currencyKey, {
+          ...existing,
+          value: nextValue,
+          name: `${nextValue} ${currencyKey}`,
+          count: existing.count + 1,
+        });
+      }
+    }
+    const items = Array.from(groups.values());
+    return items.sort((a, b) => {
+      const aValue = Number(a?.value) || 0;
+      const bValue = Number(b?.value) || 0;
+      return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+    });
+  }, [inventory, sortOrder, casesById]);
+  const {
+    page: expiredPage,
+    setPage: setExpiredPage,
+    totalPages: expiredTotalPages,
+    pagedItems: pagedExpired,
+  } = usePagination(groupedExpired, ITEMS_PER_PAGE);
 
   const inventoryTotalPages = useMemo(() => {
     try {
@@ -152,6 +227,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [battleTotalPages, battlePage]);
 
+
   React.useEffect(() => {
     setEditName(user?.username || '');
   }, [user?.username]);
@@ -171,6 +247,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [user?.avatar]);
 
+  React.useEffect(() => {
+    if (user?.avatarMeta) {
+      setAvatarMeta(user.avatarMeta);
+    }
+  }, [user?.avatarMeta]);
+
   const handleSaveName = async () => {
     if (!onUpdateUsername) return;
     const nextName = (editName || '').trim().toUpperCase();
@@ -178,12 +260,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setNameError('Enter a username.');
       return;
     }
-    if (!/^[A-Z0-9 ]{3,20}$/.test(nextName)) {
-      setNameError('Use 3-20 chars (A-Z, 0-9, spaces).');
+    if (!/^[A-Z0-9_-]{3,20}$/.test(nextName)) {
+      setNameError('Use 3-20 chars (A-Z, 0-9, _ or -).');
       return;
     }
-    if (/^\d+$/.test(nextName)) {
-      setNameError('Username cannot be only numbers.');
+    if (nextName.startsWith('USER_')) {
+      setNameError('Username is reserved.');
       return;
     }
     setNameError(null);
@@ -197,6 +279,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  const handleSaveAvatarMeta = async (nextMeta: ImageMeta) => {
+    if (!onUpdateAvatarMeta) return;
+    setAvatarError(null);
+    try {
+      await onUpdateAvatarMeta(nextMeta);
+    } catch (error) {
+      setAvatarError('Failed to save avatar display.');
+    }
+  };
+
   const handleAvatarChange = async (file?: File | null) => {
     if (!file || !onUploadAvatar) return;
     setAvatarError(null);
@@ -206,11 +298,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
     const previewUrl = URL.createObjectURL(file);
     setAvatarPreview(previewUrl);
+    const initialMeta: ImageMeta = { fit: 'cover', scale: 1, x: 0, y: 0 };
+    setAvatarMeta(initialMeta);
     setIsUploadingAvatar(true);
     try {
-      const nextUrl = await onUploadAvatar(file);
+      const nextUrl = await onUploadAvatar(file, initialMeta);
       if (typeof nextUrl === 'string' && nextUrl) {
         setAvatarPreview(nextUrl);
+        setIsAvatarAdjustOpen(true);
       }
     } catch (error) {
       setAvatarError('Failed to upload avatar.');
@@ -252,29 +347,34 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [inventory]);
 
-  const portfolioEntries = useMemo(() => {
+  const portfolioBaseEntries = useMemo(() => {
     try {
       if (!platformCurrencies || !Array.isArray(platformCurrencies)) return [];
-      const entries = platformCurrencies.map((currency) => ({
+      return platformCurrencies.map((currency) => ({
         currency: String(currency || ''),
         total: Number(userHoldings[currency]) || 0,
       }));
-      const search = (portfolioSearch || '').trim().toLowerCase();
-      const filtered = search
-        ? entries.filter(entry => entry.currency.toLowerCase().includes(search))
-        : entries;
-      const sorted = [...filtered].sort((a, b) => {
-        if (portfolioSort === 'name') {
-          return a.currency.localeCompare(b.currency);
-        }
-        return b.total - a.total;
-      });
-      return sorted;
     } catch (error) {
       console.error('Error processing portfolio entries:', error);
       return [];
     }
-  }, [platformCurrencies, userHoldings, portfolioSort, portfolioSearch]);
+  }, [platformCurrencies, userHoldings]);
+
+  const filteredPortfolioEntries = useSearchFilter(
+    portfolioBaseEntries,
+    portfolioSearch,
+    (entry, query) => entry.currency.toLowerCase().includes(query)
+  );
+
+  const portfolioEntries = useMemo(() => {
+    const sorted = [...filteredPortfolioEntries].sort((a, b) => {
+      if (portfolioSort === 'name') {
+        return a.currency.localeCompare(b.currency);
+      }
+      return b.total - a.total;
+    });
+    return sorted;
+  }, [filteredPortfolioEntries, portfolioSort]);
 
   if (!user) {
     return (
@@ -306,7 +406,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="absolute inset-0 bg-web3-accent/20 blur-xl rounded-full"></div>
               <div className="w-32 h-32 rounded-full bg-gray-800 border-4 border-web3-accent flex items-center justify-center relative z-10 overflow-hidden">
                 {user?.avatar ? (
-                  <img src={user.avatar} alt="avatar" className="w-full h-full object-cover" />
+                  <ImageWithMeta src={user.avatar} meta={user.avatarMeta} className="w-full h-full" />
                 ) : (
                   <UserIcon size={64} className="text-web3-accent" />
                 )}
@@ -336,14 +436,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="w-full h-[1px] bg-white/5 my-6"></div>
 
             <div className="grid grid-cols-2 gap-4 w-full">
-              <div className="bg-black/25 backdrop-blur-xl p-4 rounded-xl border border-white/[0.12]">
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">Cases Opened</div>
-                <div className="text-2xl font-black text-white">{user?.stats?.casesOpened || 0}</div>
-              </div>
-              <div className="bg-black/25 backdrop-blur-xl p-4 rounded-xl border border-white/[0.12]">
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">Win Rate</div>
-                <div className={`text-2xl font-black ${parseFloat(successRate) > 50 ? 'text-web3-success' : 'text-gray-400'}`}>{successRate}%</div>
-              </div>
+              <StatCard label="Cases Opened" value={user?.stats?.casesOpened || 0} />
+              <StatCard
+                label="Win Rate"
+                value={`${successRate}%`}
+                valueClassName={`text-2xl font-black ${parseFloat(successRate) > 50 ? 'text-web3-success' : 'text-gray-400'}`}
+              />
             </div>
           </div>
 
@@ -378,11 +476,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
 
             <div className="mb-3">
-              <input
+              <SearchInput
                 value={portfolioSearch}
-                onChange={(e) => setPortfolioSearch(e.target.value)}
+                onChange={setPortfolioSearch}
                 placeholder="Search token"
-                className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] focus:outline-none focus:border-web3-accent/50 text-sm"
+                className="md:w-full"
               />
             </div>
 
@@ -405,28 +503,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         {/* Right: Tabs */}
         <div className="lg:col-span-8 flex flex-col self-stretch">
-          <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-1">
-            {[
-              { id: 'inventory', label: 'Items' },
-              { id: 'burnt', label: 'Burnt' },
-              { id: 'battles', label: 'Battles' },
-            ].map(t => (
-              <button 
-                key={t.id}
-                onClick={() => setTab(t.id as any)}
-                className={`px-6 py-3 text-xs font-bold uppercase tracking-[0.1em] rounded-t-lg border-t border-x ${
-                  tab === t.id
-                    ? 'bg-web3-card text-white border-gray-700'
-                    : 'text-gray-400 hover:text-gray-200 border-transparent'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-            
+          <div className="flex items-center gap-2 mb-6">
+            <Tabs
+              className="flex-1"
+              tabs={[
+                { id: 'inventory', label: 'Items' },
+                { id: 'expired', label: 'Expired' },
+                { id: 'burnt', label: 'Burnt' },
+                { id: 'battles', label: 'Battles' },
+              ]}
+              activeId={tab}
+              onChange={(id) => setTab(id as any)}
+            />
             {tab === 'inventory' && (
               <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
                 Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+              </button>
+            )}
+            {tab === 'expired' && (
+              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+                Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
               </button>
             )}
           </div>
@@ -436,37 +532,51 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {tab === 'inventory' && (
               <div className="flex flex-col h-full min-h-0">
                 {(!sortedInventory || sortedInventory.length === 0) ? (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[810px] text-gray-600 rounded-xl">
-                    <Package size={48} className="mb-4 opacity-20"/>
-                    <p className="text-sm font-mono uppercase">Inventory is empty</p>
-                  </div>
+                  <EmptyState
+                    icon={<Package size={48} />}
+                    message="Inventory is empty"
+                    className="min-h-[810px] rounded-xl"
+                  />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 auto-rows-max">
+                    <ItemGrid className="auto-rows-max gap-3">
                       {pagedInventory.map((item, index) => {
                         if (!item || !item.id) return null;
                         return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" />;
                       })}
-                    </div>
-                    <div className="flex items-center justify-center gap-3 mt-2.5 pb-2.5 flex-shrink-0">
-                      <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                        Page {inventoryPage + 1} / {inventoryTotalPages}
-                      </span>
-                      <button
-                        onClick={() => setInventoryPage((prev) => Math.max(0, prev - 1))}
-                        disabled={inventoryPage === 0}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setInventoryPage((prev) => Math.min(inventoryTotalPages - 1, prev + 1))}
-                        disabled={inventoryPage >= inventoryTotalPages - 1}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    </ItemGrid>
+                    <Pagination
+                      className="mt-2.5 pb-2.5 flex-shrink-0"
+                      currentPage={inventoryPage}
+                      totalPages={inventoryTotalPages}
+                      onPageChange={setInventoryPage}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'expired' && (
+              <div className="flex flex-col h-full min-h-0">
+                {groupedExpired.length === 0 ? (
+                  <EmptyState
+                    icon={<Package size={48} />}
+                    message="No expired tokens"
+                    className="min-h-[810px] rounded-xl"
+                  />
+                ) : (
+                  <div className="flex flex-col h-full justify-between">
+                    <ItemGrid className="auto-rows-max gap-3">
+                      {pagedExpired.map((item, index) => (
+                        <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />
+                      ))}
+                    </ItemGrid>
+                    <Pagination
+                      className="mt-2.5 pb-2.5 flex-shrink-0"
+                      currentPage={expiredPage}
+                      totalPages={expiredTotalPages}
+                      onPageChange={setExpiredPage}
+                    />
                   </div>
                 )}
               </div>
@@ -476,37 +586,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {tab === 'burnt' && (
               <div className="flex flex-col h-full min-h-0">
                 {(!burntItems || burntItems.length === 0) ? (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[810px] text-gray-600 rounded-xl">
-                    <Package size={48} className="mb-4 opacity-20"/>
-                    <p className="text-sm font-mono uppercase">No burnt items</p>
-                  </div>
+                  <EmptyState
+                    icon={<Package size={48} />}
+                    message="No burnt items"
+                    className="min-h-[810px] rounded-xl"
+                  />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 auto-rows-max">
+                    <ItemGrid className="auto-rows-max gap-3">
                       {pagedBurnt.map((item, index) => {
                         if (!item || !item.id) return null;
                         return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" status="burnt" />;
                       })}
-                    </div>
-                    <div className="flex items-center justify-center gap-3 mt-2.5 pb-2.5 flex-shrink-0">
-                      <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                        Page {burntPage + 1} / {burntTotalPages}
-                      </span>
-                      <button
-                        onClick={() => setBurntPage((prev) => Math.max(0, prev - 1))}
-                        disabled={burntPage === 0}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setBurntPage((prev) => Math.min(burntTotalPages - 1, prev + 1))}
-                        disabled={burntPage >= burntTotalPages - 1}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    </ItemGrid>
+                    <Pagination
+                      className="mt-2.5 pb-2.5 flex-shrink-0"
+                      currentPage={burntPage}
+                      totalPages={burntTotalPages}
+                      onPageChange={setBurntPage}
+                    />
                   </div>
                 )}
               </div>
@@ -516,10 +614,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {tab === 'battles' && (
               <div className="flex flex-col h-full min-h-0">
                 {(!battleHistory || battleHistory.length === 0) ? (
-                  <div className="flex flex-col items-center justify-center h-full min-h-[810px] text-gray-600 rounded-xl">
-                    <Swords size={48} className="mb-4 opacity-20"/>
-                    <p className="text-sm font-mono uppercase">No combat history</p>
-                  </div>
+                  <EmptyState
+                    icon={<Swords size={48} />}
+                    message="No combat history"
+                    className="min-h-[810px] rounded-xl"
+                  />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
                     <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0">
@@ -571,25 +670,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         }
                       })}
                     </div>
-                    <div className="flex items-center justify-center gap-3 mt-2.5 pb-2.5 flex-shrink-0">
-                      <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                        Page {battlePage + 1} / {battleTotalPages}
-                      </span>
-                      <button
-                        onClick={() => setBattlePage((prev) => Math.max(0, prev - 1))}
-                        disabled={battlePage === 0}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        onClick={() => setBattlePage((prev) => Math.min(battleTotalPages - 1, prev + 1))}
-                        disabled={battlePage >= battleTotalPages - 1}
-                        className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs uppercase tracking-widest text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    <Pagination
+                      className="mt-2.5 pb-2.5 flex-shrink-0"
+                      currentPage={battlePage}
+                      totalPages={battleTotalPages}
+                      onPageChange={setBattlePage}
+                    />
                   </div>
                 )}
               </div>
@@ -609,7 +695,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-black/40 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition">
                 <div className="w-10 h-10 rounded-full bg-gray-800 border border-white/[0.12] overflow-hidden flex items-center justify-center">
                   {avatarPreview || user?.avatar ? (
-                    <img src={avatarPreview || user.avatar} alt="avatar" className="w-full h-full object-cover" />
+                    <ImageWithMeta
+                      src={avatarPreview || user.avatar || ''}
+                      meta={avatarMeta}
+                      className="w-full h-full"
+                    />
                   ) : (
                     <UserIcon size={18} className="text-web3-accent" />
                   )}
@@ -628,6 +718,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-600">
                 PNG/JPG/WebP/GIF • up to 1MB • max 1024px
               </div>
+              {(avatarPreview || user?.avatar) && (
+                <div className="mt-3 flex items-center justify-end">
+                  <button
+                    onClick={() => setIsAvatarAdjustOpen(true)}
+                    className="px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.12] text-[10px] uppercase tracking-widest text-gray-300 hover:text-white"
+                  >
+                    Adjust Display
+                  </button>
+                </div>
+              )}
               {avatarError && (
                 <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">{avatarError}</div>
               )}
@@ -638,7 +738,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex items-center gap-2">
                 <input
                   value={editName}
-                  onChange={(e) => setEditName(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    setEditName(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
+                  }
                   className="flex-1 px-3 py-2 rounded-lg bg-black/40 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 text-xs uppercase tracking-widest"
                   placeholder="USERNAME"
                 />
@@ -666,6 +768,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
       )}
+
+      <ImageAdjustModal
+        open={isAvatarAdjustOpen && Boolean(avatarPreview || user?.avatar)}
+        src={(avatarPreview || user?.avatar || '') as string}
+        initialMeta={avatarMeta}
+        defaultMeta={{ fit: 'cover', scale: 1, x: 0, y: 0 }}
+        shape="circle"
+        title="Avatar Display"
+        onClose={() => setIsAvatarAdjustOpen(false)}
+        onSave={(nextMeta) => {
+          setAvatarMeta(nextMeta);
+          setIsAvatarAdjustOpen(false);
+          handleSaveAvatarMeta(nextMeta);
+        }}
+      />
     </div>
   );
 };

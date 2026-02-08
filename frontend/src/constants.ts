@@ -91,6 +91,7 @@ export const INITIAL_USER: User = {
   balance: 2000,
   role: 'USER',
   avatar: '',
+  avatarMeta: { fit: 'cover', scale: 1, x: 0, y: 0 },
   transactions: [],
   battleHistory: [],
   stats: {

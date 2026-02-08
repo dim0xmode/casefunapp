@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, Briefcase, Zap, Swords, Wallet, User as UserIcon, PlusSquare, Shield } from 'lucide-react';
 import { User } from '../types';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 import { Button } from './Button';
 import { useWallet } from '../hooks/useWallet';
 
@@ -161,10 +162,10 @@ export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, o
                   : 'border-gray-700/50 group-hover:border-web3-accent/60 group-hover:scale-110'
               }`}>
                 {user?.avatar ? (
-                  <img
+                  <ImageWithMeta
                     src={user.avatar}
-                    alt="avatar"
-                    className="w-full h-full rounded-full object-cover"
+                    meta={user.avatarMeta}
+                    className="w-full h-full rounded-full"
                   />
                 ) : (
                   <UserIcon 

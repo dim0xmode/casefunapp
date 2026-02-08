@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { HomeView } from './components/HomeView';
 import { CaseView } from './components/CaseView';
@@ -10,216 +10,12 @@ import { AdminView } from './components/AdminView';
 import { LiveFeed } from './components/LiveFeed';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { TopUpModal } from './components/TopUpModal';
+import { ImageWithMeta } from './components/ui/ImageWithMeta';
 import { INITIAL_USER } from './constants';
-import { User, Item, Rarity, Case } from './types';
+import { User, Item, Case } from './types';
 import { useWallet } from './hooks/useWallet';
 import { BrowserProvider } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
-
-const NOW = Date.now();
-
-// Test cases data - 10 different cases with meme tokens
-const TEST_CASES: Case[] = [
-  {
-    id: 'doge-case',
-    name: 'Doge Pack',
-    currency: 'DOGE',
-    price: 5,
-    image: '',
-    rtu: 95,
-    openDurationHours: 2,
-    createdAt: NOW - (30 * 60 * 1000),
-    possibleDrops: [
-      { id: 'doge-0.5', name: '50 DOGE', value: 0.5, currency: 'DOGE', rarity: Rarity.COMMON, image: '🐕', color: '#9CA3AF' },
-      { id: 'doge-1', name: '100 DOGE', value: 1, currency: 'DOGE', rarity: Rarity.COMMON, image: '🐕', color: '#9CA3AF' },
-      { id: 'doge-2', name: '250 DOGE', value: 2, currency: 'DOGE', rarity: Rarity.COMMON, image: '🐕', color: '#9CA3AF' },
-      { id: 'doge-3', name: '350 DOGE', value: 3, currency: 'DOGE', rarity: Rarity.UNCOMMON, image: '🐕', color: '#10B981' },
-      { id: 'doge-5', name: '500 DOGE', value: 5, currency: 'DOGE', rarity: Rarity.UNCOMMON, image: '🐕', color: '#10B981' },
-      { id: 'doge-7', name: '750 DOGE', value: 7, currency: 'DOGE', rarity: Rarity.RARE, image: '🐕', color: '#8B5CF6' },
-      { id: 'doge-8', name: '1000 DOGE', value: 8, currency: 'DOGE', rarity: Rarity.RARE, image: '🐕', color: '#8B5CF6' },
-    ]
-  },
-  {
-    id: 'pepe-case',
-    name: 'Pepe Box',
-    currency: 'PEPE',
-    price: 15,
-    image: '',
-    rtu: 90,
-    openDurationHours: 6,
-    createdAt: NOW - (2 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'pepe-3', name: '3K PEPE', value: 3, currency: 'PEPE', rarity: Rarity.COMMON, image: '🐸', color: '#9CA3AF' },
-      { id: 'pepe-5', name: '5K PEPE', value: 5, currency: 'PEPE', rarity: Rarity.COMMON, image: '🐸', color: '#9CA3AF' },
-      { id: 'pepe-10', name: '10K PEPE', value: 10, currency: 'PEPE', rarity: Rarity.COMMON, image: '🐸', color: '#9CA3AF' },
-      { id: 'pepe-15', name: '15K PEPE', value: 15, currency: 'PEPE', rarity: Rarity.UNCOMMON, image: '🐸', color: '#10B981' },
-      { id: 'pepe-20', name: '20K PEPE', value: 20, currency: 'PEPE', rarity: Rarity.UNCOMMON, image: '🐸', color: '#10B981' },
-      { id: 'pepe-28', name: '28K PEPE', value: 28, currency: 'PEPE', rarity: Rarity.RARE, image: '🐸', color: '#8B5CF6' },
-      { id: 'pepe-35', name: '35K PEPE', value: 35, currency: 'PEPE', rarity: Rarity.RARE, image: '🐸', color: '#8B5CF6' },
-      { id: 'pepe-50', name: '50K PEPE', value: 50, currency: 'PEPE', rarity: Rarity.LEGENDARY, image: '🐸', color: '#F59E0B' },
-    ]
-  },
-  {
-    id: 'shib-case',
-    name: 'Shiba Chest',
-    currency: 'SHIB',
-    price: 25,
-    image: '',
-    rtu: 88,
-    openDurationHours: 12,
-    createdAt: NOW - (5 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'shib-5', name: '5M SHIB', value: 5, currency: 'SHIB', rarity: Rarity.COMMON, image: '🐶', color: '#9CA3AF' },
-      { id: 'shib-10', name: '10M SHIB', value: 10, currency: 'SHIB', rarity: Rarity.COMMON, image: '🐶', color: '#9CA3AF' },
-      { id: 'shib-15', name: '15M SHIB', value: 15, currency: 'SHIB', rarity: Rarity.UNCOMMON, image: '🐶', color: '#10B981' },
-      { id: 'shib-20', name: '20M SHIB', value: 20, currency: 'SHIB', rarity: Rarity.UNCOMMON, image: '🐶', color: '#10B981' },
-      { id: 'shib-30', name: '30M SHIB', value: 30, currency: 'SHIB', rarity: Rarity.RARE, image: '🐶', color: '#8B5CF6' },
-      { id: 'shib-40', name: '40M SHIB', value: 40, currency: 'SHIB', rarity: Rarity.RARE, image: '🐶', color: '#8B5CF6' },
-      { id: 'shib-60', name: '60M SHIB', value: 60, currency: 'SHIB', rarity: Rarity.LEGENDARY, image: '🐶', color: '#F59E0B' },
-      { id: 'shib-75', name: '75M SHIB', value: 75, currency: 'SHIB', rarity: Rarity.LEGENDARY, image: '🐶', color: '#F59E0B' },
-    ]
-  },
-  {
-    id: 'floki-case',
-    name: 'Floki Vault',
-    currency: 'FLOKI',
-    price: 50,
-    image: '',
-    rtu: 85,
-    openDurationHours: 24,
-    createdAt: NOW - (10 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'floki-15', name: '15K FLOKI', value: 15, currency: 'FLOKI', rarity: Rarity.COMMON, image: '🦊', color: '#9CA3AF' },
-      { id: 'floki-20', name: '20K FLOKI', value: 20, currency: 'FLOKI', rarity: Rarity.COMMON, image: '🦊', color: '#9CA3AF' },
-      { id: 'floki-30', name: '30K FLOKI', value: 30, currency: 'FLOKI', rarity: Rarity.UNCOMMON, image: '🦊', color: '#10B981' },
-      { id: 'floki-40', name: '40K FLOKI', value: 40, currency: 'FLOKI', rarity: Rarity.UNCOMMON, image: '🦊', color: '#10B981' },
-      { id: 'floki-60', name: '60K FLOKI', value: 60, currency: 'FLOKI', rarity: Rarity.RARE, image: '🦊', color: '#8B5CF6' },
-      { id: 'floki-80', name: '80K FLOKI', value: 80, currency: 'FLOKI', rarity: Rarity.RARE, image: '🦊', color: '#8B5CF6' },
-      { id: 'floki-100', name: '100K FLOKI', value: 100, currency: 'FLOKI', rarity: Rarity.LEGENDARY, image: '🦊', color: '#F59E0B' },
-      { id: 'floki-120', name: '120K FLOKI', value: 120, currency: 'FLOKI', rarity: Rarity.LEGENDARY, image: '🦊', color: '#F59E0B' },
-    ]
-  },
-  {
-    id: 'bonk-case',
-    name: 'Bonk Crate',
-    currency: 'BONK',
-    price: 100,
-    image: '',
-    rtu: 82,
-    openDurationHours: 72,
-    createdAt: NOW - (24 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'bonk-40', name: '40M BONK', value: 40, currency: 'BONK', rarity: Rarity.COMMON, image: '🔨', color: '#9CA3AF' },
-      { id: 'bonk-50', name: '50M BONK', value: 50, currency: 'BONK', rarity: Rarity.COMMON, image: '🔨', color: '#9CA3AF' },
-      { id: 'bonk-70', name: '70M BONK', value: 70, currency: 'BONK', rarity: Rarity.UNCOMMON, image: '🔨', color: '#10B981' },
-      { id: 'bonk-100', name: '100M BONK', value: 100, currency: 'BONK', rarity: Rarity.UNCOMMON, image: '🔨', color: '#10B981' },
-      { id: 'bonk-140', name: '140M BONK', value: 140, currency: 'BONK', rarity: Rarity.RARE, image: '🔨', color: '#8B5CF6' },
-      { id: 'bonk-180', name: '180M BONK', value: 180, currency: 'BONK', rarity: Rarity.RARE, image: '🔨', color: '#8B5CF6' },
-      { id: 'bonk-240', name: '240M BONK', value: 240, currency: 'BONK', rarity: Rarity.LEGENDARY, image: '🔨', color: '#F59E0B' },
-      { id: 'bonk-300', name: '300M BONK', value: 300, currency: 'BONK', rarity: Rarity.LEGENDARY, image: '🔨', color: '#F59E0B' },
-    ]
-  },
-  {
-    id: 'wojak-case',
-    name: 'Wojak Case',
-    currency: 'WOJAK',
-    price: 150,
-    image: '',
-    rtu: 80,
-    openDurationHours: 6,
-    createdAt: NOW - (4 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'wojak-60', name: '60K WOJAK', value: 60, currency: 'WOJAK', rarity: Rarity.UNCOMMON, image: '😐', color: '#10B981' },
-      { id: 'wojak-80', name: '80K WOJAK', value: 80, currency: 'WOJAK', rarity: Rarity.UNCOMMON, image: '😐', color: '#10B981' },
-      { id: 'wojak-110', name: '110K WOJAK', value: 110, currency: 'WOJAK', rarity: Rarity.RARE, image: '😐', color: '#8B5CF6' },
-      { id: 'wojak-140', name: '140K WOJAK', value: 140, currency: 'WOJAK', rarity: Rarity.RARE, image: '😐', color: '#8B5CF6' },
-      { id: 'wojak-190', name: '190K WOJAK', value: 190, currency: 'WOJAK', rarity: Rarity.LEGENDARY, image: '😐', color: '#F59E0B' },
-      { id: 'wojak-250', name: '250K WOJAK', value: 250, currency: 'WOJAK', rarity: Rarity.LEGENDARY, image: '😐', color: '#F59E0B' },
-      { id: 'wojak-330', name: '330K WOJAK', value: 330, currency: 'WOJAK', rarity: Rarity.MYTHIC, image: '😐', color: '#EF4444' },
-      { id: 'wojak-400', name: '400K WOJAK', value: 400, currency: 'WOJAK', rarity: Rarity.MYTHIC, image: '😐', color: '#EF4444' },
-    ]
-  },
-  {
-    id: 'chad-case',
-    name: 'Chad Box',
-    currency: 'CHAD',
-    price: 200,
-    image: '',
-    rtu: 78,
-    openDurationHours: 12,
-    createdAt: NOW - (3 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'chad-80', name: '80K CHAD', value: 80, currency: 'CHAD', rarity: Rarity.UNCOMMON, image: '💪', color: '#10B981' },
-      { id: 'chad-100', name: '100K CHAD', value: 100, currency: 'CHAD', rarity: Rarity.UNCOMMON, image: '💪', color: '#10B981' },
-      { id: 'chad-150', name: '150K CHAD', value: 150, currency: 'CHAD', rarity: Rarity.RARE, image: '💪', color: '#8B5CF6' },
-      { id: 'chad-200', name: '200K CHAD', value: 200, currency: 'CHAD', rarity: Rarity.RARE, image: '💪', color: '#8B5CF6' },
-      { id: 'chad-280', name: '280K CHAD', value: 280, currency: 'CHAD', rarity: Rarity.LEGENDARY, image: '💪', color: '#F59E0B' },
-      { id: 'chad-350', name: '350K CHAD', value: 350, currency: 'CHAD', rarity: Rarity.LEGENDARY, image: '💪', color: '#F59E0B' },
-      { id: 'chad-480', name: '480K CHAD', value: 480, currency: 'CHAD', rarity: Rarity.MYTHIC, image: '💪', color: '#EF4444' },
-      { id: 'chad-600', name: '600K CHAD', value: 600, currency: 'CHAD', rarity: Rarity.MYTHIC, image: '💪', color: '#EF4444' },
-    ]
-  },
-  {
-    id: 'moon-case',
-    name: 'Moon Chest',
-    currency: 'MOON',
-    price: 300,
-    image: '',
-    rtu: 75,
-    openDurationHours: 24,
-    createdAt: NOW - (18 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'moon-120', name: '120K MOON', value: 120, currency: 'MOON', rarity: Rarity.UNCOMMON, image: '🌙', color: '#10B981' },
-      { id: 'moon-150', name: '150K MOON', value: 150, currency: 'MOON', rarity: Rarity.UNCOMMON, image: '🌙', color: '#10B981' },
-      { id: 'moon-220', name: '220K MOON', value: 220, currency: 'MOON', rarity: Rarity.RARE, image: '🌙', color: '#8B5CF6' },
-      { id: 'moon-280', name: '280K MOON', value: 280, currency: 'MOON', rarity: Rarity.RARE, image: '🌙', color: '#8B5CF6' },
-      { id: 'moon-380', name: '380K MOON', value: 380, currency: 'MOON', rarity: Rarity.LEGENDARY, image: '🌙', color: '#F59E0B' },
-      { id: 'moon-500', name: '500K MOON', value: 500, currency: 'MOON', rarity: Rarity.LEGENDARY, image: '🌙', color: '#F59E0B' },
-      { id: 'moon-680', name: '680K MOON', value: 680, currency: 'MOON', rarity: Rarity.MYTHIC, image: '🌙', color: '#EF4444' },
-      { id: 'moon-850', name: '850K MOON', value: 850, currency: 'MOON', rarity: Rarity.MYTHIC, image: '🌙', color: '#EF4444' },
-    ]
-  },
-  {
-    id: 'rocket-case',
-    name: 'Rocket Box',
-    currency: 'ROCKET',
-    price: 500,
-    image: '',
-    rtu: 72,
-    openDurationHours: 72,
-    createdAt: NOW - (40 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'rocket-200', name: '200K ROCKET', value: 200, currency: 'ROCKET', rarity: Rarity.RARE, image: '🚀', color: '#8B5CF6' },
-      { id: 'rocket-250', name: '250K ROCKET', value: 250, currency: 'ROCKET', rarity: Rarity.RARE, image: '🚀', color: '#8B5CF6' },
-      { id: 'rocket-350', name: '350K ROCKET', value: 350, currency: 'ROCKET', rarity: Rarity.LEGENDARY, image: '🚀', color: '#F59E0B' },
-      { id: 'rocket-450', name: '450K ROCKET', value: 450, currency: 'ROCKET', rarity: Rarity.LEGENDARY, image: '🚀', color: '#F59E0B' },
-      { id: 'rocket-600', name: '600K ROCKET', value: 600, currency: 'ROCKET', rarity: Rarity.MYTHIC, image: '🚀', color: '#EF4444' },
-      { id: 'rocket-800', name: '800K ROCKET', value: 800, currency: 'ROCKET', rarity: Rarity.MYTHIC, image: '🚀', color: '#EF4444' },
-      { id: 'rocket-1100', name: '1.1M ROCKET', value: 1100, currency: 'ROCKET', rarity: Rarity.MYTHIC, image: '🚀', color: '#EF4444' },
-      { id: 'rocket-1500', name: '1.5M ROCKET', value: 1500, currency: 'ROCKET', rarity: Rarity.MYTHIC, image: '🚀', color: '#EF4444' },
-    ]
-  },
-  {
-    id: 'diamond-case',
-    name: 'Diamond Vault',
-    currency: 'DIAMOND',
-    price: 1000,
-    image: '',
-    rtu: 70,
-    openDurationHours: 24,
-    createdAt: NOW - (8 * 60 * 60 * 1000),
-    possibleDrops: [
-      { id: 'diamond-400', name: '400K DIAMOND', value: 400, currency: 'DIAMOND', rarity: Rarity.RARE, image: '💎', color: '#8B5CF6' },
-      { id: 'diamond-500', name: '500K DIAMOND', value: 500, currency: 'DIAMOND', rarity: Rarity.RARE, image: '💎', color: '#8B5CF6' },
-      { id: 'diamond-700', name: '700K DIAMOND', value: 700, currency: 'DIAMOND', rarity: Rarity.LEGENDARY, image: '💎', color: '#F59E0B' },
-      { id: 'diamond-900', name: '900K DIAMOND', value: 900, currency: 'DIAMOND', rarity: Rarity.LEGENDARY, image: '💎', color: '#F59E0B' },
-      { id: 'diamond-1200', name: '1.2M DIAMOND', value: 1200, currency: 'DIAMOND', rarity: Rarity.MYTHIC, image: '💎', color: '#EF4444' },
-      { id: 'diamond-1600', name: '1.6M DIAMOND', value: 1600, currency: 'DIAMOND', rarity: Rarity.MYTHIC, image: '💎', color: '#EF4444' },
-      { id: 'diamond-2200', name: '2.2M DIAMOND', value: 2200, currency: 'DIAMOND', rarity: Rarity.MYTHIC, image: '💎', color: '#EF4444' },
-      { id: 'diamond-3000', name: '3M DIAMOND', value: 3000, currency: 'DIAMOND', rarity: Rarity.MYTHIC, image: '💎', color: '#EF4444' },
-    ]
-  }
-];
 
 interface BattleRecord {
   id: string;
@@ -253,7 +49,7 @@ const App = () => {
   const [inventory, setInventory] = useState<Item[]>([]);
   const [burntItems, setBurntItems] = useState<Item[]>([]);
   const [battleHistory, setBattleHistory] = useState<BattleRecord[]>([]);
-  const [cases, setCases] = useState<Case[]>(TEST_CASES);
+  const [cases, setCases] = useState<Case[]>([]);
   const [createdCaseNotice, setCreatedCaseNotice] = useState<Case | null>(null);
   const [profileView, setProfileView] = useState<{
     user: User;
@@ -261,6 +57,12 @@ const App = () => {
     burntItems: Item[];
     battleHistory: BattleRecord[];
   } | null>(null);
+  const [mustSetUsername, setMustSetUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState('');
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [usernameSaving, setUsernameSaving] = useState(false);
   const [botProfiles, setBotProfiles] = useState<Record<string, {
     user: User;
     inventory: Item[];
@@ -316,21 +118,37 @@ const App = () => {
     tokenPrice: caseData.tokenPrice,
     price: caseData.price,
     image: resolveAssetUrl(caseData.imageUrl || caseData.image || ''),
+    imageMeta: caseData.imageMeta,
     rtu: caseData.rtu,
     openDurationHours: caseData.openDurationHours,
     createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : undefined,
     creatorName: caseData.createdBy?.username || caseData.creatorName,
+    stats: caseData.stats,
     possibleDrops: (caseData.drops || caseData.possibleDrops || []).map((drop: any) => ({
       id: drop.id,
       name: drop.name,
       value: drop.value,
       currency: drop.currency,
       rarity: drop.rarity,
-        image: resolveAssetUrl(drop.image || caseData.imageUrl || caseData.image || ''),
+      image: resolveAssetUrl(drop.image || caseData.imageUrl || caseData.image || ''),
+      imageMeta: caseData.imageMeta,
       color: drop.color,
       caseId: caseData.id,
     })),
   });
+
+  const caseMetaMap = useMemo(() => {
+    return new Map(cases.map((caseData) => [caseData.id, caseData.imageMeta]));
+  }, [cases]);
+
+  const enrichItemsWithCaseMeta = (items: Item[]) => {
+    if (!items || !Array.isArray(items)) return [];
+    return items.map((item) => {
+      const meta = item.caseId ? caseMetaMap.get(item.caseId) : undefined;
+      if (!meta) return item;
+      return { ...item, imageMeta: item.imageMeta ?? meta };
+    });
+  };
 
   const loadProfile = async (fallbackAddress?: string) => {
     try {
@@ -349,20 +167,18 @@ const App = () => {
         }
       }
       if (response.data?.inventory) {
-        setInventory(
-          response.data.inventory.map((item: any) => ({
-            ...item,
-            image: resolveAssetUrl(item.image || ''),
-          }))
-        );
+        const mapped = response.data.inventory.map((item: any) => ({
+          ...item,
+          image: resolveAssetUrl(item.image || ''),
+        })) as Item[];
+        setInventory(enrichItemsWithCaseMeta(mapped));
       }
       if (response.data?.burntItems) {
-        setBurntItems(
-          response.data.burntItems.map((item: any) => ({
-            ...item,
-            image: resolveAssetUrl(item.image || ''),
-          }))
-        );
+        const mapped = response.data.burntItems.map((item: any) => ({
+          ...item,
+          image: resolveAssetUrl(item.image || ''),
+        })) as Item[];
+        setBurntItems(enrichItemsWithCaseMeta(mapped));
       }
       if (response.data?.battleHistory) {
         setBattleHistory(
@@ -472,7 +288,7 @@ const App = () => {
   useEffect(() => {
     const loadCases = async () => {
       try {
-        const response = await api.getCases();
+        const response = await api.getCases(true);
         if (response.data?.cases) {
           setCases(response.data.cases.map(mapCaseFromApi));
         }
@@ -482,6 +298,62 @@ const App = () => {
     };
     loadCases();
   }, []);
+
+  useEffect(() => {
+    if (!lastAuthAddress) {
+      setMustSetUsername(false);
+      return;
+    }
+    const currentName = (user.username || '').trim().toUpperCase();
+    const wallet = (user.walletAddress || '').toLowerCase();
+    const isPlaceholder =
+      !currentName ||
+      currentName === 'USER' ||
+      currentName.startsWith('USER_') ||
+      (wallet && currentName.toLowerCase() === wallet);
+    setMustSetUsername(isPlaceholder);
+    if (isPlaceholder) {
+      setUsernameDraft('');
+      setUsernameError('Please create a username to continue.');
+      setUsernameAvailable(null);
+    }
+  }, [user.username, user.walletAddress, lastAuthAddress]);
+
+  useEffect(() => {
+    if (!mustSetUsername) return;
+    const value = usernameDraft.trim();
+    const localError = validateUsernameLocal(value);
+    setUsernameError(localError);
+    if (!value || localError) {
+      setUsernameAvailable(null);
+      return;
+    }
+    setUsernameChecking(true);
+    const timeoutId = setTimeout(async () => {
+      try {
+        const response = await api.checkUsernameAvailability(value);
+        const available = response.data?.available;
+        setUsernameAvailable(Boolean(available));
+        if (!available) {
+          setUsernameError('Username is already taken.');
+        } else {
+          setUsernameError(null);
+        }
+      } catch (error) {
+        setUsernameError('Unable to check name. Try again.');
+        setUsernameAvailable(null);
+      } finally {
+        setUsernameChecking(false);
+      }
+    }, 400);
+    return () => clearTimeout(timeoutId);
+  }, [usernameDraft, mustSetUsername]);
+
+  useEffect(() => {
+    if (!cases.length) return;
+    setInventory((prev) => enrichItemsWithCaseMeta(prev));
+    setBurntItems((prev) => enrichItemsWithCaseMeta(prev));
+  }, [cases]);
 
   const updateUrl = (tab: string, mode: 'push' | 'replace' | 'none' = 'push') => {
     const nextPath = TAB_PATHS[tab] || '/';
@@ -524,6 +396,7 @@ const App = () => {
     if (!isAdmin) return [];
     const winners: Item[] = [];
     let latestBalance = balance;
+    const caseMeta = cases.find((caseData) => caseData.id === caseId)?.imageMeta;
     for (let i = 0; i < count; i++) {
       const response = await api.openCase(caseId);
       const won = response.data?.wonDrop;
@@ -537,6 +410,7 @@ const App = () => {
           image: won.image || '',
           color: won.color,
           caseId: won.caseId || caseId,
+          imageMeta: caseMeta,
         };
         winners.push(item);
       }
@@ -557,6 +431,20 @@ const App = () => {
     setBalance(latestBalance);
     return winners;
   };
+
+  const isCaseExpired = (caseId?: string) => {
+    if (!caseId) return false;
+    const caseData = cases.find((entry) => entry.id === caseId);
+    if (!caseData) return true;
+    if (!caseData.openDurationHours || !caseData.createdAt) return false;
+    const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
+    return endAt <= Date.now();
+  };
+
+  const activeInventory = useMemo(
+    () => inventory.filter((item) => !isCaseExpired(item.caseId)),
+    [inventory, cases]
+  );
 
   const handleUpgrade = async (originalItem: Item, multiplier: number) => {
     if (!isAdmin) {
@@ -622,10 +510,6 @@ const App = () => {
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
-    if (isWin) {
-      setInventory(prev => [...wonItems, ...prev]);
-    }
-    
     const battleRecord: BattleRecord = {
       id: `battle-${Date.now()}`,
       opponent: 'Bot_SniperX',
@@ -638,9 +522,29 @@ const App = () => {
     setBattleHistory(prev => [battleRecord, ...prev]);
 
     try {
-      await api.recordBattle(isWin ? 'WIN' : 'LOSS', totalCost, wonItems);
+      const response = await api.recordBattle(isWin ? 'WIN' : 'LOSS', totalCost, wonItems);
+      const created = response.data?.items;
+      if (Array.isArray(created) && created.length > 0) {
+        const mapped = created.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          value: Number(item.value || 0),
+          currency: item.currency,
+          rarity: item.rarity,
+          image: item.image || '',
+          color: item.color || '',
+          caseId: item.caseId || undefined,
+          imageMeta: item.caseId ? caseMetaMap.get(item.caseId) : undefined,
+        })) as Item[];
+        setInventory(prev => [...mapped, ...prev.filter(existing => !mapped.find(m => m.id === existing.id))]);
+      } else if (isWin) {
+        setInventory(prev => [...wonItems, ...prev]);
+      }
     } catch (error) {
       console.error('Failed to record battle', error);
+      if (isWin) {
+        setInventory(prev => [...wonItems, ...prev]);
+      }
     }
   };
 
@@ -657,19 +561,78 @@ const App = () => {
     }
   };
 
-  const handleUploadAvatar = async (file: File) => {
-    const response = await api.uploadAvatar(file);
+  const sanitizeUsername = (value: string) =>
+    value.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+
+  const validateUsernameLocal = (value: string) => {
+    if (!value) return 'Username is required.';
+    if (!/^[A-Z0-9_-]{3,20}$/.test(value)) {
+      return 'Use 3-20 chars (A-Z, 0-9, _ or -).';
+    }
+    if (value.startsWith('USER_')) {
+      return 'Username is reserved.';
+    }
+    return null;
+  };
+
+  const handleSaveRequiredUsername = async () => {
+    const value = usernameDraft.trim();
+    const localError = validateUsernameLocal(value);
+    if (localError) {
+      setUsernameError(localError);
+      return;
+    }
+    if (usernameAvailable === false) {
+      setUsernameError('Username is already taken.');
+      return;
+    }
+    setUsernameSaving(true);
+    try {
+      await handleUpdateUsername(value);
+      setMustSetUsername(false);
+      setUsernameDraft('');
+      setUsernameError(null);
+    } catch (error) {
+      setUsernameError('Failed to update username.');
+    } finally {
+      setUsernameSaving(false);
+    }
+  };
+
+  const handleUploadAvatar = async (file: File, meta?: Record<string, any>) => {
+    const response = await api.uploadAvatar(file, meta);
     const avatarUrl = response.data?.avatarUrl;
     if (avatarUrl) {
-      setUser(prev => ({ ...prev, avatar: resolveAssetUrl(avatarUrl) }));
+      setUser(prev => ({
+        ...prev,
+        avatar: resolveAssetUrl(avatarUrl),
+        avatarMeta: response.data?.user?.avatarMeta ?? prev.avatarMeta,
+      }));
       if (profileView) {
         setProfileView({
           ...profileView,
-          user: { ...profileView.user, avatar: resolveAssetUrl(avatarUrl) },
+          user: {
+            ...profileView.user,
+            avatar: resolveAssetUrl(avatarUrl),
+            avatarMeta: response.data?.user?.avatarMeta ?? profileView.user.avatarMeta,
+          },
         });
       }
     }
     return avatarUrl ? resolveAssetUrl(avatarUrl) : undefined;
+  };
+
+  const handleUpdateAvatarMeta = async (meta: Record<string, any>) => {
+    const response = await api.updateAvatarMeta(meta);
+    if (response.data?.user) {
+      setUser(prev => ({ ...prev, ...response.data.user }));
+      if (profileView) {
+        setProfileView({
+          ...profileView,
+          user: { ...profileView.user, ...response.data.user },
+        });
+      }
+    }
   };
 
   const handleChargeBattle = async (amount: number) => {
@@ -847,6 +810,7 @@ const App = () => {
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
                   isAdmin={isAdmin}
+                  cases={cases}
                 />
               </div>
             )}
@@ -872,7 +836,7 @@ const App = () => {
             {activeTab === 'upgrade' && (
               <div className="animate-fade-in">
                 <UpgradeView
-                  inventory={inventory}
+                  inventory={activeInventory}
                   onUpgrade={handleUpgrade}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
@@ -908,16 +872,18 @@ const App = () => {
                   burntItems={profileView?.burntItems || burntItems}
                   battleHistory={profileView?.battleHistory || battleHistory}
                   balance={balance}
+                  cases={cases}
                   isEditable={!profileView}
                   onUpdateUsername={handleUpdateUsername}
                   onUploadAvatar={handleUploadAvatar}
+                  onUpdateAvatarMeta={handleUpdateAvatarMeta}
                 />
               </div>
             )}
 
             {activeTab === 'admin' && lastAuthAddress && (
               <div className="animate-fade-in">
-                <AdminView />
+                <AdminView currentUser={user} />
               </div>
             )}
           </div>
@@ -948,8 +914,13 @@ const App = () => {
             <div className="mt-4 flex flex-col items-center gap-3">
               <div className="w-20 h-20 rounded-2xl border border-white/[0.12] bg-black/40 flex items-center justify-center text-3xl">
                 {createdCaseNotice.image ? (
-                  createdCaseNotice.image.startsWith('http') ? (
-                    <img src={createdCaseNotice.image} alt="case logo" className="w-12 h-12 object-contain" />
+                  createdCaseNotice.image.startsWith('http') || createdCaseNotice.image.startsWith('/') ? (
+                    <ImageWithMeta
+                      src={createdCaseNotice.image}
+                      meta={createdCaseNotice.imageMeta}
+                      className="w-12 h-12"
+                      imgClassName="w-full h-full"
+                    />
                   ) : (
                     <span>{createdCaseNotice.image}</span>
                   )
@@ -957,7 +928,12 @@ const App = () => {
                   <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>
                 )}
               </div>
-              <div className="text-sm font-bold">{createdCaseNotice.name}</div>
+              <div className="text-sm font-bold text-center">
+                {createdCaseNotice.name}
+                <div className="text-[10px] uppercase tracking-widest text-gray-400 mt-1">
+                  ${createdCaseNotice.tokenTicker || createdCaseNotice.currency}
+                </div>
+              </div>
               <div className="px-3 py-1 rounded-full text-xs bg-web3-accent/10 border border-web3-accent/30">
                 {createdCaseNotice.price} ₮ • RTU {createdCaseNotice.rtu}%
               </div>
@@ -967,6 +943,44 @@ const App = () => {
               className="mt-5 px-5 py-2.5 rounded-xl bg-white/10 border border-white/[0.1] text-xs uppercase tracking-widest hover:text-white hover:border-white/40 transition"
             >
               Nice
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mustSetUsername && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-[92%] max-w-md bg-black/60 border border-white/[0.12] rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="text-xs uppercase tracking-widest text-gray-500">Welcome</div>
+            <div className="text-2xl font-black text-white mt-1">Create your username</div>
+            <div className="text-[11px] uppercase tracking-widest text-gray-500 mt-2">
+              Use A-Z, 0-9, _ or - (3-20 chars)
+            </div>
+
+            <div className="mt-5">
+              <input
+                value={usernameDraft}
+                onChange={(e) => setUsernameDraft(sanitizeUsername(e.target.value))}
+                placeholder="USERNAME"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 text-sm uppercase tracking-widest"
+              />
+              {usernameChecking && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-500">Checking...</div>
+              )}
+              {usernameError && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">{usernameError}</div>
+              )}
+              {!usernameError && usernameAvailable && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-web3-success">Available</div>
+              )}
+            </div>
+
+            <button
+              onClick={handleSaveRequiredUsername}
+              disabled={Boolean(usernameError) || !usernameDraft || usernameSaving || usernameChecking}
+              className="mt-6 w-full py-3 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {usernameSaving ? 'Saving...' : 'Save Username'}
             </button>
           </div>
         </div>

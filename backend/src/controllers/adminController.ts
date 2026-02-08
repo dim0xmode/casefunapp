@@ -111,11 +111,19 @@ export const updateUserRole = async (req: Request, res: Response, next: NextFunc
       return next(new AppError('Role is required', 400));
     }
 
+    const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
+    if (!adminUser) {
+      return next(new AppError('Admin user not found', 404));
+    }
+    const immutableWallet = process.env.BOOTSTRAP_ADMIN_WALLET || '';
+    if (immutableWallet && adminUser.walletAddress.toLowerCase() !== immutableWallet.toLowerCase()) {
+      return next(new AppError('Only bootstrap admin can change roles', 403));
+    }
+
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) {
       return next(new AppError('User not found', 404));
     }
-    const immutableWallet = process.env.BOOTSTRAP_ADMIN_WALLET || '';
     if (immutableWallet && target.walletAddress.toLowerCase() === immutableWallet.toLowerCase()) {
       return next(new AppError('Cannot change role for bootstrap admin', 403));
     }
@@ -489,8 +497,21 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       prisma.inventoryItem.count({ where: { status: 'ACTIVE' } }),
       prisma.transaction.count(),
       prisma.rtuLedger.count(),
-      prisma.transaction.findMany({ orderBy: { timestamp: 'desc' }, take: 10 }),
-      prisma.caseOpening.findMany({ orderBy: { timestamp: 'desc' }, take: 10 }),
+      prisma.transaction.findMany({
+        orderBy: { timestamp: 'desc' },
+        take: 10,
+        include: {
+          user: { select: { id: true, username: true, walletAddress: true } },
+        },
+      }),
+      prisma.caseOpening.findMany({
+        orderBy: { timestamp: 'desc' },
+        take: 10,
+        include: {
+          user: { select: { id: true, username: true, walletAddress: true } },
+          case: { select: { id: true, name: true, currency: true, tokenTicker: true } },
+        },
+      }),
       prisma.transaction.findMany({
         where: { type: { in: ['CASE_OPEN', 'BATTLE', 'UPGRADE'] } },
         orderBy: { timestamp: 'desc' },
@@ -509,6 +530,22 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       .slice(0, 5)
       .map(([userId, spent]) => ({ userId, spent }));
 
+    const topUserIds = topUsersBySpend.map((entry) => entry.userId);
+    const topUsersInfo = topUserIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: topUserIds } },
+          select: { id: true, username: true, walletAddress: true },
+        })
+      : [];
+    const topUsersWithInfo = topUsersBySpend.map((entry) => {
+      const info = topUsersInfo.find((user) => user.id === entry.userId);
+      return {
+        ...entry,
+        username: info?.username || 'Unknown',
+        walletAddress: info?.walletAddress || '',
+      };
+    });
+
     res.json({
       status: 'success',
       data: {
@@ -522,7 +559,7 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
         },
         recentTransactions,
         recentOpenings,
-        topUsersBySpend,
+        topUsersBySpend: topUsersWithInfo,
       },
     });
   } catch (error) {

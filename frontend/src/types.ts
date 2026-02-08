@@ -14,6 +14,7 @@ export interface Item {
   rarity: Rarity;
   image: string;
   color: string;
+  imageMeta?: ImageMeta;
   caseId?: string;
   status?: 'ACTIVE' | 'BURNT';
 }
@@ -31,6 +32,26 @@ export interface Case {
   tokenPrice?: number;
   openDurationHours?: number;
   createdAt?: number;
+  imageMeta?: ImageMeta;
+  stats?: {
+    totalOpenings: number;
+    totalSpentUsdt: number;
+    totalTokenFromOpens: number;
+    totalTokenFromUpgrades: number;
+    totalTokenFromBattles: number;
+    totalTokenIssued: number;
+    upgradesUsed: number;
+    battlesUsed: number;
+    actualRtu?: number | null;
+    topHolders?: { userId: string; username: string; total: number }[];
+  };
+}
+
+export interface ImageMeta {
+  fit?: 'contain' | 'cover';
+  scale?: number;
+  x?: number;
+  y?: number;
 }
 
 export interface Transaction {
@@ -59,6 +80,7 @@ export interface User {
   balance: number;
   role?: 'USER' | 'ADMIN' | 'MODERATOR';
   avatar?: string;
+  avatarMeta?: ImageMeta;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {

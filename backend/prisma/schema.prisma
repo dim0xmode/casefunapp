@@ -25,6 +25,7 @@ model User {
   walletAddress String   @unique
   balance       Float    @default(5000)
   avatarUrl     String?
+  avatarMeta    Json?
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?
@@ -53,6 +54,7 @@ model Case {
   tokenPrice    Float?
   price         Float
   imageUrl      String?
+  imageMeta     Json?
   rtu           Float    @default(96) // Return to User %
   openDurationHours Int?
   isActive      Boolean  @default(true)

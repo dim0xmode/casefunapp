@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Case, Item, Rarity } from '../types';
 import { Package, TrendingUp, XCircle, Sparkles, User } from 'lucide-react';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -55,10 +56,19 @@ interface LiveFeedProps {
 export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
 
-  const renderTokenLogo = (value?: string) => {
+  const renderTokenLogo = (item?: Item) => {
+    const value = item?.image || '';
     if (!value) return <span className="text-[8px] uppercase tracking-widest text-gray-500">Logo</span>;
-    if (value.startsWith('http')) {
-      return <img src={value} alt="token logo" className="w-4 h-4 object-contain" />;
+    const isImage = value.startsWith('http') || value.startsWith('/') || value.startsWith('data:');
+    if (isImage) {
+      return (
+        <ImageWithMeta
+          src={value}
+          meta={item?.imageMeta}
+          className="w-full h-full rounded-full"
+          imgClassName="w-full h-full"
+        />
+      );
     }
     return <span className="text-sm">{value}</span>;
   };
@@ -210,7 +220,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
                     className="w-6 h-6 rounded-full border flex items-center justify-center flex-shrink-0 bg-black/30"
                     style={{ borderColor: RARITY_COLORS[getRarityByValue(activity.item.value)] }}
                   >
-                    {renderTokenLogo(activity.item.image)}
+                    {renderTokenLogo(activity.item)}
                   </div>
                 )}
               </div>

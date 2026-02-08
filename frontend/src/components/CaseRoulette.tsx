@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Item, Case, Rarity } from '../types';
 import { Sparkles } from 'lucide-react';
+import { ItemCard } from './ItemCard';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 
 // Rarity colors mapping
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -72,11 +74,20 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
     return nextStrip;
   };
 
-  const renderTokenLogo = (value: string, size: 'sm' | 'lg' = 'sm') => {
+  const renderTokenLogo = (item: Item | null, size: 'sm' | 'lg' = 'sm') => {
+    const value = item?.image || '';
     if (!value) return <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>;
-    if (value.startsWith('http')) {
+    const isImage = value.startsWith('http') || value.startsWith('/') || value.startsWith('data:');
+    if (isImage) {
       const dims = size === 'lg' ? 'w-16 h-16' : 'w-10 h-10';
-      return <img src={value} alt="token logo" className={`${dims} object-contain`} />;
+      return (
+        <ImageWithMeta
+          src={value}
+          meta={item?.imageMeta || caseData.imageMeta}
+          className={`${dims} rounded-full`}
+          imgClassName="w-full h-full"
+        />
+      );
     }
     return <span className={size === 'lg' ? 'text-5xl' : 'text-3xl'}>{value}</span>;
   };
@@ -225,18 +236,19 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
             {strip.map((item, stripIndex) => (
               <div
                 key={`${item.id}-${stripIndex}`}
-                className="flex-shrink-0 flex flex-col items-center justify-center h-[140px] rounded-xl border-2"
+                className="flex-shrink-0 h-[140px]"
                 style={{
                   width: `${CARD_WIDTH}px`,
                   marginLeft: `${MARGIN_X_PX}px`,
                   marginRight: `${MARGIN_X_PX}px`,
-                  borderColor: RARITY_COLORS[item.rarity],
-                  backgroundColor: 'rgba(17, 24, 39, 0.8)'
                 }}
               >
-                <div className="mb-2">{renderTokenLogo(item.image)}</div>
-                <div className="text-sm font-black text-white">{item.value}</div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-400">${item.currency}</div>
+                <ItemCard
+                  item={item}
+                  size="sm"
+                  className="w-full h-full"
+                  currencyPrefix="$"
+                />
               </div>
             ))}
           </div>
@@ -267,7 +279,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
               </div>
               
               <div className={`mb-2 flex items-center justify-center ${openMode !== 'instant' ? 'animate-bounce-in' : ''}`}>
-                {renderTokenLogo(winner.image, 'lg')}
+                {renderTokenLogo(winner, 'lg')}
               </div>
               <div className={`flex items-center justify-center gap-2 bg-gradient-to-r from-web3-accent/30 to-web3-success/30 px-4 py-1.5 rounded-lg border border-web3-accent/40 ${openMode !== 'instant' ? 'animate-fade-in' : ''}`} style={openMode !== 'instant' ? { animationDelay: '0.2s', animationFillMode: 'both' } : {}}>
                 <span className="text-lg font-black text-white">{winner.value} ${winner.currency}</span>

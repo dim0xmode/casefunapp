@@ -1,7 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { Case, Item, Rarity } from '../types';
+import React, { useMemo, useRef, useState } from 'react';
+import { Case, Item, Rarity, ImageMeta } from '../types';
 import { Plus, Trash2, Sparkles, ChevronDown, UploadCloud, Smile } from 'lucide-react';
 import { ItemCard } from './ItemCard';
+import { AdminActionButton } from './ui/AdminActionButton';
+import { ImageAdjustModal } from './ui/ImageAdjustModal';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api, resolveAssetUrl } from '../services/api';
 
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -28,9 +31,10 @@ interface CreateCaseViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
+  cases: Case[];
 }
 
-export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creatorName, balance, onOpenTopUp, onBalanceUpdate, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creatorName, balance, onOpenTopUp, onBalanceUpdate, isAuthenticated, onOpenWalletConnect, isAdmin, cases }) => {
   const [name, setName] = useState('');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
@@ -42,12 +46,24 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
   const [isImageUploading, setIsImageUploading] = useState(false);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [tickerError, setTickerError] = useState<string | null>(null);
+  const [rtuError, setRtuError] = useState<string | null>(null);
+  const [imageMeta, setImageMeta] = useState<ImageMeta>({
+    fit: 'contain',
+    scale: 1,
+    x: 0,
+    y: 0,
+  });
+  const [isLogoAdjustOpen, setIsLogoAdjustOpen] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const sanitizeEnglishUpper = (value: string, allowSpaces = false) => {
-    const normalized = value.toUpperCase();
-    const pattern = allowSpaces ? /[^A-Z\s]/g : /[^A-Z]/g;
-    return normalized.replace(pattern, '');
-  };
+  const sanitizeCaseName = (value: string) =>
+    value
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, '')
+      .replace(/^\s+/, '');
+  const sanitizeToken = (value: string) => value.toUpperCase().replace(/[^A-Z]/g, '');
   const [drops, setDrops] = useState<DropDraft[]>([
     { id: 'drop-1', value: '' },
     { id: 'drop-2', value: '' },
@@ -75,10 +91,66 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         rarity,
         currency: tokenTicker || 'TOKEN',
         image: imageUrl || '',
+        imageMeta,
         color: RARITY_COLORS[rarity],
       };
     }) as Item[];
-  }, [drops, tokenTicker, imageUrl]);
+  }, [drops, tokenTicker, imageUrl, imageMeta]);
+
+  const existingCaseNames = useMemo(() => {
+    return new Set((cases || []).map((caseData) => caseData.name.trim().toUpperCase()));
+  }, [cases]);
+
+  const existingTickers = useMemo(() => {
+    return new Set(
+      (cases || []).map((caseData) => (caseData.tokenTicker || caseData.currency || '').trim().toUpperCase())
+    );
+  }, [cases]);
+
+  const validateCaseName = (value: string, currentTicker?: string) => {
+    if (!value) return null;
+    if (!/^[A-Z][A-Z0-9 ]*$/.test(value)) {
+      return 'Case name must start with a letter and contain only letters/numbers.';
+    }
+    if (existingCaseNames.has(value)) {
+      return 'Case name already exists.';
+    }
+    if (existingTickers.has(value)) {
+      return 'Case name matches existing token ticker.';
+    }
+    if (currentTicker && value === currentTicker) {
+      return 'Case name and token ticker must be different.';
+    }
+    return null;
+  };
+
+  const validateTicker = (value: string, currentName?: string) => {
+    if (!value) return null;
+    if (!/^[A-Z]+$/.test(value)) {
+      return 'Token ticker must contain only A-Z letters.';
+    }
+    if (existingTickers.has(value)) {
+      return 'Token ticker already exists.';
+    }
+    if (existingCaseNames.has(value)) {
+      return 'Token ticker matches existing case name.';
+    }
+    if (currentName && value === currentName) {
+      return 'Token ticker and case name must be different.';
+    }
+    return null;
+  };
+
+  const validateRtu = (value: string) => {
+    if (!value) return null;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 'RTU must be a number.';
+    if (numeric <= 0) return 'RTU must be greater than 0.';
+    if (numeric > 98) return 'RTU must be 98% or ниже.';
+    return null;
+  };
+
+
 
   const addDrop = () => {
     setDrops((prev) => {
@@ -117,6 +189,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         return;
       }
       setImageUrl(url);
+      setImageMeta({ fit: 'contain', scale: 1, x: 0, y: 0 });
+      setIsLogoAdjustOpen(true);
     } catch (error) {
       setImageError('Upload failed. Try another image.');
     } finally {
@@ -126,6 +200,65 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
 
   const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/u;
   const isEmoji = (value: string) => emojiRegex.test(value);
+  const isImageUrl = (value: string) => value.startsWith('http') || value.startsWith('/');
+
+  const normalizedName = name.trim().toUpperCase();
+  const normalizedTicker = tokenTicker.trim().toUpperCase();
+  const imageTrimmed = imageUrl.trim();
+  const priceValueNumber = Number(price);
+  const tokenPriceValueNumber = Number(tokenPrice);
+  const dropsAreValid =
+    drops.length > 0 &&
+    drops.every((drop) => Number(drop.value) > 0) &&
+    new Set(drops.map((drop) => Number(drop.value))).size === drops.length;
+  const imageIsValid = Boolean(imageTrimmed) && (isImageUrl(imageTrimmed) || isEmoji(imageTrimmed));
+  const priceError = !price
+    ? 'Open price is required.'
+    : !Number.isFinite(priceValueNumber) || priceValueNumber <= 0
+      ? 'Open price must be greater than 0.'
+      : null;
+  const tokenPriceError = !tokenPrice
+    ? 'Token price is required.'
+    : !Number.isFinite(tokenPriceValueNumber) || tokenPriceValueNumber <= 0
+      ? 'Token price must be greater than 0.'
+      : null;
+  const dropsError = drops.length === 0
+    ? 'Add at least one drop.'
+    : drops.some((drop) => !drop.value || Number(drop.value) <= 0)
+      ? 'Each drop must have a positive value.'
+      : new Set(drops.map((drop) => Number(drop.value))).size !== drops.length
+        ? 'Drop values must be unique.'
+        : null;
+  const imageValidationError = !imageTrimmed
+    ? 'Upload a case logo or choose an emoji.'
+    : !imageIsValid
+      ? 'Logo must be an emoji or an uploaded image.'
+      : null;
+  const liveNameError = validateCaseName(normalizedName, normalizedTicker);
+  const liveTickerError = validateTicker(normalizedTicker, normalizedName);
+  const liveRtuError = validateRtu(rtu);
+  const validationMessages = [
+    normalizedName ? liveNameError : 'Case name is required.',
+    normalizedTicker ? liveTickerError : 'Token ticker is required.',
+    liveRtuError || (!rtu ? 'RTU is required.' : null),
+    priceError,
+    tokenPriceError,
+    dropsError,
+    imageValidationError,
+    isImageUploading ? 'Wait for image upload to finish.' : null,
+  ].filter((message): message is string => Boolean(message));
+  const isCreateDisabled =
+    !normalizedName ||
+    !normalizedTicker ||
+    !price ||
+    !rtu ||
+    !tokenPrice ||
+    Boolean(liveNameError) ||
+    Boolean(liveTickerError) ||
+    Boolean(liveRtuError) ||
+    !dropsAreValid ||
+    !imageIsValid ||
+    isImageUploading;
 
   const handleSubmit = async () => {
     setSubmitError(null);
@@ -139,16 +272,33 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     }
     if (!name.trim()) return setSubmitError('Enter a case name.');
     const nameTrimmed = name.trim();
-    if (/^\d+$/.test(nameTrimmed)) {
-      return setSubmitError('Case name cannot consist only of numbers.');
+    const normalizedName = nameTrimmed.toUpperCase();
+    const normalizedTicker = tokenTicker.trim().toUpperCase();
+    const nameValidation = validateCaseName(normalizedName, normalizedTicker);
+    if (nameValidation) {
+      setSubmitError(nameValidation);
+      setNameError(nameValidation);
+      return;
     }
     if (!tokenTicker.trim()) return setSubmitError('Enter a token ticker.');
+    const tickerValidation = validateTicker(normalizedTicker, normalizedName);
+    if (tickerValidation) {
+      setSubmitError(tickerValidation);
+      setTickerError(tickerValidation);
+      return;
+    }
     const priceValue = Number(price);
     const rtuValue = Number(rtu);
     const tokenPriceValue = Number(tokenPrice);
 
     if (!Number.isFinite(priceValue) || priceValue <= 0) return setSubmitError('Enter a valid open price.');
-    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 100) return setSubmitError('Enter a valid RTU.');
+    const rtuValidation = validateRtu(rtu);
+    if (rtuValidation) {
+      setSubmitError(rtuValidation);
+      setRtuError(rtuValidation);
+      return;
+    }
+    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) return setSubmitError('Enter a valid RTU (max 98%).');
     if (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0) return setSubmitError('Enter a valid token price.');
     if (drops.length === 0) return setSubmitError('Add at least one drop.');
     if (drops.some((drop) => !drop.value || Number(drop.value) <= 0)) {
@@ -163,7 +313,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       setSubmitError('Upload a case logo or choose an emoji.');
       return;
     }
-    if (!imageTrimmed.startsWith('http') && !isEmoji(imageTrimmed)) {
+    if (!isImageUrl(imageTrimmed) && !isEmoji(imageTrimmed)) {
       setSubmitError('Logo must be an emoji or an uploaded image.');
       return;
     }
@@ -176,14 +326,15 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
 
     try {
       const response = await api.createCase({
-        name: name.trim(),
-        currency: tokenTicker.trim().toUpperCase(),
-        tokenTicker: tokenTicker.trim().toUpperCase(),
+        name: normalizedName,
+        currency: normalizedTicker,
+        tokenTicker: normalizedTicker,
         price: priceValue,
         rtu: rtuValue,
         tokenPrice: tokenPriceValue,
         openDurationHours,
         imageUrl: imageTrimmed,
+        imageMeta,
         drops: normalizedDrops.map((drop) => ({
           name: drop.name,
           value: drop.value,
@@ -206,6 +357,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
         tokenPrice: caseData.tokenPrice,
         price: caseData.price,
         image: resolveAssetUrl(caseData.imageUrl || imageTrimmed),
+        imageMeta: caseData.imageMeta || imageMeta,
         rtu: caseData.rtu,
         openDurationHours: caseData.openDurationHours,
         createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : Date.now(),
@@ -217,12 +369,14 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
           currency: drop.currency,
           rarity: drop.rarity,
           image: resolveAssetUrl(drop.image || imageTrimmed),
+          imageMeta: caseData.imageMeta || imageMeta,
           color: drop.color,
         })),
       };
 
-      if (typeof response.data?.balance === 'number' && onBalanceUpdate) {
-        onBalanceUpdate(response.data.balance);
+      const nextBalance = (response.data as { balance?: number } | undefined)?.balance;
+      if (typeof nextBalance === 'number' && onBalanceUpdate) {
+        onBalanceUpdate(nextBalance);
       }
 
       onCreate(mappedCase);
@@ -248,19 +402,37 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 <div className="text-xs uppercase tracking-widest text-gray-500">Case Name</div>
                 <input
                   value={name}
-                  onChange={(e) => setName(sanitizeEnglishUpper(e.target.value, true))}
+                  onChange={(e) => {
+                    const next = sanitizeCaseName(e.target.value);
+                    setName(next);
+                    const nextTicker = sanitizeToken(tokenTicker).trim();
+                    setNameError(validateCaseName(next.trim(), nextTicker));
+                    setTickerError(validateTicker(nextTicker, next.trim()));
+                  }}
                   placeholder="MY LEGENDARY CASE"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
+                {nameError && (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{nameError}</div>
+                )}
               </label>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Token Ticker ($)</div>
                 <input
                   value={tokenTicker}
-                  onChange={(e) => setTokenTicker(sanitizeEnglishUpper(e.target.value))}
+                  onChange={(e) => {
+                    const next = sanitizeToken(e.target.value);
+                    setTokenTicker(next);
+                    const nextName = sanitizeCaseName(name).trim();
+                    setTickerError(validateTicker(next.trim(), nextName));
+                    setNameError(validateCaseName(nextName, next.trim()));
+                  }}
                   placeholder="E.G. TOKEN"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
+                {tickerError && (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{tickerError}</div>
+                )}
               </label>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Open Price (₮)</div>
@@ -272,18 +444,27 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                   placeholder="e.g. 10"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
+                {priceError && (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{priceError}</div>
+                )}
               </label>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">RTU %</div>
                 <input
                   type="number"
                   value={rtu}
-                  onChange={(e) => setRtu(e.target.value)}
+                  onChange={(e) => {
+                    setRtu(e.target.value);
+                    setRtuError(validateRtu(e.target.value));
+                  }}
                   min={1}
-                  max={100}
+                  max={98}
                   placeholder="e.g. 95"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
+                {rtuError && (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{rtuError}</div>
+                )}
               </label>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Token Price</div>
@@ -295,6 +476,9 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                   placeholder="e.g. 0.25"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
+                {tokenPriceError && (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{tokenPriceError}</div>
+                )}
               </label>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Case Duration</div>
@@ -313,22 +497,28 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                   <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 </div>
               </label>
-              <label className="space-y-2 md:col-span-2">
+              <div className="space-y-2 md:col-span-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Token Logo (Upload or Emoji)</div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition"
+                    disabled={isImageUploading}
+                  >
                     <UploadCloud size={16} className="text-web3-accent" />
                     <span className="text-xs uppercase tracking-widest text-gray-300">
                       {isImageUploading ? 'Uploading...' : 'Choose Image'}
                     </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => handleImageUpload(e.target.files?.[0])}
-                      disabled={isImageUploading}
-                    />
-                  </label>
+                  </button>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleImageUpload(e.target.files?.[0])}
+                    disabled={isImageUploading}
+                  />
                   <button
                     type="button"
                     onClick={() => setIsEmojiOpen((prev) => !prev)}
@@ -337,6 +527,15 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                     <Smile size={16} className="text-web3-accent" />
                     Choose Emoji
                   </button>
+                  {imageUrl && isImageUrl(imageUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => setIsLogoAdjustOpen(true)}
+                      className="text-[10px] uppercase tracking-widest text-web3-accent hover:text-white transition"
+                    >
+                      Adjust
+                    </button>
+                  )}
                   {imageUrl && (
                     <button
                       type="button"
@@ -362,6 +561,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                           type="button"
                           onClick={() => {
                             setImageUrl(emoji);
+                            setImageMeta({ fit: 'contain', scale: 1, x: 0, y: 0 });
                             setIsEmojiOpen(false);
                           }}
                           className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] transition flex items-center justify-center"
@@ -372,25 +572,32 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                     </div>
                   </div>
                 )}
-                {imageError && (
-                  <div className="text-[11px] uppercase tracking-widest text-red-400">{imageError}</div>
+                {(imageError || imageValidationError) && (
+                  <div className="text-[11px] uppercase tracking-widest text-red-400">
+                    {imageError || imageValidationError}
+                  </div>
                 )}
                 <div className="text-[10px] uppercase tracking-widest text-gray-600">
                   PNG/JPG/WebP/GIF • up to 1MB • max 1024px
                 </div>
-              </label>
+              </div>
             </div>
           </div>
 
           <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
             <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Preview</div>
             <div className="flex flex-col items-center gap-4">
-              <div className="w-20 h-20 rounded-full border border-white/[0.12] bg-black/30 flex items-center justify-center backdrop-blur-xl">
+              <div className="w-20 h-20 rounded-full border border-white/[0.12] bg-black/30 flex items-center justify-center backdrop-blur-xl overflow-hidden">
                 {imageUrl ? (
-                  imageUrl.startsWith('http') || imageUrl.startsWith('/') ? (
-                    <img src={resolveAssetUrl(imageUrl)} alt="token logo" className="w-12 h-12 object-contain" />
+                  isImageUrl(imageUrl) ? (
+                    <ImageWithMeta
+                      src={imageUrl}
+                      meta={imageMeta}
+                      className="w-full h-full rounded-full"
+                      imgClassName="w-full h-full"
+                    />
                   ) : (
-                    <span className="text-3xl">{imageUrl}</span>
+                    <span className="text-4xl">{imageUrl}</span>
                   )
                 ) : (
                   <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>
@@ -404,13 +611,28 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                   </div>
                 )}
               </div>
-              <div className="px-3 py-1 rounded-full text-xs bg-web3-accent/10 border border-web3-accent/30">
-                {price || '—'} ₮ • RTU {rtu || '—'}%
+              <div className="px-4 py-2 rounded-xl text-xs bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm">
+                <span className="font-bold text-gray-200">{price || '—'} ₮</span>
+                <span className="text-gray-500"> • RTU {rtu || '—'}%</span>
               </div>
               <div className="text-xs text-gray-500">Duration {openDurationHours}h • 1 ${tokenTicker || 'TOKEN'} = {tokenPrice || '—'}</div>
             </div>
           </div>
         </div>
+
+        <ImageAdjustModal
+          open={isLogoAdjustOpen && Boolean(imageUrl && isImageUrl(imageUrl))}
+          src={imageUrl}
+          initialMeta={imageMeta}
+          defaultMeta={{ fit: 'contain', scale: 1, x: 0, y: 0 }}
+          shape="square"
+          title="Logo Display"
+          onClose={() => setIsLogoAdjustOpen(false)}
+          onSave={(nextMeta) => {
+            setImageMeta(nextMeta);
+            setIsLogoAdjustOpen(false);
+          }}
+        />
 
         <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl relative z-0">
           <div className="flex items-center justify-between mb-4">
@@ -454,46 +676,44 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
               ))}
             </div>
+            {dropsError && (
+              <div className="mt-3 text-[11px] uppercase tracking-widest text-red-400">{dropsError}</div>
+            )}
           </div>
 
-          <div className="mt-6 flex flex-col items-center gap-2">
+          <div className="mt-6 flex flex-col items-center gap-3">
             {submitError && (
               <div className="text-[11px] uppercase tracking-widest text-red-400">{submitError}</div>
+            )}
+            {!submitError && validationMessages.length > 0 && (
+              <div className="text-[11px] uppercase tracking-widest text-red-400 text-center">
+                {validationMessages[0]}
+              </div>
             )}
             {isAuthenticated && !isAdmin && (
               <div className="text-[11px] uppercase tracking-widest text-gray-500">Only admins can create cases</div>
             )}
-            <div className="flex items-center gap-2">
-              <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-web3-accent/25 to-web3-purple/25 text-xs font-black text-web3-accent border border-web3-accent/50 shadow-[0_0_14px_rgba(102,252,241,0.3)]">
+            <div className="flex items-center justify-center gap-3 w-full">
+              <div className="px-5 h-[52px] rounded-2xl bg-web3-card/50 border border-gray-700/50 text-sm font-black text-gray-200 flex items-center">
                 {CREATE_CASE_FEE} ₮
               </div>
-              <button
-                onClick={!isAuthenticated ? onOpenWalletConnect : !isAdmin ? undefined : balance < CREATE_CASE_FEE ? onOpenTopUp : handleSubmit}
-                disabled={isAuthenticated && !isAdmin}
-                className={`group relative px-8 py-3 text-sm font-black rounded-xl overflow-hidden transform transition-all duration-300 ${
-                  !isAuthenticated
-                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
-                    : isAdmin && balance >= CREATE_CASE_FEE
-                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.6)]'
-                    : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60'
-                }`}
-              >
-                <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-                <span className="relative flex items-center gap-2 uppercase tracking-wide">
-                  {!isAuthenticated ? (
-                    <>Connect Wallet</>
-                  ) : !isAdmin ? (
-                    <>Admins only</>
-                  ) : balance < CREATE_CASE_FEE ? (
-                    <>Need {(CREATE_CASE_FEE - balance).toFixed(1)} ₮ more • Top up</>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Create Case
-                    </>
-                  )}
-                </span>
-              </button>
+              <AdminActionButton
+                isAuthenticated={isAuthenticated}
+                isAdmin={isAdmin}
+                balance={balance}
+                cost={CREATE_CASE_FEE}
+                onConnect={onOpenWalletConnect}
+                onTopUp={onOpenTopUp}
+                onAction={handleSubmit}
+                readyLabel={
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Create Case
+                  </>
+                }
+                disabled={isCreateDisabled && isAuthenticated && isAdmin}
+                className="h-[52px] w-full max-w-md px-10 text-sm font-black rounded-2xl uppercase tracking-wide flex items-center justify-center gap-2"
+              />
             </div>
           </div>
         </div>

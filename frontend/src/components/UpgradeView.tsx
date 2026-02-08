@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Item, Rarity } from '../types';
 import { TrendingUp, ArrowUp, ArrowDown, Settings2, Package, Sparkles } from 'lucide-react';
 import { ItemCard } from './ItemCard';
+import { EmptyState } from './ui/EmptyState';
+import { ItemGrid } from './ui/ItemGrid';
+import { AdminActionButton } from './ui/AdminActionButton';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -185,7 +188,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                   Selected Item
                 </span>
               </div>
-
+              
               {selectedItem ? (
                 <div className="flex flex-col items-center gap-4 flex-1 justify-center">
                   <ItemCard item={selectedItem} size="lg" className="w-full h-full max-h-[280px]" currencyPrefix="$" />
@@ -201,10 +204,11 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
 
           {/* Center: The Circle + Action */}
           <div className="flex flex-col items-center justify-center gap-6 flex-shrink-0">
-            <div className="relative w-[220px] h-[220px] lg:w-[280px] lg:h-[280px] flex items-center justify-center mt-6">
+            <div className="relative w-[220px] h-[220px] lg:w-[280px] lg:h-[280px] flex items-center justify-center mt-6 rounded-full overflow-hidden">
+              <div className="absolute inset-6 rounded-full bg-gradient-to-br from-web3-accent/10 to-web3-purple/10 blur-xl opacity-80 pointer-events-none"></div>
               
               {/* SVG Rings */}
-              <svg className="absolute inset-0 w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 260 260">
+              <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 260 260">
                 {/* Background Track */}
                 <circle 
                   cx="130" cy="130" r={RADIUS} 
@@ -214,17 +218,16 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 />
                 {/* Win Zone (Success) - Green */}
                 {displayItem && (
-                  <circle 
-                    cx="130" cy="130" r={RADIUS} 
-                    fill="transparent" 
-                    stroke="#10B981" 
-                    strokeWidth="12"
+                <circle 
+                  cx="130" cy="130" r={RADIUS} 
+                  fill="transparent" 
+                  stroke="#10B981" 
+                  strokeWidth="12"
                     strokeLinecap="butt"
-                    strokeDasharray={CIRCUMFERENCE}
-                    strokeDashoffset={strokeDashoffset}
-                    className="transition-all duration-500 ease-out"
-                    style={{ filter: 'drop-shadow(0 0 10px rgba(16, 185, 129, 0.4))' }}
-                  />
+                  strokeDasharray={CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  className="transition-all duration-500 ease-out"
+                />
                 )}
               </svg>
               
@@ -262,7 +265,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     </div>
                     <div className={`mt-2 text-xs font-bold uppercase tracking-[0.25em] ${winChance < 20 ? 'text-web3-danger' : 'text-web3-success'}`}>
                       {chanceLabel}
-                    </div>
+                  </div>
                   </div>
                 ) : null}
                 
@@ -319,18 +322,20 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
             </div>
 
             <div className="w-full max-w-xs text-center">
-              <button 
-                disabled={isSpinning || isUpgradeBlocked || (!selectedItem && isAuthenticated) || (isAuthenticated && !isAdmin)} 
-                onClick={handleRoll}
-                className={`w-full py-3 text-lg tracking-widest uppercase shadow-[0_0_20px_rgba(102,252,241,0.18)] font-black rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(102,252,241,0.5)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${isSpinning ? 'opacity-50' : 'animate-pulse-fast'}`}
-              >
-                {isSpinning ? 'ROLLING...' : !isAuthenticated ? 'CONNECT WALLET' : !isAdmin ? 'ADMINS ONLY' : 'UPGRADE'}
-              </button>
-              {isAuthenticated && !isAdmin && (
-                <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-500">
-                  Only admins can upgrade
-                </div>
-              )}
+              <AdminActionButton
+                isAuthenticated={isAuthenticated}
+                isAdmin={isAdmin}
+                balance={0}
+                cost={0}
+                onConnect={onOpenWalletConnect}
+                onTopUp={() => {}}
+                onAction={handleRoll}
+                readyLabel="UPGRADE"
+                labelOverride={isSpinning ? 'ROLLING...' : undefined}
+                forceLabel={Boolean(isSpinning)}
+                disabled={isSpinning || isUpgradeBlocked || (!selectedItem && isAuthenticated)}
+                className={`w-full py-3 text-lg tracking-widest font-black rounded-xl shadow-[0_0_20px_rgba(102,252,241,0.18)] ${isSpinning ? 'opacity-50' : 'animate-pulse-fast'}`}
+              />
 
               <button 
                 onClick={() => !isSpinning && setFastUpgrade(!fastUpgrade)}
@@ -362,7 +367,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     status={lastResult.success ? 'normal' : 'burnt'}
                     currencyPrefix="$"
                   />
-                </div>
+                  </div>
               ) : displayItem ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
                   <ItemCard
@@ -395,12 +400,12 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     {[1.2, 1.5, 2, 5, 10].map(m => (
                       <button key={m} onClick={() => !isSpinning && setMultiplier(m)} className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-400 transition border border-white/[0.06]">
                         {m}x
-                      </button>
+                </button>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
+              </div>
           </div>
         </div>
       </div>
@@ -438,45 +443,45 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 A-Z
               </button>
             </div>
-            <button 
-              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+          <button 
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
               className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-white transition uppercase tracking-wider bg-black/30 px-3 py-1.5 rounded border border-white/[0.12] hover:border-web3-accent/40"
-              disabled={isSpinning}
-            >
+            disabled={isSpinning}
+          >
               <span className="text-gray-500 mr-1">{sortBy === 'alpha' ? 'Alpha:' : 'Price:'}</span>
               {sortBy === 'alpha'
                 ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A')
                 : (sortOrder === 'asc' ? 'Asc' : 'Desc')}
-              {sortOrder === 'asc' ? <ArrowUp size={14} className="text-web3-accent" /> : <ArrowDown size={14} className="text-web3-accent" />}
-            </button>
+            {sortOrder === 'asc' ? <ArrowUp size={14} className="text-web3-accent" /> : <ArrowDown size={14} className="text-web3-accent" />}
+          </button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           {sortedInventory.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-600">
-              <Package size={48} className="mb-4 opacity-20"/>
-              <p>Your inventory is empty. Open some cases!</p>
-            </div>
+            <EmptyState
+              icon={<Package size={48} />}
+              message="Your inventory is empty. Open some cases!"
+            />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+            <ItemGrid>
               {sortedInventory.map((item, index) => {
                 if (!item || !item.id) return null;
                 const key = `${item.id}-${index}`;
                 return (
-                <ItemCard
-                  key={key}
-                  item={item}
-                  size="sm"
-                  selected={selectedKey === key}
-                  disabled={isSpinning}
-                  onClick={() => handleSelectItem(item, key)}
-                  showSelectedBadge
-                  currencyPrefix="$"
-                />
-              );
+                  <ItemCard
+                    key={key}
+                    item={item}
+                    size="sm"
+                    selected={selectedKey === key}
+                    disabled={isSpinning}
+                    onClick={() => handleSelectItem(item, key)}
+                    showSelectedBadge
+                    currencyPrefix="$"
+                  />
+                );
               })}
-            </div>
+            </ItemGrid>
           )}
         </div>
       </div>
