@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Case } from '../types';
 import { SearchInput } from './ui/SearchInput';
-import { CaseIcon } from './CaseIcon';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 
 interface CaseListViewProps {
   cases: Case[];
@@ -71,46 +71,63 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     return `${hours}h ${minutes}m`;
   };
 
-  const renderCaseCard = (caseData: Case, inactive: boolean) => (
-    <div
-      key={caseData.id}
-      onClick={() => onSelectCase(caseData, inactive ? 'stats' : 'open')}
-      className="group relative bg-web3-card/50 backdrop-blur-xl p-4 rounded-2xl border border-white/[0.05] hover:border-web3-accent/50 transition-all duration-300 overflow-hidden cursor-pointer hover:scale-105 aspect-square flex flex-col"
-    >
-      <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.02] to-web3-purple/[0.02] group-hover:bg-gradient-to-br group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-300"></div>
+  const renderCaseCard = (caseData: Case, inactive: boolean) => {
+    const logoValue = caseData.image || caseData.possibleDrops[0]?.image || '';
+    const logoIsImage =
+      logoValue.startsWith('http') || logoValue.startsWith('/') || logoValue.startsWith('data:');
 
-      <div className="relative z-10 flex flex-col h-full gap-0.5 px-2 pt-1 pb-1">
-        {caseData.openDurationHours && caseData.createdAt && (
-          <div className="text-[9px] uppercase tracking-wider text-gray-500 text-center leading-none">
-            {getRemainingTime(caseData)}
-          </div>
-        )}
-        <div className="text-[10px] uppercase tracking-wider text-gray-500 text-center">
-          {caseData.creatorName || 'Creator'}
-        </div>
-        <div className="flex items-center justify-center">
-          <div className="w-24 h-24 bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 rounded-xl border-2 border-web3-accent/50 shadow-[0_0_30px_rgba(102,252,241,0.2)] backdrop-blur-sm flex items-center justify-center text-5xl">
-            <CaseIcon
-              value={caseData.image || caseData.possibleDrops[0]?.image || ''}
-              size="lg"
-              meta={caseData.imageMeta}
-            />
-          </div>
-        </div>
+    return (
+      <div
+        key={caseData.id}
+        onClick={() => onSelectCase(caseData, inactive ? 'stats' : 'open')}
+        className="group relative bg-web3-card/50 backdrop-blur-xl p-4 rounded-2xl border border-white/[0.05] hover:border-web3-accent/50 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square min-h-[220px] flex flex-col"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.02] to-web3-purple/[0.02] group-hover:bg-gradient-to-br group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-300"></div>
 
-        <div className="w-full text-center space-y-1">
-          <h3 className="text-xs font-black truncate">{caseData.name}</h3>
-          <div className="text-[10px] uppercase tracking-wider text-gray-400">
-            ${caseData.tokenTicker || caseData.currency}
+        <div className="relative z-10 grid h-full grid-rows-[auto_auto_1fr_auto] gap-1 px-2 py-2 min-h-0">
+          {caseData.openDurationHours && caseData.createdAt && (
+            <div className="text-[9px] uppercase tracking-wider text-gray-500 text-center leading-none">
+              {getRemainingTime(caseData)}
+            </div>
+          )}
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 text-center">
+            {caseData.creatorName || 'Creator'}
           </div>
-          <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-between gap-1.5">
-            <span className="font-black text-xs text-white">{caseData.price} ₮</span>
-            <span className="font-bold text-[10px] text-web3-success">RTU {caseData.rtu}%</span>
+          <div className="flex items-center justify-center min-h-0">
+            <div className="w-[42%] max-w-[88px] min-w-[44px] aspect-square bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 rounded-xl border-2 border-web3-accent/50 shadow-[0_0_30px_rgba(102,252,241,0.2)] backdrop-blur-sm flex items-center justify-center overflow-hidden">
+              {logoValue ? (
+                logoIsImage ? (
+                  <ImageWithMeta
+                    src={logoValue}
+                    meta={caseData.imageMeta}
+                    className="w-full h-full"
+                    imgClassName="w-full h-full"
+                  />
+                ) : (
+                  <span className="text-[clamp(22px,3.2vw,36px)] leading-none select-none">
+                    {logoValue}
+                  </span>
+                )
+              ) : (
+                <span className="text-[10px] uppercase tracking-widest text-gray-500">Logo</span>
+              )}
+            </div>
+          </div>
+
+          <div className="w-full text-center space-y-1">
+            <h3 className="text-xs font-black truncate">{caseData.name}</h3>
+            <div className="text-[10px] uppercase tracking-wider text-gray-400">
+              ${caseData.tokenTicker || caseData.currency}
+            </div>
+            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-between gap-1.5">
+              <span className="font-black text-xs text-white">{caseData.price} ₮</span>
+              <span className="font-bold text-[10px] text-web3-success">RTU {caseData.rtu}%</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="w-full min-h-screen text-white px-6 py-12 relative">
