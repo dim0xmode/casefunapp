@@ -8,6 +8,7 @@ import { Pagination } from './ui/Pagination';
 import { ConfirmModal } from './ui/ConfirmModal';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { CaseIcon } from './CaseIcon';
+import { formatShortfallUp } from '../utils/number';
 
 const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Orion', 'Helix'];
 
@@ -17,7 +18,7 @@ interface BattleViewProps {
   onBattleFinish: (wonItems: Item[], totalCost: number) => void;
   balance: number;
   onChargeBattle: (amount: number) => Promise<boolean>;
-  onOpenTopUp: () => void;
+  onOpenTopUp: (prefillUsdt?: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
@@ -372,25 +373,19 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
           <div className="flex flex-col items-center gap-4 mb-6">
             <h2 className="text-2xl font-bold flex items-center gap-2">
               <Swords className="text-web3-accent" /> Available Battles
-            </h2>
+          </h2>
             <AdminActionButton
               isAuthenticated={isAuthenticated}
               isAdmin={isAdmin}
               balance={balance}
               cost={0}
               onConnect={onOpenWalletConnect}
-              onTopUp={() => {}}
+              onTopUp={(_shortfall) => {}}
               onAction={() => setCreateBattleOpen(true)}
               readyLabel="Create Battle"
               className="px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs shadow-[0_0_18px_rgba(102,252,241,0.35)]"
             />
           </div>
-          {isAuthenticated && !isAdmin && (
-            <div className="mb-4 text-[10px] uppercase tracking-widest text-gray-500">
-              Only admins can create or join battles
-            </div>
-          )}
-
           <div className="mb-4">
             <SearchInput
               value={priceFilter}
@@ -451,7 +446,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                             Join Battle <ChevronRight size={16} />
                           </>
                         }
-                        topUpLabel={(shortfall) => `Need ${Math.max(0, shortfall)} ₮ more • Top up`}
+                        topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
                         className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                       />
                     </div>
@@ -513,7 +508,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         Join Battle <ChevronRight size={16} />
                       </>
                     }
-                    topUpLabel={(shortfall) => `Need ${Math.max(0, shortfall)} ₮ more • Top up`}
+                    topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
                     className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                   />
                 </div>
@@ -633,7 +628,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         </div>
                       </div>
                     )}
-                  </div>
+          </div>
                   <Pagination
                     className="mt-auto pt-3"
                     currentPage={createCasesPage}
@@ -672,9 +667,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               {caseData.name}
                             </div>
                           </div>
-                        </div>
+                </div>
               </div>
-                    ))}
+            ))}
                     {createSelectedCases.length === 0 && (
                       <div className="text-xs text-gray-500 text-center py-6">No cases selected</div>
                     )}
@@ -694,7 +689,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                       balance={balance}
                       cost={0}
                       onConnect={onOpenWalletConnect}
-                      onTopUp={() => {}}
+                      onTopUp={(_shortfall) => {}}
                       onAction={handleCreateBattle}
                       readyLabel="Create Battle"
                       disabled={createSelectedCases.length === 0}
@@ -840,25 +835,23 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
               <div className="relative mt-20 flex flex-col items-center animate-fade-in">
                 <button
                   onClick={handleStartBattle}
-                  disabled={isAuthenticated && !isAdmin}
+                  disabled={startConfirm}
                   className={`w-32 h-32 rounded-full border-2 flex items-center justify-center transition ${
                     !isAuthenticated
                       ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
-                      : isAdmin && canAffordBattle
+                      : canAffordBattle
                         ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
                         : 'border-red-500/40 bg-gray-800/50'
-                  } ${startConfirm ? 'opacity-40' : ''} ${isAuthenticated && !isAdmin ? 'cursor-not-allowed' : ''}`}
+                  } ${startConfirm ? 'opacity-40 cursor-wait' : ''}`}
                   aria-label="Join Battle"
                 >
                   <span className={`text-xs uppercase tracking-widest font-bold text-center px-2 ${
-                    !isAuthenticated || (isAdmin && canAffordBattle) ? 'text-web3-accent' : 'text-gray-400'
+                    !isAuthenticated || canAffordBattle ? 'text-web3-accent' : 'text-gray-400'
                   }`}>
                     {!isAuthenticated
                       ? 'Connect'
-                      : !isAdmin
-                        ? 'Admins only'
                       : !canAffordBattle
-                        ? `Need ${battleShortfall} ₮ more • Top up`
+                        ? `Need ${formatShortfallUp(battleShortfall)} ₮ more • Top up`
                         : isOwnBattle
                           ? 'Call Bot'
                           : 'Join'}

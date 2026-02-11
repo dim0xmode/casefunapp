@@ -4,6 +4,7 @@ import { ArrowLeft, Package, ChevronRight, ChevronsRight, Zap } from 'lucide-rea
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { AdminActionButton } from './ui/AdminActionButton';
+import { formatShortfallUp } from '../utils/number';
 
 // Open Modes
 type OpenMode = 'normal' | 'fast' | 'instant';
@@ -18,7 +19,7 @@ interface CaseOpeningViewProps {
   onBack: () => void;
   onOpenCase: (caseId: string, count: number) => Promise<Item[]>;
   balance: number;
-  onOpenTopUp: () => void;
+  onOpenTopUp: (prefillUsdt?: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
@@ -26,6 +27,23 @@ interface CaseOpeningViewProps {
 }
 
 export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin, viewMode = 'open' }) => {
+  const formatAddress = (address?: string | null) => {
+    if (!address) return '';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const handleCopyTokenAddress = async () => {
+    const address = caseData.tokenAddress;
+    if (!address) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(address);
+      }
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
   const getRemainingTime = () => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
@@ -53,7 +71,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
   const canAfford = balance >= cost;
 
   const handleSpin = async () => {
-    if (isSpinning || isExpired || !canAfford || !isAdmin || isStatsView) return;
+    if (isSpinning || isExpired || !canAfford || isStatsView) return;
 
     const prevCount = prevOpenCountRef.current;
     setCurrentRevealFrom(prevCount);
@@ -153,6 +171,21 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
             ) : (
               <div className="text-xs uppercase tracking-widest text-gray-500">No statistics yet</div>
             )}
+            {isExpired && caseData.tokenAddress && (
+              <div className="mt-6 bg-black/30 border border-white/[0.08] rounded-xl p-4 flex items-center justify-between gap-4 text-xs">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Token Address</div>
+                  <div className="text-sm font-bold text-white">{formatAddress(caseData.tokenAddress)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyTokenAddress}
+                  className="px-3 py-2 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                >
+                  Copy
+                </button>
+              </div>
+            )}
             {caseData.stats?.topHolders && caseData.stats.topHolders.length > 0 && (
               <div className="mt-6">
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Top 3 Holders</div>
@@ -243,18 +276,13 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
             readyLabel={
               hasOpened ? 'Open Again' : 'Open'
             }
-            topUpLabel={(shortfallValue) => `Need ${shortfallValue} ₮ more • Top up`}
+            topUpLabel={(shortfallValue) => `Need ${formatShortfallUp(shortfallValue)} ₮ more • Top up`}
             labelOverride={isExpired ? 'Closed' : isSpinning ? 'Opening...' : undefined}
             forceLabel={Boolean(isExpired || isSpinning)}
             disabled={isSpinning || isExpired}
             showPing={!isSpinning && canAfford && !isExpired}
             className="group px-8 py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300"
           />
-          {isAuthenticated && !isAdmin && (
-            <div className="col-span-3 mt-2 text-center text-[10px] uppercase tracking-widest text-gray-500">
-              Only admins can open cases
-            </div>
-          )}
 
           {/* Right Side: Open Mode Toggle */}
           <div className="flex items-center justify-start gap-1">

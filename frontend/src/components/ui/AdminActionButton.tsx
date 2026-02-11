@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAdminAction } from '../../hooks/useAdminAction';
+import { formatShortfallUp } from '../../utils/number';
 
 interface AdminActionButtonProps {
   isAuthenticated: boolean;
@@ -7,12 +8,12 @@ interface AdminActionButtonProps {
   balance: number;
   cost: number;
   onConnect: () => void;
-  onTopUp: () => void;
+  onTopUp: (shortfall: number) => void;
   onAction: () => void;
   readyLabel: React.ReactNode;
   connectLabel?: React.ReactNode;
-  adminsOnlyLabel?: React.ReactNode;
   topUpLabel?: (shortfall: number) => React.ReactNode;
+  restrictedLabel?: React.ReactNode;
   labelOverride?: React.ReactNode;
   forceLabel?: boolean;
   className?: string;
@@ -30,8 +31,8 @@ export const AdminActionButton: React.FC<AdminActionButtonProps> = ({
   onAction,
   readyLabel,
   connectLabel = 'Connect Wallet',
-  adminsOnlyLabel = 'Admins only',
-  topUpLabel = (shortfall) => `Need ${shortfall.toFixed(1)} ₮ more • Top up`,
+  topUpLabel = (shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`,
+  restrictedLabel = 'Early Access Only',
   labelOverride,
   forceLabel = false,
   className = '',
@@ -39,15 +40,15 @@ export const AdminActionButton: React.FC<AdminActionButtonProps> = ({
   showPing = false,
 }) => {
   const action = useAdminAction({ isAuthenticated, isAdmin, balance, cost });
-  const isDisabled = disabled || action.state === 'admins-only';
+  const isDisabled = disabled;
 
   const label =
     action.state === 'connect'
       ? connectLabel
-      : action.state === 'admins-only'
-      ? adminsOnlyLabel
       : action.state === 'topup'
       ? topUpLabel(action.shortfall)
+      : action.state === 'restricted'
+      ? restrictedLabel
       : readyLabel;
 
   const finalLabel = forceLabel && labelOverride !== undefined ? labelOverride : label;
@@ -59,7 +60,7 @@ export const AdminActionButton: React.FC<AdminActionButtonProps> = ({
       return;
     }
     if (action.state === 'topup') {
-      onTopUp();
+      onTopUp(action.shortfall);
       return;
     }
     if (action.state === 'ready') {
@@ -70,6 +71,8 @@ export const AdminActionButton: React.FC<AdminActionButtonProps> = ({
   const stateClass =
     action.state === 'connect' || action.state === 'ready'
       ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black hover:scale-105'
+      : action.state === 'restricted'
+      ? 'bg-gray-700/80 text-gray-300 border border-gray-500/40'
       : 'bg-gray-700/80 text-gray-400 border border-red-500/40 hover:border-red-500/60';
 
   return (

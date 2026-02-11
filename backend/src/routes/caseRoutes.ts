@@ -17,8 +17,8 @@ const upload = multer({
 
 router.get('/', getAllCases);
 router.get('/:id', getCaseById);
-router.post('/upload', requireAuth, requireRole(['ADMIN']), upload.single('file'), uploadCaseImage);
-router.post('/', requireAuth, requireRole(['ADMIN']), createCase);
-router.post('/:caseId/open', requireAuth, requireRole(['ADMIN']), openCase);
+router.post('/upload', requireAuth, requireRole(['ADMIN', 'MODERATOR']), upload.single('file'), uploadCaseImage);
+router.post('/', requireAuth, requireRole(['ADMIN', 'MODERATOR']), createCase);
+router.post('/:caseId/open', requireAuth, requireRole(['ADMIN', 'MODERATOR']), openCase);
 
 export default router;

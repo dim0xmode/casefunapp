@@ -5,6 +5,8 @@ import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
 
+const roundToTwo = (value: number) => Number(value.toFixed(2));
+
 export const topUpBalance = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
@@ -38,23 +40,44 @@ export const topUpBalance = async (req: Request, res: Response, next: NextFuncti
 export const upgradeItem = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
-    const { itemId, multiplier } = req.body;
+    const { itemId, itemIds, multiplier } = req.body;
     const mult = Number(multiplier);
-    if (!itemId || !Number.isFinite(mult) || mult < 1.2) {
+    const requestedIdsRaw = Array.isArray(itemIds)
+      ? itemIds
+      : itemId
+      ? [itemId]
+      : [];
+    const requestedIds = Array.from(
+      new Set(
+        requestedIdsRaw
+          .map((value: any) => String(value || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (!requestedIds.length || requestedIds.length > 9 || !Number.isFinite(mult) || mult < 1.2) {
       return next(new AppError('Invalid upgrade parameters', 400));
     }
 
-    const item = await prisma.inventoryItem.findFirst({
-      where: { id: itemId, userId, status: 'ACTIVE' },
+    const items = await prisma.inventoryItem.findMany({
+      where: { id: { in: requestedIds }, userId, status: 'ACTIVE' },
     });
 
-    if (!item) {
+    if (items.length !== requestedIds.length) {
       return next(new AppError('Item not found', 404));
     }
+    if (!items.length) {
+      return next(new AppError('No items selected', 400));
+    }
+    const baseItem = items[0];
+    const sameCurrency = items.every((item) => item.currency === baseItem.currency);
+    const sameCase = items.every((item) => item.caseId === baseItem.caseId);
+    if (!sameCurrency || !sameCase) {
+      return next(new AppError('All selected cards must be from the same token/case', 400));
+    }
 
-    if (item.caseId) {
+    if (baseItem.caseId) {
       const caseInfo = await prisma.case.findUnique({
-        where: { id: item.caseId },
+        where: { id: baseItem.caseId },
       });
       if (caseInfo?.openDurationHours && caseInfo.createdAt) {
         const endAt = new Date(caseInfo.createdAt).getTime() + caseInfo.openDurationHours * 60 * 60 * 1000;
@@ -69,27 +92,51 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
       return next(new AppError('Upgrade blocked', 400));
     }
     const winChance = Math.min(75, Math.max(1, rawChance));
-    const targetValue = Math.floor(item.value * mult);
-    const isSuccess = Math.random() * 100 <= winChance;
+    const totalBaseValue = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const targetValue = roundToTwo(totalBaseValue * mult);
+
+    let forceFailByRtu = false;
+    if (baseItem.caseId) {
+      const caseInfo = await prisma.case.findUnique({
+        where: { id: baseItem.caseId },
+      });
+      if (caseInfo?.tokenPrice) {
+        const tokenSymbol = caseInfo.tokenTicker || caseInfo.currency;
+        const ledger = await prisma.rtuLedger.findFirst({
+          where: {
+            caseId: baseItem.caseId,
+            tokenSymbol,
+          },
+        });
+        const reserveToken = Math.max(0, Number(ledger?.bufferDebtToken || 0));
+        const neededDelta = Math.max(0, targetValue - totalBaseValue);
+        forceFailByRtu = neededDelta > reserveToken + 1e-9;
+      }
+    }
+
+    const isSuccess = !forceFailByRtu && Math.random() * 100 <= winChance;
 
     const result = await prisma.$transaction(async (tx) => {
       let newItem = null;
+      await tx.inventoryItem.updateMany({
+        where: { id: { in: requestedIds }, userId, status: 'ACTIVE' },
+        data: { status: 'BURNT' },
+      });
+
       if (isSuccess) {
         const rarity = getRarityByValue(targetValue);
-        newItem = await tx.inventoryItem.update({
-          where: { id: item.id },
+        newItem = await tx.inventoryItem.create({
           data: {
-            name: `${targetValue} ${item.currency}`,
+            userId,
+            caseId: baseItem.caseId,
+            name: `${targetValue} ${baseItem.currency}`,
             value: targetValue,
+            currency: baseItem.currency,
             rarity,
             color: (RARITY_COLORS as Record<string, string>)[rarity],
+            image: baseItem.image || null,
             status: 'ACTIVE',
           },
-        });
-      } else {
-        await tx.inventoryItem.update({
-          where: { id: item.id },
-          data: { status: 'BURNT' },
         });
       }
 
@@ -98,25 +145,26 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
           userId,
           type: 'UPGRADE',
           amount: 0,
-          currency: item.currency,
+          currency: baseItem.currency,
           metadata: {
-            itemId: item.id,
+            itemIds: requestedIds,
             multiplier: mult,
+            totalBaseValue,
             targetValue,
             success: isSuccess,
           },
         },
       });
 
-      if (item.caseId) {
+      if (baseItem.caseId) {
         const caseInfo = await tx.case.findUnique({
-          where: { id: item.caseId },
+          where: { id: baseItem.caseId },
         });
         if (caseInfo?.tokenPrice) {
-          const deltaToken = isSuccess ? targetValue - item.value : -item.value;
+          const deltaToken = isSuccess ? targetValue - totalBaseValue : -totalBaseValue;
           await recordRtuEvent(
             {
-              caseId: item.caseId,
+              caseId: baseItem.caseId,
               userId,
               tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
               tokenPriceUsdt: caseInfo.tokenPrice,
@@ -124,7 +172,7 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
               type: 'UPGRADE',
               deltaSpentUsdt: 0,
               deltaToken,
-              metadata: { itemId: item.id, targetValue, success: isSuccess },
+              metadata: { itemIds: requestedIds, targetValue, totalBaseValue, success: isSuccess },
             },
             tx
           );
@@ -140,7 +188,8 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
         success: isSuccess,
         targetValue,
         newItem: result.newItem,
-        burntItemId: isSuccess ? null : item.id,
+        burntItemIds: requestedIds,
+        consumedItemIds: requestedIds,
       },
     });
   } catch (error) {

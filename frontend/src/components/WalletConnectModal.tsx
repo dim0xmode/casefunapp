@@ -1,24 +1,35 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { useWallet } from '../hooks/useWallet';
 import { Button } from './Button';
 
 interface WalletConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConnect: (address: string) => void;
+  onConnect: (address: string) => Promise<boolean>;
+  connectWallet: () => Promise<string | null>;
+  isConnecting: boolean;
+  error: string | null;
+  isAuthLoading?: boolean;
 }
 
-export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, onClose, onConnect }) => {
-  const { connectWallet, isConnecting, error } = useWallet();
-
+export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
+  isOpen,
+  onClose,
+  onConnect,
+  connectWallet,
+  isConnecting,
+  error,
+  isAuthLoading = false,
+}) => {
   if (!isOpen) return null;
 
   const handleConnect = async () => {
     const address = await connectWallet();
     if (address) {
-      onConnect(address);
-      onClose();
+      const ok = await onConnect(address);
+      if (ok) {
+        onClose();
+      }
     }
   };
 
@@ -46,11 +57,16 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
 
         <Button
           onClick={handleConnect}
-          disabled={isConnecting}
+          disabled={isConnecting || isAuthLoading}
           className="w-full py-4 text-lg"
         >
-          {isConnecting ? 'Connecting...' : 'Connect MetaMask'}
+          {isConnecting ? 'Connecting...' : isAuthLoading ? 'Signing...' : 'Connect MetaMask'}
         </Button>
+        {isAuthLoading && (
+          <div className="mt-3 text-[11px] uppercase tracking-widest text-gray-500 text-center">
+            Confirm signature in MetaMask
+          </div>
+        )}
 
         <p className="text-gray-500 text-xs mt-6 text-center">
           By connecting your wallet, you agree to our Terms of Service and Privacy Policy.

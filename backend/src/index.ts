@@ -8,7 +8,10 @@ import authRoutes from './routes/authRoutes.js';
 import caseRoutes from './routes/caseRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import walletRoutes from './routes/walletRoutes.js';
+import tokenRoutes from './routes/tokenRoutes.js';
 import prisma from './config/database.js';
+import { startCaseExpiryWorker } from './workers/caseExpiryWorker.js';
 
 const app = express();
 
@@ -43,6 +46,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cases', caseRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/token', tokenRoutes);
 
 // Error handling
 app.use(errorHandler);
@@ -67,6 +72,8 @@ app.listen(config.port, async () => {
     console.error(`❌ Database connection failed:`, error);
     console.error(`⚠️  Make sure PostgreSQL is running and DATABASE_URL is correct`);
   }
+
+  startCaseExpiryWorker();
 });
 
 export default app;

@@ -3,7 +3,6 @@ import { Home, Briefcase, Zap, Swords, Wallet, User as UserIcon, PlusSquare, Shi
 import { User } from '../types';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { Button } from './Button';
-import { useWallet } from '../hooks/useWallet';
 
 interface HeaderProps {
   user: User;
@@ -11,21 +10,33 @@ interface HeaderProps {
   setActiveTab: (tab: string) => void;
   onOpenWalletConnect: () => void;
   balance: number;
-  onOpenTopUp: () => void;
+  onOpenTopUp: (prefillUsdt?: number) => void;
   onLogout: () => void;
+  onDisconnectWallet: () => void;
+  walletAddress?: string | null;
+  isConnected?: boolean;
+  formatAddress?: (address: string | null) => string;
   isAuthLoading?: boolean;
   isAuthenticated?: boolean;
   isAdmin?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, onOpenWalletConnect, balance, onOpenTopUp, onLogout, isAuthLoading = false, isAuthenticated = false, isAdmin = false }) => {
-  const { address, isConnected, disconnectWallet, formatAddress } = useWallet();
-
-  const handleDisconnect = () => {
-    onLogout();
-    disconnectWallet();
-  };
-
+export const Header: React.FC<HeaderProps> = ({
+  user,
+  activeTab,
+  setActiveTab,
+  onOpenWalletConnect,
+  balance,
+  onOpenTopUp,
+  onLogout,
+  onDisconnectWallet,
+  walletAddress = null,
+  isConnected = false,
+  formatAddress = (value) => value || '',
+  isAuthLoading = false,
+  isAuthenticated = false,
+  isAdmin = false,
+}) => {
   return (
     <header className="h-20 border-b border-white/[0.08] fixed top-0 left-0 right-0 z-50 flex items-center px-6 justify-between flex-shrink-0" style={{
       backgroundColor: 'rgba(11, 12, 16, 0.5)',
@@ -100,12 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, o
           {/* Top-up */}
           <button
             onClick={onOpenTopUp}
-            disabled={!isAdmin}
-            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
-              isAdmin
-                ? 'bg-web3-accent/20 border-web3-accent/40 text-web3-accent hover:bg-web3-accent/30 hover:scale-105'
-                : 'bg-white/5 border-white/[0.12] text-gray-500 cursor-not-allowed'
-            }`}
+            className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all bg-web3-accent/20 border-web3-accent/40 text-web3-accent hover:bg-web3-accent/30 hover:scale-105"
             title="Top up"
             aria-label="Top up balance"
           >
@@ -115,16 +121,19 @@ export const Header: React.FC<HeaderProps> = ({ user, activeTab, setActiveTab, o
             </svg>
           </button>
 
-          {isConnected && address && isAuthenticated ? (
+          {isConnected && walletAddress && isAuthenticated ? (
             <div className="group relative flex items-center gap-3 px-5 py-2.5 rounded-xl bg-gradient-to-r from-web3-card/60 to-web3-card/40 border border-web3-accent/25 backdrop-blur-sm hover:border-web3-accent/40 transition-all duration-300 shadow-[0_0_15px_rgba(102,252,241,0.1)]">
               {/* Soft animated glow */}
               <div className="absolute -inset-0.5 bg-gradient-to-r from-web3-accent to-web3-success rounded-xl opacity-10 group-hover:opacity-20 blur-md transition-opacity duration-500"></div>
               
               <div className="relative flex items-center gap-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse"></div>
-                <span className="font-mono text-sm text-white font-bold tracking-wider">{formatAddress(address)}</span>
+                <span className="font-mono text-sm text-white font-bold tracking-wider">{formatAddress(walletAddress)}</span>
                 <button
-                  onClick={handleDisconnect}
+                  onClick={() => {
+                    onLogout();
+                    onDisconnectWallet();
+                  }}
                   className="text-gray-400 hover:text-white hover:bg-white/10 transition-all text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center"
                   title="Disconnect wallet"
                 >

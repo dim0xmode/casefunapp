@@ -41,6 +41,8 @@ model User {
   sessions      Session[]
   auditLogs     AdminAuditLog[] @relation("AdminAuditLogs")
   rtuEvents     RtuEvent[]
+  deposits      Deposit[]
+  claims        Claim[]
   
   @@index([walletAddress])
   @@map("users")
@@ -55,8 +57,17 @@ model Case {
   price         Float
   imageUrl      String?
   imageMeta     Json?
+  tokenAddress  String?
+  tokenDecimals Int      @default(18)
+  mintedAt      DateTime?
+  totalSupply   Float?
+  payoutAt      DateTime?
+  payoutTxHash  String?
+  payoutEth     Float?
+  payoutUsdt    Float?
+  payoutPriceUsdt Float?
   rtu           Float    @default(96) // Return to User %
-  openDurationHours Int?
+  openDurationHours Float?
   isActive      Boolean  @default(true)
   createdById   String
   createdAt     DateTime @default(now())
@@ -69,6 +80,7 @@ model Case {
   rtuLedgers    RtuLedger[]
   rtuEvents     RtuEvent[]
   inventoryItems InventoryItem[]
+  claims        Claim[]
   
   @@index([createdById])
   @@map("cases")
@@ -120,6 +132,8 @@ model InventoryItem {
   color     String
   image     String?
   status    InventoryStatus @default(ACTIVE)
+  claimedAt DateTime?
+  claimedTxHash String?
   createdAt DateTime @default(now())
 
   // Relations
@@ -148,6 +162,43 @@ model Transaction {
   @@index([userId])
   @@index([type])
   @@map("transactions")
+}
+
+model Deposit {
+  id            String   @id @default(cuid())
+  userId        String
+  txHash        String   @unique
+  chainId       Int
+  amountEth     Float
+  amountUsdt    Float
+  confirmations Int      @default(0)
+  blockNumber   Int?
+  status        String   @default("confirmed")
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("deposits")
+}
+
+model Claim {
+  id        String   @id @default(cuid())
+  userId    String
+  caseId    String
+  amount    Float
+  txHash    String?
+  status    String   @default("completed")
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([caseId])
+  @@map("claims")
 }
 
 model Battle {

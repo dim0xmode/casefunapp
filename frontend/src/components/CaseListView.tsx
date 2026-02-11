@@ -155,8 +155,8 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             >
               Unavailable
             </button>
-          </div>
-        </div>
+                  </div>
+                </div>
         {ownCases.length > 0 && (
           <div className="mb-8">
             {/* MY CASES Header - Centered */}

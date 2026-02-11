@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "cases" ALTER COLUMN "openDurationHours" SET DATA TYPE DOUBLE PRECISION;

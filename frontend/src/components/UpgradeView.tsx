@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Item, Rarity } from '../types';
 import { TrendingUp, ArrowUp, ArrowDown, Settings2, Package, Sparkles } from 'lucide-react';
 import { ItemCard } from './ItemCard';
@@ -16,17 +16,18 @@ const RARITY_COLORS: Record<Rarity, string> = {
 
 interface UpgradeViewProps {
   inventory: Item[];
-  onUpgrade: (originalItem: Item, multiplier: number) => Promise<{ success: boolean; targetValue: number }>;
+  onUpgrade: (originalItems: Item[], multiplier: number) => Promise<{ success: boolean; targetValue: number }>;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
 }
 
 export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const roundToTwo = (value: number) => Number(value.toFixed(2));
+  const [selectedItems, setSelectedItems] = useState<Item[]>([]);
   const [displayItem, setDisplayItem] = useState<Item | null>(null);
   const [lastResult, setLastResult] = useState<{ item: Item; value: number; success: boolean } | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [multiplier, setMultiplier] = useState<number>(2.0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
@@ -34,10 +35,13 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [sortBy, setSortBy] = useState<'price' | 'alpha'>('alpha');
   const [fastUpgrade, setFastUpgrade] = useState(false);
+  const [frozenInventory, setFrozenInventory] = useState<Item[] | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   // Calculations
-  const targetValue = selectedItem ? Math.floor(selectedItem.value * multiplier) : 0;
-  const displayTargetValue = displayItem ? Math.floor(displayItem.value * multiplier) : 0;
+  const selectedTotalValue = selectedItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  const targetValue = selectedItems.length ? roundToTwo(selectedTotalValue * multiplier) : 0;
+  const displayTargetValue = displayItem ? roundToTwo(selectedTotalValue * multiplier) : 0;
   const rawChance = useMemo(() => {
     return (1 / multiplier) * 100;
   }, [multiplier]);
@@ -73,20 +77,25 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
       onOpenWalletConnect();
       return;
     }
-    if (!isAdmin) return;
-    if (!selectedItem || isSpinning || isUpgradeBlocked) return;
+    if (!selectedItems.length || isSpinning || isUpgradeBlocked) return;
+    const spinItems = [...selectedItems];
+    const spinPrimary = spinItems[0];
+    const spinTotal = spinItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    if (!spinPrimary) return;
 
+    setFrozenInventory([...inventory]);
     setIsSpinning(true);
 
     let isSuccess = false;
     let finalTargetValue = targetValue;
 
     try {
-      const result = await onUpgrade(selectedItem, multiplier);
+      const result = await onUpgrade(spinItems, multiplier);
       isSuccess = result.success;
       finalTargetValue = result.targetValue || targetValue;
     } catch (error) {
       setIsSpinning(false);
+      setFrozenInventory(null);
       return;
     }
 
@@ -127,32 +136,70 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
       
       setTimeout(() => {
         setLastResult({
-          item: selectedItem,
-          value: isSuccess ? finalTargetValue : selectedItem.value,
+          item: spinPrimary,
+          value: isSuccess ? finalTargetValue : spinTotal,
           success: isSuccess,
         });
-        setSelectedItem(null);
-        setSelectedKey(null);
+        setSelectedItems([]);
+        setSelectedKeys([]);
+        setDisplayItem(null);
+        setFrozenInventory(null);
       }, resetDelay);
     }, resultDelay);
   };
 
   const handleSelectItem = (item: Item, key: string) => {
     if (isSpinning) return;
-    if (selectedKey === key) {
-      setSelectedItem(null);
-      setDisplayItem(null);
+    setSelectionError(null);
+    const isAlreadySelected = selectedKeys.includes(key);
+    if (isAlreadySelected) {
+      const nextKeys = selectedKeys.filter((entry) => entry !== key);
+      const nextItems = selectedItems.filter((entry) => entry.id !== item.id);
+      setSelectedKeys(nextKeys);
+      setSelectedItems(nextItems);
+      setDisplayItem(nextItems[0] || null);
       setUpgradeResult('idle');
       setRotation(0);
-      setSelectedKey(null);
+      if (!nextItems.length) {
+        setLastResult(null);
+      }
       return;
     }
-    setSelectedItem(item);
-    setDisplayItem(item);
+    if (selectedItems.length >= 9) {
+      setSelectionError('Maximum 9 cards per upgrade.');
+      return;
+    }
+    if (selectedItems.length > 0) {
+      const base = selectedItems[0];
+      const sameToken = base.currency === item.currency && base.caseId === item.caseId;
+      if (!sameToken) {
+        setSelectionError('Select cards of the same token/case only.');
+        return;
+      }
+    }
+    setSelectedKeys((prev) => [...prev, key]);
+    setSelectedItems((prev) => [...prev, item]);
+    setDisplayItem((prev) => prev || item);
     setLastResult(null);
     setUpgradeResult('idle');
     setRotation(0);
-    setSelectedKey(key);
+  };
+
+  const removeSelectedItem = (itemId: string) => {
+    if (isSpinning) return;
+    setSelectionError(null);
+    const index = selectedItems.findIndex((entry) => entry.id === itemId);
+    if (index === -1) return;
+    const nextItems = selectedItems.filter((_, idx) => idx !== index);
+    const nextKeys = selectedKeys.filter((_, idx) => idx !== index);
+    setSelectedItems(nextItems);
+    setSelectedKeys(nextKeys);
+    setDisplayItem(nextItems[0] || null);
+    setUpgradeResult('idle');
+    setRotation(0);
+    if (!nextItems.length) {
+      setLastResult(null);
+    }
   };
 
   const CoinVisual = ({ item, size = 'md' }: { item: Item, size?: 'sm'|'md'|'lg' }) => {
@@ -178,7 +225,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
 
       {/* Top Section: The Upgrade Machine */}
       <div className="flex-1 min-h-[500px] flex flex-col items-center justify-center relative py-12 bg-black/20 backdrop-blur-2xl border-b border-white/[0.12]">
-        <div className="flex flex-col lg:flex-row items-center justify-center gap-10 lg:gap-16 z-10 w-full max-w-6xl px-8">
+        <div className="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-10 lg:gap-16 z-10 w-full max-w-6xl px-8">
           
           {/* Left: Selected Item */}
           <div className="flex flex-col gap-6 w-full max-w-sm flex-1">
@@ -187,19 +234,61 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 <span className="text-gray-400 font-bold uppercase text-xs tracking-wider">
                   Selected Item
                 </span>
+                <span className="text-[10px] uppercase tracking-widest text-gray-500">
+                  {selectedItems.length}/9 • {selectedTotalValue.toFixed(2)}
+                </span>
               </div>
               
-              {selectedItem ? (
-                <div className="flex flex-col items-center gap-4 flex-1 justify-center">
-                  <ItemCard item={selectedItem} size="lg" className="w-full h-full max-h-[280px]" currencyPrefix="$" />
+              <div className="flex flex-col gap-3 flex-1 justify-start pt-1">
+                <div className="w-full grid grid-cols-3 gap-2">
+                  {Array.from({ length: 9 }).map((_, index) => {
+                    const selected = selectedItems[index];
+                    if (selected) {
+                      return (
+                        <ItemCard
+                          key={`${selected.id}-selected-${index}`}
+                          item={selected}
+                          size="sm"
+                          className="w-full h-[107px]"
+                          currencyPrefix="$"
+                          onClick={() => removeSelectedItem(selected.id)}
+                        />
+                      );
+                    }
+                    return (
+                      <div
+                        key={`empty-slot-${index}`}
+                        className="relative h-[107px] rounded-xl border-2 border-white/[0.06] bg-web3-card/50 backdrop-blur-sm p-2 flex flex-col items-center justify-center"
+                      >
+                        <div className="w-12 h-12 aspect-square shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-web3-purple/20 to-web3-accent/20 border-2 border-dashed border-white/[0.12] flex items-center justify-center">
+                          <span className="text-[10px] uppercase tracking-widest text-gray-500">Item</span>
+                        </div>
+                        <div className="mt-2 text-center">
+                          <div className="text-sm font-bold text-gray-500">-</div>
+                          <div className="text-[10px] text-gray-600">$TOKEN</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                <div className="text-center text-gray-600 py-10 flex-1 flex flex-col items-center justify-center">
-                  <TrendingUp size={36} className="mx-auto mb-3 opacity-50" />
-                  <div className="text-xs font-bold uppercase tracking-wider">Select Item</div>
-                </div>
-              )}
+                {selectionError ? (
+                  <div className="text-[10px] uppercase tracking-widest text-red-400">{selectionError}</div>
+                ) : null}
+              </div>
             </div>
+            {!selectionError && (
+              <div className="px-1 mt-1 space-y-2">
+                {selectedItems.length === 0 && (
+                  <div className="text-[10px] uppercase tracking-widest text-gray-600 flex items-center gap-1">
+                    <TrendingUp size={12} className="opacity-70" />
+                    Select items to start upgrade
+                  </div>
+                )}
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">
+                  Only one token type allowed
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Center: The Circle + Action */}
@@ -293,25 +382,26 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                         </>
                       ) : (
                         <>
-                          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-web3-danger/5 to-transparent opacity-60 animate-fade-in"></div>
-                          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                            {Array.from({ length: 8 }).map((_, idx) => (
-                              <span
-                                key={`rain-${idx}`}
-                                className="upgrade-rain"
-                                style={{
-                                  left: `${8 + idx * 11}%`,
-                                  animationDelay: `${idx * 0.12}s`,
-                                  animationDuration: `${1.2 + (idx % 3) * 0.2}s`,
-                                }}
-                              />
-                            ))}
-                          </div>
-                          <div className={`text-2xl font-black uppercase tracking-[0.15em] text-web3-danger drop-shadow-[0_0_12px_rgba(239,68,68,0.5)]`}>
-                            Try again
-                          </div>
-                          <div className="text-xs uppercase tracking-[0.25em] text-gray-300">
-                            Upgrade failed
+                          <div className="relative w-44 h-24 flex flex-col items-center justify-center">
+                            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
+                              {Array.from({ length: 8 }).map((_, idx) => (
+                                <span
+                                  key={`rain-${idx}`}
+                                  className="upgrade-rain"
+                                  style={{
+                                    left: `${8 + idx * 11}%`,
+                                    animationDelay: `${idx * 0.12}s`,
+                                    animationDuration: `${1.2 + (idx % 3) * 0.2}s`,
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <div className="text-2xl font-black uppercase tracking-[0.15em] text-web3-danger drop-shadow-[0_0_6px_rgba(239,68,68,0.35)]">
+                              Try again
+                            </div>
+                            <div className="text-xs uppercase tracking-[0.25em] text-gray-300">
+                              Upgrade failed
+                            </div>
                           </div>
                         </>
                       )}
@@ -328,12 +418,12 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 balance={0}
                 cost={0}
                 onConnect={onOpenWalletConnect}
-                onTopUp={() => {}}
+                onTopUp={(_shortfall) => {}}
                 onAction={handleRoll}
                 readyLabel="UPGRADE"
                 labelOverride={isSpinning ? 'ROLLING...' : undefined}
                 forceLabel={Boolean(isSpinning)}
-                disabled={isSpinning || isUpgradeBlocked || (!selectedItem && isAuthenticated)}
+                disabled={isSpinning || isUpgradeBlocked || (!selectedItems.length && isAuthenticated)}
                 className={`w-full py-3 text-lg tracking-widest font-black rounded-xl shadow-[0_0_20px_rgba(102,252,241,0.18)] ${isSpinning ? 'opacity-50' : 'animate-pulse-fast'}`}
               />
 
@@ -458,14 +548,14 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          {sortedInventory.length === 0 ? (
+          {(isSpinning || upgradeResult !== 'idle' ? (frozenInventory || sortedInventory) : sortedInventory).length === 0 ? (
             <EmptyState
               icon={<Package size={48} />}
               message="Your inventory is empty. Open some cases!"
             />
           ) : (
             <ItemGrid>
-              {sortedInventory.map((item, index) => {
+              {(isSpinning || upgradeResult !== 'idle' ? (frozenInventory || sortedInventory) : sortedInventory).map((item, index) => {
                 if (!item || !item.id) return null;
                 const key = `${item.id}-${index}`;
                 return (
@@ -473,7 +563,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     key={key}
                     item={item}
                     size="sm"
-                    selected={selectedKey === key}
+                    selected={selectedKeys.includes(key)}
                     disabled={isSpinning}
                     onClick={() => handleSelectItem(item, key)}
                     showSelectedBadge

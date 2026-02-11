@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
 
 const normalizeParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
@@ -210,10 +211,48 @@ export const updateUserBalance = async (req: Request, res: Response, next: NextF
 
 export const listCases = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const cases = await prisma.case.findMany({
-      include: { drops: true, createdBy: true },
+    const rows = await prisma.case.findMany({
+      include: {
+        drops: true,
+        createdBy: true,
+        rtuLedgers: true,
+        _count: { select: { openings: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+    const cases = rows.map((caseItem) => {
+      const openings = Number(caseItem._count?.openings || 0);
+      const spentUsdt = openings * Number(caseItem.price || 0);
+      const ledger = caseItem.rtuLedgers[0] || null;
+      const declaredRtu = Number(caseItem.rtu || 0);
+      const openRtuTarget = getDynamicOpenRtuPercent(declaredRtu);
+      const tokenPrice = Number(caseItem.tokenPrice || ledger?.tokenPriceUsdt || 0);
+      const actualRtuPercent =
+        ledger && Number(ledger.totalSpentUsdt || 0) > 0 && tokenPrice > 0
+          ? (Number(ledger.totalTokenIssued || 0) * tokenPrice) / Number(ledger.totalSpentUsdt || 0) * 100
+          : null;
+      const payoutStatus = caseItem.payoutAt
+        ? 'PAID'
+        : caseItem.mintedAt
+        ? 'PENDING'
+        : 'NOT_MINTED';
+
+      return {
+        ...caseItem,
+        adminStats: {
+          openings,
+          spentUsdt,
+          declaredRtu,
+          openRtuTarget,
+          actualRtuPercent,
+          tokenIssued: Number(ledger?.totalTokenIssued || 0),
+          reserveToken: Number(ledger?.bufferDebtToken || 0),
+          payoutStatus,
+          payoutTxHash: caseItem.payoutTxHash || null,
+        },
+      };
+    });
+
     res.json({ status: 'success', data: { cases } });
   } catch (error) {
     next(error);
@@ -252,6 +291,22 @@ export const getCaseDetail = async (req: Request, res: Response, next: NextFunct
     const totalWonValue = openings.reduce((sum, opening) => sum + opening.wonValue, 0);
     const avgWonValue = totalOpenings ? totalWonValue / totalOpenings : 0;
     const lastOpenedAt = totalOpenings ? openings[0]?.timestamp : null;
+    const ledger = caseItem.rtuLedgers[0] || null;
+    const declaredRtu = Number(caseItem.rtu || 0);
+    const openRtuTarget = getDynamicOpenRtuPercent(declaredRtu);
+    const tokenPrice = Number(caseItem.tokenPrice || ledger?.tokenPriceUsdt || 0);
+    const actualRtuPercent =
+      ledger && Number(ledger.totalSpentUsdt || 0) > 0 && tokenPrice > 0
+        ? (Number(ledger.totalTokenIssued || 0) * tokenPrice) / Number(ledger.totalSpentUsdt || 0) * 100
+        : null;
+    const minDropAllowed = Number(caseItem.price || 0) * 0.5;
+    const maxDropAllowed = Number(caseItem.price || 0) * 15;
+    const minDropActual = caseItem.drops.length
+      ? Math.min(...caseItem.drops.map((drop) => Number(drop.value || 0)))
+      : 0;
+    const maxDropActual = caseItem.drops.length
+      ? Math.max(...caseItem.drops.map((drop) => Number(drop.value || 0)))
+      : 0;
 
     res.json({
       status: 'success',
@@ -262,6 +317,16 @@ export const getCaseDetail = async (req: Request, res: Response, next: NextFunct
           totalWonValue,
           avgWonValue,
           lastOpenedAt,
+          declaredRtu,
+          openRtuTarget,
+          actualRtuPercent,
+          totalSpentUsdt: Number(ledger?.totalSpentUsdt || 0),
+          totalIssuedToken: Number(ledger?.totalTokenIssued || 0),
+          reserveToken: Number(ledger?.bufferDebtToken || 0),
+          minDropAllowed,
+          maxDropAllowed,
+          minDropActual,
+          maxDropActual,
         },
       },
     });

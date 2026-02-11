@@ -6,6 +6,7 @@ import { AdminActionButton } from './ui/AdminActionButton';
 import { ImageAdjustModal } from './ui/ImageAdjustModal';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api, resolveAssetUrl } from '../services/api';
+import { formatShortfallUp } from '../utils/number';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -26,7 +27,7 @@ interface CreateCaseViewProps {
   onCreate: (caseData: Case) => void;
   creatorName: string;
   balance: number;
-  onOpenTopUp: () => void;
+  onOpenTopUp: (prefillUsdt?: number) => void;
   onBalanceUpdate?: (balance: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
@@ -41,6 +42,22 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
   const [rtu, setRtu] = useState('');
   const [tokenPrice, setTokenPrice] = useState('');
   const [openDurationHours, setOpenDurationHours] = useState(24);
+  const durationOptions = [
+    { label: '1m', value: 1 / 60 },
+    { label: '2h', value: 2 },
+    { label: '6h', value: 6 },
+    { label: '12h', value: 12 },
+    { label: '24h', value: 24 },
+    { label: '72h', value: 72 },
+  ];
+
+  const formatDuration = (hoursValue: number) => {
+    if (!Number.isFinite(hoursValue) || hoursValue <= 0) return '—';
+    if (hoursValue < 1) {
+      return `${Math.round(hoursValue * 60)}m`;
+    }
+    return `${hoursValue}h`;
+  };
   const [imageUrl, setImageUrl] = useState('');
   const [imageError, setImageError] = useState<string | null>(null);
   const [isImageUploading, setIsImageUploading] = useState(false);
@@ -56,6 +73,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     y: 0,
   });
   const [isLogoAdjustOpen, setIsLogoAdjustOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   const sanitizeCaseName = (value: string) =>
@@ -129,12 +147,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     if (!/^[A-Z]+$/.test(value)) {
       return 'Token ticker must contain only A-Z letters.';
     }
-    if (existingTickers.has(value)) {
-      return 'Token ticker already exists.';
-    }
-    if (existingCaseNames.has(value)) {
-      return 'Token ticker matches existing case name.';
-    }
     if (currentName && value === currentName) {
       return 'Token ticker and case name must be different.';
     }
@@ -146,7 +158,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return 'RTU must be a number.';
     if (numeric <= 0) return 'RTU must be greater than 0.';
-    if (numeric > 98) return 'RTU must be 98% or ниже.';
+    if (numeric > 98) return 'RTU must be 98% or lower.';
     return null;
   };
 
@@ -258,16 +270,45 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     Boolean(liveRtuError) ||
     !dropsAreValid ||
     !imageIsValid ||
-    isImageUploading;
+    isImageUploading ||
+    isCreating;
+
+  const priceValue = Number(price);
+  const rtuValue = Number(rtu);
+  const tokenPriceValue = Number(tokenPrice);
+
+  const rtuHelper = useMemo(() => {
+    if (!Number.isFinite(priceValue) || priceValue <= 0) return null;
+    if (!Number.isFinite(rtuValue) || rtuValue <= 0) return null;
+    if (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0) return null;
+    if (!normalizedDrops.length || normalizedDrops.some((drop) => !Number.isFinite(drop.value) || drop.value <= 0)) {
+      return null;
+    }
+
+    const minAllowedToken = priceValue * 0.5;
+    const maxAllowedToken = priceValue * 15;
+    const tokenValues = normalizedDrops.map((drop) => drop.value);
+    const minToken = Math.min(...tokenValues);
+    const maxToken = Math.max(...tokenValues);
+
+    const constraintsOk = minToken <= minAllowedToken && maxToken >= maxAllowedToken;
+    const feasible = constraintsOk;
+
+    return {
+      minAllowedToken,
+      maxAllowedToken,
+      feasible,
+      hint: feasible
+        ? 'Drop limits are valid.'
+        : 'Drop limits are out of range.',
+    };
+  }, [priceValue, rtuValue, tokenPriceValue, normalizedDrops]);
 
   const handleSubmit = async () => {
+    if (isCreating) return;
     setSubmitError(null);
     if (isImageUploading) {
       setSubmitError('Wait for image upload to finish.');
-      return;
-    }
-    if (!isAdmin) {
-      setSubmitError('Admins only.');
       return;
     }
     if (!name.trim()) return setSubmitError('Enter a case name.');
@@ -287,10 +328,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       setTickerError(tickerValidation);
       return;
     }
-    const priceValue = Number(price);
-    const rtuValue = Number(rtu);
-    const tokenPriceValue = Number(tokenPrice);
-
     if (!Number.isFinite(priceValue) || priceValue <= 0) return setSubmitError('Enter a valid open price.');
     const rtuValidation = validateRtu(rtu);
     if (rtuValidation) {
@@ -298,7 +335,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       setRtuError(rtuValidation);
       return;
     }
-    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) return setSubmitError('Enter a valid RTU (max 98%).');
+    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) return setSubmitError('Enter a valid RTU (>0 and <=98).');
     if (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0) return setSubmitError('Enter a valid token price.');
     if (drops.length === 0) return setSubmitError('Add at least one drop.');
     if (drops.some((drop) => !drop.value || Number(drop.value) <= 0)) {
@@ -318,13 +355,12 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       return;
     }
     if (balance < CREATE_CASE_FEE) {
-      setSubmitError(`Need ${(CREATE_CASE_FEE - balance).toFixed(1)} ₮ more. Top up to create.`);
+      setSubmitError(`Need ${formatShortfallUp(CREATE_CASE_FEE - balance)} ₮ more. Top up to create.`);
       return;
     }
 
-    const probability = Math.floor(100 / normalizedDrops.length);
-
     try {
+      setIsCreating(true);
       const response = await api.createCase({
         name: normalizedName,
         currency: normalizedTicker,
@@ -342,7 +378,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
           rarity: drop.rarity,
           color: drop.color,
           image: drop.image,
-          probability,
         })),
       });
 
@@ -380,8 +415,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       }
 
       onCreate(mappedCase);
-    } catch (error) {
-      setSubmitError('Failed to create case. Try again.');
+    } catch (error: any) {
+      setSubmitError(error?.message || 'Failed to create case. Try again.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -458,6 +495,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                     setRtuError(validateRtu(e.target.value));
                   }}
                   min={1}
+                  step={0.01}
                   max={98}
                   placeholder="e.g. 95"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
@@ -488,9 +526,9 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                     onChange={(e) => setOpenDurationHours(Number(e.target.value))}
                     className="w-full px-4 py-3 pr-10 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl appearance-none"
                   >
-                    {[2, 6, 12, 24, 72].map((hours) => (
-                      <option key={hours} value={hours} className="bg-[#0B0C10] text-white">
-                        {hours}h
+                    {durationOptions.map((option) => (
+                      <option key={option.label} value={option.value} className="bg-[#0B0C10] text-white">
+                        {option.label}
                       </option>
                     ))}
                   </select>
@@ -615,7 +653,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 <span className="font-bold text-gray-200">{price || '—'} ₮</span>
                 <span className="text-gray-500"> • RTU {rtu || '—'}%</span>
               </div>
-              <div className="text-xs text-gray-500">Duration {openDurationHours}h • 1 ${tokenTicker || 'TOKEN'} = {tokenPrice || '—'}</div>
+              <div className="text-xs text-gray-500">Duration {formatDuration(openDurationHours)} • 1 ${tokenTicker || 'TOKEN'} = {tokenPrice || '—'}</div>
             </div>
           </div>
         </div>
@@ -676,6 +714,21 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                 <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
               ))}
             </div>
+            {rtuHelper && (
+              <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${
+                rtuHelper.feasible
+                  ? 'bg-web3-success/10 border-web3-success/30 text-web3-success'
+                  : 'bg-red-500/10 border-red-500/30 text-red-300'
+              }`}>
+                <div>{rtuHelper.hint}</div>
+                <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                  Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+                </div>
+                <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                  Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
+                </div>
+              </div>
+            )}
             {dropsError && (
               <div className="mt-3 text-[11px] uppercase tracking-widest text-red-400">{dropsError}</div>
             )}
@@ -689,9 +742,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
               <div className="text-[11px] uppercase tracking-widest text-red-400 text-center">
                 {validationMessages[0]}
               </div>
-            )}
-            {isAuthenticated && !isAdmin && (
-              <div className="text-[11px] uppercase tracking-widest text-gray-500">Only admins can create cases</div>
             )}
             <div className="flex items-center justify-center gap-3 w-full">
               <div className="px-5 h-[52px] rounded-2xl bg-web3-card/50 border border-gray-700/50 text-sm font-black text-gray-200 flex items-center">
@@ -711,7 +761,9 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
                     Create Case
                   </>
                 }
-                disabled={isCreateDisabled && isAuthenticated && isAdmin}
+                labelOverride={isCreating ? 'Creating...' : undefined}
+                forceLabel={isCreating}
+                disabled={isCreateDisabled}
                 className="h-[52px] w-full max-w-md px-10 text-sm font-black rounded-2xl uppercase tracking-wide flex items-center justify-center gap-2"
               />
             </div>

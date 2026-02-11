@@ -48,6 +48,7 @@ const App = () => {
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
   const [burntItems, setBurntItems] = useState<Item[]>([]);
+  const [claimedItems, setClaimedItems] = useState<Item[]>([]);
   const [battleHistory, setBattleHistory] = useState<BattleRecord[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [createdCaseNotice, setCreatedCaseNotice] = useState<Case | null>(null);
@@ -55,6 +56,7 @@ const App = () => {
     user: User;
     inventory: Item[];
     burntItems: Item[];
+    claimedItems: Item[];
     battleHistory: BattleRecord[];
   } | null>(null);
   const [mustSetUsername, setMustSetUsername] = useState(false);
@@ -67,26 +69,31 @@ const App = () => {
     user: User;
     inventory: Item[];
     burntItems: Item[];
+    claimedItems: Item[];
     battleHistory: BattleRecord[];
   }>>({});
   const [balance, setBalance] = useState(0);
   const [isTopUpOpen, setIsTopUpOpen] = useState(false);
+  const [topUpInitialUsdt, setTopUpInitialUsdt] = useState<number | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [lastAuthAddress, setLastAuthAddress] = useState<string | null>(null);
 
-  const { address: walletAddress, isConnected } = useWallet();
+  const {
+    address: walletAddress,
+    isConnected,
+    connectWallet,
+    disconnectWallet,
+    formatAddress,
+    isConnecting: isWalletConnecting,
+    error: walletError,
+  } = useWallet();
   const isAdmin = user.role === 'ADMIN';
+  const isEarlyAccess = user.role === 'MODERATOR';
+  const canUseActivities = isAdmin || isEarlyAccess;
 
-  const addBalance = async (amount: number) => {
-    if (!isAdmin) return;
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    try {
-      const response = await api.topUp(amount);
-      if (response.data?.balance !== undefined) {
-        setBalance(response.data.balance);
-      }
-    } catch (error) {
-      console.error('Top up failed', error);
+  const handleBalanceUpdate = (nextBalance: number) => {
+    if (typeof nextBalance === 'number') {
+      setBalance(nextBalance);
     }
   };
 
@@ -94,6 +101,7 @@ const App = () => {
     setUser(INITIAL_USER);
     setInventory([]);
     setBurntItems([]);
+    setClaimedItems([]);
     setBattleHistory([]);
     setBalance(0);
     setProfileView(null);
@@ -123,6 +131,10 @@ const App = () => {
     openDurationHours: caseData.openDurationHours,
     createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : undefined,
     creatorName: caseData.createdBy?.username || caseData.creatorName,
+    tokenAddress: caseData.tokenAddress,
+    tokenDecimals: caseData.tokenDecimals,
+    mintedAt: caseData.mintedAt ? new Date(caseData.mintedAt).getTime() : undefined,
+    totalSupply: caseData.totalSupply,
     stats: caseData.stats,
     possibleDrops: (caseData.drops || caseData.possibleDrops || []).map((drop: any) => ({
       id: drop.id,
@@ -180,6 +192,13 @@ const App = () => {
         })) as Item[];
         setBurntItems(enrichItemsWithCaseMeta(mapped));
       }
+      if (response.data?.claimedItems) {
+        const mapped = response.data.claimedItems.map((item: any) => ({
+          ...item,
+          image: resolveAssetUrl(item.image || ''),
+        })) as Item[];
+        setClaimedItems(enrichItemsWithCaseMeta(mapped));
+      }
       if (response.data?.battleHistory) {
         setBattleHistory(
           response.data.battleHistory.map((battle: any) => ({
@@ -197,6 +216,14 @@ const App = () => {
     } catch (error) {
       // not logged in
     }
+  };
+
+  const handleClaimToken = async (caseId: string) => {
+    const response = await api.claimToken(caseId);
+    if (!response.data) {
+      throw new Error('Claim failed');
+    }
+    await loadProfile();
   };
 
   const loginWithWalletAddress = async (address: string) => {
@@ -247,7 +274,7 @@ const App = () => {
   };
 
   const handleWalletConnect = async (address: string) => {
-    await loginWithWalletAddress(address);
+    return loginWithWalletAddress(address);
   };
 
   useEffect(() => {
@@ -276,6 +303,12 @@ const App = () => {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [lastAuthAddress]);
+
+  useEffect(() => {
+    if (activeTab === 'admin' && !isAdmin) {
+      handleTabChange('home', 'replace');
+    }
+  }, [activeTab, isAdmin]);
 
   useEffect(() => {
     const normalized = walletAddress?.toLowerCase() || null;
@@ -374,6 +407,11 @@ const App = () => {
       updateUrl('home', 'replace');
       return;
     }
+    if (tab === 'admin' && !isAdmin) {
+      setActiveTab('home');
+      updateUrl('home', 'replace');
+      return;
+    }
     setActiveTab(tab);
     updateUrl(tab, mode);
     if (tab !== 'profile') {
@@ -385,6 +423,20 @@ const App = () => {
     handleTabChange('createcase');
   };
 
+  const handleOpenTopUp = (prefillUsdt?: number) => {
+    const safePrefill =
+      typeof prefillUsdt === 'number' && Number.isFinite(prefillUsdt) && prefillUsdt > 0
+        ? prefillUsdt
+        : null;
+    setTopUpInitialUsdt(safePrefill);
+    setIsTopUpOpen(true);
+  };
+
+  const handleCloseTopUp = () => {
+    setIsTopUpOpen(false);
+    setTopUpInitialUsdt(null);
+  };
+
   const handleCaseCreated = (newCase: Case) => {
     setCases(prev => [newCase, ...prev]);
     handleTabChange('case');
@@ -393,7 +445,6 @@ const App = () => {
 
 
   const handleOpenCase = async (caseId: string, count: number) => {
-    if (!isAdmin) return [];
     const winners: Item[] = [];
     let latestBalance = balance;
     const caseMeta = cases.find((caseData) => caseData.id === caseId)?.imageMeta;
@@ -446,43 +497,34 @@ const App = () => {
     [inventory, cases]
   );
 
-  const handleUpgrade = async (originalItem: Item, multiplier: number) => {
-    if (!isAdmin) {
-      return { success: false, targetValue: 0 };
-    }
-    const response = await api.upgradeItem(originalItem.id, multiplier);
+  const handleUpgrade = async (originalItems: Item[], multiplier: number) => {
+    const response = await api.upgradeItem(originalItems.map((item) => item.id), multiplier);
     const success = response.data?.success;
     const targetValue = response.data?.targetValue;
     const newItem = response.data?.newItem;
-    const burntItemId = response.data?.burntItemId;
+    const consumedItemIds = response.data?.consumedItemIds || response.data?.burntItemIds || [];
+    const consumedSet = new Set(consumedItemIds);
+    const consumedItems = originalItems.filter((item) => consumedSet.has(item.id));
 
-    if (!success && burntItemId) {
-      setInventory(prev => prev.filter((item) => item.id !== burntItemId));
-      const burnt = inventory.find((item) => item.id === burntItemId);
-      if (burnt) {
-        setBurntItems(prev => [burnt, ...prev]);
-      }
+    if (consumedSet.size > 0) {
+      setInventory((prev) => prev.filter((item) => !consumedSet.has(item.id)));
+      setBurntItems((prev) => [...consumedItems, ...prev]);
     }
 
     if (success && newItem) {
+      const fallbackItem = originalItems[0];
       const upgradedItem: Item = {
         id: newItem.id,
         name: newItem.name,
         value: newItem.value,
         currency: newItem.currency,
         rarity: newItem.rarity,
-        image: newItem.image || originalItem.image || '',
+        image: newItem.image || fallbackItem?.image || '',
         color: newItem.color,
         caseId: newItem.caseId,
       };
       setInventory(prev => {
-        const index = prev.findIndex((item) => item.id === upgradedItem.id);
-        if (index === -1) {
-          return [upgradedItem, ...prev];
-        }
-        const copy = [...prev];
-        copy[index] = upgradedItem;
-        return copy;
+        return [upgradedItem, ...prev];
       });
       setUser(prev => ({
         ...prev,
@@ -506,7 +548,6 @@ const App = () => {
   };
 
   const handleBattleFinish = async (wonItems: Item[], totalCost: number) => {
-    if (!isAdmin) return;
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
@@ -636,7 +677,6 @@ const App = () => {
   };
 
   const handleChargeBattle = async (amount: number) => {
-    if (!isAdmin) return false;
     try {
       const response = await api.chargeBattle(amount);
       if (response.data?.balance !== undefined) {
@@ -697,6 +737,7 @@ const App = () => {
       },
       inventory: inventoryItems,
       burntItems: burntItemsList,
+      claimedItems: [],
       battleHistory: battleHistoryList,
     };
   };
@@ -777,11 +818,12 @@ const App = () => {
           setActiveTab={handleTabChange} 
           onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
           balance={balance}
-          onOpenTopUp={() => {
-            if (!isAdmin) return;
-            setIsTopUpOpen(true);
-          }}
+          onOpenTopUp={handleOpenTopUp}
           onLogout={handleLogout}
+          onDisconnectWallet={disconnectWallet}
+          walletAddress={walletAddress}
+          isConnected={isConnected}
+          formatAddress={formatAddress}
           isAuthLoading={isAuthLoading}
           isAuthenticated={Boolean(lastAuthAddress)}
           isAdmin={isAdmin}
@@ -802,14 +844,11 @@ const App = () => {
                   onCreate={handleCaseCreated}
                   creatorName={user.username}
                   balance={balance}
-                  onOpenTopUp={() => {
-                    if (!isAdmin) return;
-                    setIsTopUpOpen(true);
-                  }}
+                  onOpenTopUp={handleOpenTopUp}
                   onBalanceUpdate={setBalance}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-                  isAdmin={isAdmin}
+                  isAdmin={canUseActivities}
                   cases={cases}
                 />
               </div>
@@ -821,14 +860,11 @@ const App = () => {
                   cases={cases}
                   onOpenCase={handleOpenCase}
                   balance={balance}
-                  onOpenTopUp={() => {
-                    if (!isAdmin) return;
-                    setIsTopUpOpen(true);
-                  }}
+                  onOpenTopUp={handleOpenTopUp}
                   userName={user.username}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-                  isAdmin={isAdmin}
+                  isAdmin={canUseActivities}
                 />
               </div>
             )}
@@ -840,7 +876,7 @@ const App = () => {
                   onUpgrade={handleUpgrade}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-                  isAdmin={isAdmin}
+                  isAdmin={canUseActivities}
                 />
               </div>
             )}
@@ -853,13 +889,10 @@ const App = () => {
                   onBattleFinish={handleBattleFinish}
                   balance={balance}
                   onChargeBattle={handleChargeBattle}
-                  onOpenTopUp={() => {
-                    if (!isAdmin) return;
-                    setIsTopUpOpen(true);
-                  }}
+                  onOpenTopUp={handleOpenTopUp}
                   isAuthenticated={Boolean(lastAuthAddress)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-                  isAdmin={isAdmin}
+                  isAdmin={canUseActivities}
                 />
               </div>
             )}
@@ -870,6 +903,7 @@ const App = () => {
                   user={profileView?.user || user}
                   inventory={profileView?.inventory || inventory}
                   burntItems={profileView?.burntItems || burntItems}
+                  claimedItems={profileView?.claimedItems || claimedItems}
                   battleHistory={profileView?.battleHistory || battleHistory}
                   balance={balance}
                   cases={cases}
@@ -877,11 +911,12 @@ const App = () => {
                   onUpdateUsername={handleUpdateUsername}
                   onUploadAvatar={handleUploadAvatar}
                   onUpdateAvatarMeta={handleUpdateAvatarMeta}
+                  onClaimToken={handleClaimToken}
                 />
               </div>
             )}
 
-            {activeTab === 'admin' && lastAuthAddress && (
+            {activeTab === 'admin' && lastAuthAddress && isAdmin && (
               <div className="animate-fade-in">
                 <AdminView currentUser={user} />
               </div>
@@ -895,13 +930,19 @@ const App = () => {
         isOpen={isWalletConnectOpen}
         onClose={() => setIsWalletConnectOpen(false)}
         onConnect={handleWalletConnect}
+        connectWallet={connectWallet}
+        isConnecting={isWalletConnecting}
+        error={walletError}
+        isAuthLoading={isAuthLoading}
       />
 
       <TopUpModal
         isOpen={isTopUpOpen}
-        onClose={() => setIsTopUpOpen(false)}
-        onTopUp={addBalance}
-        isAdmin={isAdmin}
+        onClose={handleCloseTopUp}
+        onBalanceUpdate={handleBalanceUpdate}
+        isAuthenticated={Boolean(lastAuthAddress)}
+        onConnectWallet={() => setIsWalletConnectOpen(true)}
+        initialUsdtAmount={topUpInitialUsdt}
       />
 
       {createdCaseNotice && (
@@ -937,6 +978,18 @@ const App = () => {
               <div className="px-3 py-1 rounded-full text-xs bg-web3-accent/10 border border-web3-accent/30">
                 {createdCaseNotice.price} ₮ • RTU {createdCaseNotice.rtu}%
               </div>
+              {createdCaseNotice.tokenAddress && (
+                <div className="w-full mt-2 text-[10px] uppercase tracking-widest text-gray-400">
+                  Token {createdCaseNotice.tokenAddress.slice(0, 6)}...{createdCaseNotice.tokenAddress.slice(-4)}
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText?.(createdCaseNotice.tokenAddress || '')}
+                    className="ml-2 px-2 py-1 rounded-md border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setCreatedCaseNotice(null)}

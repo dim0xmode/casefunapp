@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
+import { Prisma } from '@prisma/client';
 
-type PrismaLike = typeof prisma;
+type PrismaLike = typeof prisma | Prisma.TransactionClient;
 
 interface RtuEventInput {
   caseId: string;

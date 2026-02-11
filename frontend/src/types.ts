@@ -17,6 +17,8 @@ export interface Item {
   imageMeta?: ImageMeta;
   caseId?: string;
   status?: 'ACTIVE' | 'BURNT';
+  claimedAt?: string;
+  claimedTxHash?: string;
 }
 
 export interface Case {
@@ -33,6 +35,10 @@ export interface Case {
   openDurationHours?: number;
   createdAt?: number;
   imageMeta?: ImageMeta;
+  tokenAddress?: string;
+  tokenDecimals?: number;
+  mintedAt?: number;
+  totalSupply?: number;
   stats?: {
     totalOpenings: number;
     totalSpentUsdt: number;

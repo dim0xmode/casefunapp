@@ -89,12 +89,30 @@ class ApiClient {
     });
   }
 
-  async upgradeItem(itemId: string, multiplier: number) {
-    return this.request<{ success: boolean; targetValue: number; newItem?: any; burntItemId: string }>(
+  async getEthPrice() {
+    return this.request<{ price: number; updatedAt: number }>('/wallet/price');
+  }
+
+  async confirmDeposit(txHash: string) {
+    return this.request<{ balance?: number; pending?: boolean; confirmations?: number }>('/wallet/deposit/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ txHash }),
+    });
+  }
+
+  async claimToken(caseId: string) {
+    return this.request<{ amount: number; txHash: string; tokenAddress: string }>('/token/claim', {
+      method: 'POST',
+      body: JSON.stringify({ caseId }),
+    });
+  }
+
+  async upgradeItem(itemIds: string[], multiplier: number) {
+    return this.request<{ success: boolean; targetValue: number; newItem?: any; burntItemIds?: string[]; consumedItemIds?: string[] }>(
       '/user/upgrade',
       {
         method: 'POST',
-        body: JSON.stringify({ itemId, multiplier }),
+        body: JSON.stringify({ itemIds, multiplier }),
       }
     );
   }

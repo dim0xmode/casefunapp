@@ -201,7 +201,7 @@ export const getProfile = async (
         avatarMeta: true,
         createdAt: true,
         inventory: {
-          where: { status: 'ACTIVE' },
+          where: { status: 'ACTIVE', claimedAt: null },
           orderBy: { createdAt: 'desc' },
         },
         battles: {
@@ -218,10 +218,16 @@ export const getProfile = async (
       return next(new AppError('User not found', 404));
     }
 
-    const burntItems = await prisma.inventoryItem.findMany({
-      where: { userId, status: 'BURNT' },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [burntItems, claimedItems] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: { userId, status: 'BURNT' },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.inventoryItem.findMany({
+        where: { userId, status: 'ACTIVE', claimedAt: { not: null } },
+        orderBy: { claimedAt: 'desc' },
+      }),
+    ]);
 
     const [caseOpeningsAgg, upgradesAttempted, upgradesSuccess] = await Promise.all([
       prisma.caseOpening.aggregate({
@@ -262,6 +268,7 @@ export const getProfile = async (
         },
         inventory: user.inventory,
         burntItems,
+        claimedItems,
         battleHistory: user.battles,
         transactions: user.transactions,
       },

@@ -32,6 +32,7 @@ interface ProfileViewProps {
   user: User;
   inventory: Item[];
   burntItems: Item[];
+  claimedItems: Item[];
   battleHistory: BattleRecord[];
   balance: number;
   cases: Case[];
@@ -39,12 +40,14 @@ interface ProfileViewProps {
   onUpdateUsername?: (username: string) => Promise<void> | void;
   onUploadAvatar?: (file: File, meta?: ImageMeta) => Promise<string | void> | string | void;
   onUpdateAvatarMeta?: (meta: ImageMeta) => Promise<void> | void;
+  onClaimToken?: (caseId: string) => Promise<void> | void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   user,
   inventory,
   burntItems,
+  claimedItems,
   battleHistory,
   balance,
   cases,
@@ -52,13 +55,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onUpdateUsername,
   onUploadAvatar,
   onUpdateAvatarMeta,
+  onClaimToken,
 }) => {
-  const [tab, setTab] = useState<'inventory' | 'burnt' | 'battles' | 'expired'>('inventory');
+  const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
   const [portfolioSearch, setPortfolioSearch] = useState('');
   const [inventoryPage, setInventoryPage] = useState(0);
   const [burntPage, setBurntPage] = useState(0);
+  const [claimedPage, setClaimedPage] = useState(0);
   const [battlePage, setBattlePage] = useState(0);
   const [editName, setEditName] = useState(user?.username || '');
   const [nameError, setNameError] = useState<string | null>(null);
@@ -71,6 +76,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     user?.avatarMeta || { fit: 'cover', scale: 1, x: 0, y: 0 }
   );
   const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
+  const [claimingCaseId, setClaimingCaseId] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;
@@ -111,7 +118,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const groups = new Map<string, Item & { count: number }>();
     if (!inventory || !Array.isArray(inventory)) return [];
     for (const item of inventory) {
-      if (!item || !isCaseExpired(item.caseId)) continue;
+      if (!item || !isCaseExpired(item.caseId) || item.claimedAt) continue;
       const currencyKey = item.currency || 'UNKNOWN';
       const existing = groups.get(currencyKey);
       if (!existing) {
@@ -146,6 +153,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     pagedItems: pagedExpired,
   } = usePagination(groupedExpired, ITEMS_PER_PAGE);
 
+  const formatAddress = (address?: string | null) => {
+    if (!address) return '';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const handleCopyAddress = async (address?: string | null) => {
+    if (!address) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(address);
+        return;
+      }
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
+  const handleClaimToken = async (caseId?: string) => {
+    if (!caseId || !onClaimToken) return;
+    setClaimError(null);
+    setClaimingCaseId(caseId);
+    try {
+      await onClaimToken(caseId);
+    } catch (error: any) {
+      setClaimError(error?.message || 'Claim failed');
+    } finally {
+      setClaimingCaseId(null);
+    }
+  };
+
   const inventoryTotalPages = useMemo(() => {
     try {
       const length = Array.isArray(sortedInventory) ? sortedInventory.length : 0;
@@ -165,6 +202,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return 1;
     }
   }, [burntItems]);
+
+  const claimedTotalPages = useMemo(() => {
+    try {
+      const length = Array.isArray(claimedItems) ? claimedItems.length : 0;
+      return Math.max(1, Math.ceil(length / ITEMS_PER_PAGE));
+    } catch (error) {
+      console.error('Error calculating claimed pages:', error);
+      return 1;
+    }
+  }, [claimedItems]);
 
   const battleTotalPages = useMemo(() => {
     try {
@@ -198,6 +245,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [burntItems, burntPage]);
 
+  const pagedClaimed = useMemo(() => {
+    try {
+      if (!claimedItems || !Array.isArray(claimedItems)) return [];
+      const start = claimedPage * ITEMS_PER_PAGE;
+      return claimedItems.slice(start, start + ITEMS_PER_PAGE);
+    } catch (error) {
+      console.error('Error paginating claimed items:', error);
+      return [];
+    }
+  }, [claimedItems, claimedPage]);
+
   const pagedBattleHistory = useMemo(() => {
     try {
       if (!battleHistory || !Array.isArray(battleHistory)) return [];
@@ -220,6 +278,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setBurntPage(Math.max(0, burntTotalPages - 1));
     }
   }, [burntTotalPages, burntPage]);
+
+  React.useEffect(() => {
+    if (claimedPage > claimedTotalPages - 1) {
+      setClaimedPage(Math.max(0, claimedTotalPages - 1));
+    }
+  }, [claimedTotalPages, claimedPage]);
 
   React.useEffect(() => {
     if (battlePage > battleTotalPages - 1) {
@@ -509,6 +573,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               tabs={[
                 { id: 'inventory', label: 'Items' },
                 { id: 'expired', label: 'Expired' },
+                { id: 'claimed', label: 'Claimed' },
                 { id: 'burnt', label: 'Burnt' },
                 { id: 'battles', label: 'Battles' },
               ]}
@@ -566,16 +631,83 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
+                    {claimError && (
+                      <div className="text-[11px] uppercase tracking-widest text-red-400 text-center mb-2">
+                        {claimError}
+                      </div>
+                    )}
                     <ItemGrid className="auto-rows-max gap-3">
-                      {pagedExpired.map((item, index) => (
-                        <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />
-                      ))}
+                      {pagedExpired.map((item, index) => {
+                        const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+                        const tokenAddress = caseInfo?.tokenAddress || '';
+                        const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
+                        const isClaiming = claimingCaseId === item.caseId;
+                        return (
+                          <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-2">
+                            <ItemCard item={item} size="sm" currencyPrefix="$" />
+                            <div className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 px-2">
+                              <span className="truncate">Token {tokenAddress ? formatAddress(tokenAddress) : 'N/A'}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyAddress(tokenAddress)}
+                                disabled={!tokenAddress}
+                                className={`px-2 py-1 rounded-md border transition ${
+                                  tokenAddress
+                                    ? 'border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40'
+                                    : 'border-white/[0.08] text-gray-600 cursor-not-allowed'
+                                }`}
+                              >
+                                Copy
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleClaimToken(item.caseId)}
+                              disabled={!canClaim || isClaiming}
+                              className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                                canClaim
+                                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
+                                  : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                              } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                            >
+                              {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </ItemGrid>
                     <Pagination
                       className="mt-2.5 pb-2.5 flex-shrink-0"
                       currentPage={expiredPage}
                       totalPages={expiredTotalPages}
                       onPageChange={setExpiredPage}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === 'claimed' && (
+              <div className="flex flex-col h-full min-h-0">
+                {(!claimedItems || claimedItems.length === 0) ? (
+                  <EmptyState
+                    icon={<Package size={48} />}
+                    message="No claimed tokens"
+                    className="min-h-[810px] rounded-xl"
+                  />
+                ) : (
+                  <div className="flex flex-col h-full justify-between">
+                    <ItemGrid className="auto-rows-max gap-3">
+                      {pagedClaimed.map((item, index) => {
+                        if (!item || !item.id) return null;
+                        return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />;
+                      })}
+                    </ItemGrid>
+                    <Pagination
+                      className="mt-2.5 pb-2.5 flex-shrink-0"
+                      currentPage={claimedPage}
+                      totalPages={claimedTotalPages}
+                      onPageChange={setClaimedPage}
                     />
                   </div>
                 )}

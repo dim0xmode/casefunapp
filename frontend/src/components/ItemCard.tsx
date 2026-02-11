@@ -81,7 +81,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
       )}
 
       <div
-        className={`relative z-10 ${styles.circle} rounded-full overflow-hidden bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 border-2 shadow-[0_0_8px_rgba(102,252,241,0.12)] flex items-center justify-center`}
+        className={`relative z-10 ${styles.circle} aspect-square shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 border-2 shadow-[0_0_8px_rgba(102,252,241,0.12)] flex items-center justify-center`}
         style={{ borderColor: item.color }}
       >
         {item.image ? (

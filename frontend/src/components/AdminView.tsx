@@ -86,6 +86,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   });
 
   const PAGE_SIZE = 12;
+  const explorerBase = (import.meta as any).env?.VITE_EXPLORER_URL || 'https://sepolia.etherscan.io';
 
   const formatDate = (value?: string) => {
     if (!value) return '-';
@@ -614,7 +615,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         className="w-full bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
                       >
                         <option value="USER">USER</option>
-                        <option value="MODERATOR">MODERATOR</option>
+                        <option value="MODERATOR">EARLY_ACCESS</option>
                         <option value="ADMIN">ADMIN</option>
                       </select>
                     </div>
@@ -667,6 +668,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-3">
                 {paginate(applyCaseFilters, 'cases').map((caseItem: any) => {
                   const edit = caseEdits[caseItem.id] || {};
+                  const adminStats = caseItem.adminStats || {};
+                  const payoutTxHash = adminStats.payoutTxHash || caseItem.payoutTxHash || null;
+                  const payoutStatus = adminStats.payoutStatus || (caseItem.payoutAt ? 'PAID' : caseItem.mintedAt ? 'PENDING' : 'NOT_MINTED');
                   return (
                     <div key={caseItem.id} className="grid grid-cols-1 md:grid-cols-10 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 min-w-0">
                     <div className="md:col-span-2 min-w-0">
@@ -730,6 +734,68 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       >
                         {saving === caseItem.id ? 'Saving...' : 'Save'}
                       </button>
+                      <div className="md:col-span-10 mt-1 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2 text-xs text-gray-300">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-2">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Openings</div>
+                            <div className="font-bold">{Number(adminStats.openings || 0)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Spent</div>
+                            <div className="font-bold">{Number(adminStats.spentUsdt || 0).toFixed(2)} ₮</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Payout Status</div>
+                            <div className={`font-bold ${
+                              payoutStatus === 'PAID'
+                                ? 'text-web3-success'
+                                : payoutStatus === 'PENDING'
+                                ? 'text-yellow-400'
+                                : 'text-gray-400'
+                            }`}>
+                              {payoutStatus}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Declared RTU</div>
+                            <div className="font-bold">{Number(adminStats.declaredRtu || 0).toFixed(2)}%</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Open Target</div>
+                            <div className="font-bold">{Number(adminStats.openRtuTarget || 0).toFixed(2)}%</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Actual RTU</div>
+                            <div className="font-bold">
+                              {adminStats.actualRtuPercent == null ? '-' : `${Number(adminStats.actualRtuPercent).toFixed(2)}%`}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Reserve (token)</div>
+                            <div className={`font-bold ${Number(adminStats.reserveToken || 0) >= 0 ? 'text-web3-success' : 'text-red-400'}`}>
+                              {Number(adminStats.reserveToken || 0).toFixed(4)}
+                            </div>
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-8">
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Tx Hash</div>
+                            {payoutTxHash ? (
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono truncate">{`${payoutTxHash.slice(0, 10)}...${payoutTxHash.slice(-8)}`}</span>
+                                <a
+                                  href={`${explorerBase.replace(/\/$/, '')}/tx/${payoutTxHash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-web3-accent hover:text-white transition uppercase tracking-widest text-[10px]"
+                                >
+                                  Etherscan
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="text-gray-500">-</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -1224,6 +1290,42 @@ const CaseDetail: React.FC<{ caseId: string }> = ({ caseId }) => {
           <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Last Open</div>
             <div className="text-xs">{stats.lastOpenedAt ? new Date(stats.lastOpenedAt).toLocaleString() : '-'}</div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Declared RTU</div>
+            <div className="text-xs">
+              {stats.declaredRtu == null ? '-' : `${Number(stats.declaredRtu).toFixed(2)}%`}
+            </div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Open Target RTU</div>
+            <div className="text-xs">
+              {stats.openRtuTarget == null ? '-' : `${Number(stats.openRtuTarget).toFixed(2)}%`}
+            </div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Actual RTU</div>
+            <div className="text-xs">
+              {stats.actualRtuPercent == null ? '-' : `${Number(stats.actualRtuPercent).toFixed(2)}%`}
+            </div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Reserve Token</div>
+            <div className={`text-xs ${Number(stats.reserveToken || 0) >= 0 ? 'text-web3-success' : 'text-red-400'}`}>
+              {Number(stats.reserveToken || 0).toFixed(4)}
+            </div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Drop Limits</div>
+            <div className="text-xs">
+              min {'<='} {Number(stats.minDropAllowed || 0).toFixed(4)} / max {'>='} {Number(stats.maxDropAllowed || 0).toFixed(4)}
+            </div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Current Drops</div>
+            <div className="text-xs">
+              min {Number(stats.minDropActual || 0).toFixed(4)} / max {Number(stats.maxDropActual || 0).toFixed(4)}
+            </div>
           </div>
         </div>
       )}

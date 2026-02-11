@@ -7,7 +7,7 @@ interface CaseViewProps {
   cases: Case[];
   onOpenCase: (caseId: string, count: number) => Promise<Item[]>;
   balance: number;
-  onOpenTopUp: () => void;
+  onOpenTopUp: (prefillUsdt?: number) => void;
   userName: string;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;

@@ -98,6 +98,51 @@ export const useWallet = () => {
     return null;
   };
 
+  const getProvider = () => {
+    if (!checkMetaMask()) return null;
+    return new BrowserProvider(window.ethereum);
+  };
+
+  const getChainId = async () => {
+    const provider = getProvider();
+    if (!provider) return null;
+    const network = await provider.getNetwork();
+    return Number(network.chainId);
+  };
+
+  const ensureChain = async (chainId: number, rpcUrl?: string, explorerUrl?: string) => {
+    if (!checkMetaMask() || !window.ethereum) return false;
+    const targetHex = `0x${chainId.toString(16)}`;
+    try {
+      const currentId = await getChainId();
+      if (currentId === chainId) return true;
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: targetHex }],
+      });
+      return true;
+    } catch (error: any) {
+      if (error?.code !== 4902) return false;
+      try {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: targetHex,
+              chainName: 'Sepolia',
+              rpcUrls: rpcUrl ? [rpcUrl] : [],
+              nativeCurrency: { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 },
+              blockExplorerUrls: explorerUrl ? [explorerUrl] : [],
+            },
+          ],
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
   const formatAddress = (address: string | null): string => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -148,6 +193,9 @@ export const useWallet = () => {
     disconnectWallet,
     formatAddress,
     checkMetaMask,
+    getProvider,
+    getChainId,
+    ensureChain,
   };
 };
 
