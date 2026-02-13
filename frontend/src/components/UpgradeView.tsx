@@ -1,19 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Item, Rarity } from '../types';
-import { TrendingUp, ArrowUp, ArrowDown, Settings2, Package, Sparkles } from 'lucide-react';
+import { Item } from '../types';
+import { TrendingUp, Package, Sparkles, Settings2 } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { EmptyState } from './ui/EmptyState';
 import { ItemGrid } from './ui/ItemGrid';
 import { AdminActionButton } from './ui/AdminActionButton';
+import { Pagination } from './ui/Pagination';
+import { SearchInput } from './ui/SearchInput';
 import { playDullClick, playSoftLose, playSoftWin } from '../utils/audio';
-
-const RARITY_COLORS: Record<Rarity, string> = {
-  [Rarity.COMMON]: '#9CA3AF',
-  [Rarity.UNCOMMON]: '#10B981',
-  [Rarity.RARE]: '#8B5CF6',
-  [Rarity.LEGENDARY]: '#F59E0B',
-  [Rarity.MYTHIC]: '#EF4444',
-};
 
 interface UpgradeViewProps {
   inventory: Item[];
@@ -24,6 +18,14 @@ interface UpgradeViewProps {
 }
 
 export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+  const UPGRADE_DIVISIONS = 24;
+  const PRESET_STORAGE_KEY = 'casefun:upgradePresets:v1';
+  const MIN_CHANCE_PERCENT = 0.1;
+  const MAX_CHANCE_PERCENT = 75;
+  const MIN_X_PRESET_INPUT = 1.33;
+  const MIN_MULTIPLIER_FROM_MAX_CHANCE = 100 / MAX_CHANCE_PERCENT;
+  const DEFAULT_X_PRESETS = [1.5, 2, 3];
+  const DEFAULT_PERCENT_PRESETS = [65, 50, 33];
   const roundToTwo = (value: number) => Number(value.toFixed(2));
   const [selectedItems, setSelectedItems] = useState<Item[]>([]);
   const [displayItem, setDisplayItem] = useState<Item | null>(null);
@@ -33,11 +35,16 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
   const [isSpinning, setIsSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [upgradeResult, setUpgradeResult] = useState<'idle' | 'success' | 'fail'>('idle');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [sortBy, setSortBy] = useState<'price' | 'alpha'>('alpha');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [xPresets, setXPresets] = useState<number[]>(DEFAULT_X_PRESETS);
+  const [percentPresets, setPercentPresets] = useState<number[]>(DEFAULT_PERCENT_PRESETS);
+  const [isPresetSettingsOpen, setIsPresetSettingsOpen] = useState(false);
+  const [xDraft, setXDraft] = useState<string[]>(DEFAULT_X_PRESETS.map((value) => value.toString()));
+  const [percentDraft, setPercentDraft] = useState<string[]>(DEFAULT_PERCENT_PRESETS.map((value) => value.toString()));
   const [fastUpgrade, setFastUpgrade] = useState(false);
   const [frozenInventory, setFrozenInventory] = useState<Item[] | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [inventoryPage, setInventoryPage] = useState(0);
   const pointerRef = useRef<HTMLDivElement | null>(null);
   const spinDurationMs = fastUpgrade ? 420 : 5600;
   const spinEasing = fastUpgrade
@@ -53,25 +60,147 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
   }, [multiplier]);
 
   const winChance = useMemo(() => {
-    return Math.min(75, Math.max(1, rawChance));
+    return Math.min(MAX_CHANCE_PERCENT, Math.max(MIN_CHANCE_PERCENT, rawChance));
+  }, [rawChance]);
+  const effectiveChance = useMemo(() => {
+    return Math.min(MAX_CHANCE_PERCENT, Math.max(MIN_CHANCE_PERCENT, rawChance));
   }, [rawChance]);
 
-  const isUpgradeBlocked = rawChance > 90;
-
-  // Sort Inventory
-  const sortedInventory = useMemo(() => {
-    return [...inventory].sort((a, b) => {
-      if (sortBy === 'alpha') {
-        const keyA = (a.currency || a.name || '').toLowerCase();
-        const keyB = (b.currency || b.name || '').toLowerCase();
-        const cmp = keyA.localeCompare(keyB, undefined, { sensitivity: 'base' });
-        if (cmp !== 0) return sortOrder === 'asc' ? cmp : -cmp;
-        // Always sort by value descending within same letter
-        return b.value - a.value;
+  const isUpgradeBlocked = rawChance > MAX_CHANCE_PERCENT + 1e-9;
+  const setChancePercent = (nextPercent: number) => {
+    const clamped = Math.max(MIN_CHANCE_PERCENT, Math.min(MAX_CHANCE_PERCENT, nextPercent));
+    setMultiplier(100 / clamped);
+  };
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const storedX = Array.isArray(parsed?.x) ? parsed.x.map(Number) : null;
+      const storedP = Array.isArray(parsed?.percent) ? parsed.percent.map(Number) : null;
+      const validX = storedX && storedX.length === 3 && storedX.every((value: number) => Number.isFinite(value) && value >= MIN_X_PRESET_INPUT && value <= 1000);
+      const validP = storedP && storedP.length === 3 && storedP.every((value: number) => Number.isFinite(value) && value >= MIN_CHANCE_PERCENT && value <= MAX_CHANCE_PERCENT);
+      if (validX && validP) {
+        setXPresets(storedX.map((value: number) => roundToTwo(value)));
+        setPercentPresets(storedP.map((value: number) => roundToTwo(value)));
       }
-      return sortOrder === 'asc' ? a.value - b.value : b.value - a.value;
-    });
-  }, [inventory, sortOrder, sortBy]);
+    } catch {
+      // ignore malformed preset storage
+    }
+  }, []);
+
+  const openPresetSettings = () => {
+    setXDraft(xPresets.map((value) => value.toString()));
+    setPercentDraft(percentPresets.map((value) => value.toString()));
+    setIsPresetSettingsOpen(true);
+  };
+
+  const savePresetSettings = () => {
+    const parsedX = xDraft.map((entry) => Number(String(entry).replace(',', '.')));
+    const parsedP = percentDraft.map((entry) => Number(String(entry).replace(',', '.')));
+    const validX = parsedX.length === 3 && parsedX.every((value) => Number.isFinite(value) && value >= MIN_X_PRESET_INPUT && value <= 1000);
+    const validP = parsedP.length === 3 && parsedP.every((value) => Number.isFinite(value) && value >= MIN_CHANCE_PERCENT && value <= MAX_CHANCE_PERCENT);
+    if (!validX || !validP) return;
+    const nextX = parsedX.map((value) => roundToTwo(value));
+    const nextP = parsedP.map((value) => roundToTwo(value));
+    setXPresets(nextX);
+    setPercentPresets(nextP);
+    try {
+      localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify({ x: nextX, percent: nextP }));
+    } catch {
+      // ignore localStorage errors
+    }
+    setIsPresetSettingsOpen(false);
+  };
+  const presetDraftsAreValid = (() => {
+    const parsedX = xDraft.map((entry) => Number(String(entry).replace(',', '.')));
+    const parsedP = percentDraft.map((entry) => Number(String(entry).replace(',', '.')));
+    const validX = parsedX.length === 3 && parsedX.every((value) => Number.isFinite(value) && value >= MIN_X_PRESET_INPUT && value <= 1000);
+    const validP = parsedP.length === 3 && parsedP.every((value) => Number.isFinite(value) && value >= MIN_CHANCE_PERCENT && value <= MAX_CHANCE_PERCENT);
+    return validX && validP;
+  })();
+
+  const sanitizeSearchInput = (value: string) => {
+    // Allow token search, plain text, and decimal numeric input.
+    let next = value.replace(/[^a-zA-Z0-9$., ]/g, '');
+    // Keep only one "$" at the beginning.
+    if (next.includes('$')) {
+      const withoutAll = next.replace(/\$/g, '');
+      next = `$${withoutAll}`;
+    }
+    // If input is numeric-like, keep at most two decimal digits.
+    const compact = next.trim();
+    if (/^\d+[.,]?\d*$/.test(compact)) {
+      const normalized = compact.replace(',', '.');
+      const [intPart, decPart = ''] = normalized.split('.');
+      return decPart.length > 2 ? `${intPart}.${decPart.slice(0, 2)}` : normalized;
+    }
+    return next;
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchFilter(sanitizeSearchInput(value));
+    setInventoryPage(0);
+  };
+
+  // Inventory base ordering
+  const sortedInventory = useMemo(() => {
+    return [...inventory].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+  }, [inventory]);
+
+  const selectedBase = selectedItems[0] || null;
+  const isFilterLocked = Boolean(selectedBase);
+  const matchesSelectedBase = (item: Item) => {
+    if (!selectedBase) return true;
+    return item.currency === selectedBase.currency && item.caseId === selectedBase.caseId;
+  };
+
+  const listSource = (isSpinning || upgradeResult !== 'idle' ? (frozenInventory || sortedInventory) : sortedInventory);
+  const visibleInventory = useMemo(() => {
+    const searchTrimmed = searchFilter.trim();
+    const searchLower = searchTrimmed.toLowerCase();
+    const normalizedNumeric = searchTrimmed.replace(',', '.');
+    const priceQuery = Number(normalizedNumeric);
+    const hasPriceFilter =
+      Number.isFinite(priceQuery) &&
+      priceQuery > 0 &&
+      /^\d+([.,]\d{0,2})?$/.test(searchTrimmed);
+    const hasTokenFilter = searchTrimmed.startsWith('$') && searchTrimmed.length > 1;
+    const tokenSearch = hasTokenFilter ? searchTrimmed.slice(1).toLowerCase() : '';
+    const hasNameFilter = searchLower.length > 0 && !hasPriceFilter && !hasTokenFilter;
+
+    let base = listSource.filter(matchesSelectedBase);
+    if (hasPriceFilter) {
+      base = base.filter((item) => Number(item.value || 0) <= priceQuery);
+    } else if (hasTokenFilter) {
+      base = base.filter((item) => (item.currency || '').toLowerCase().includes(tokenSearch));
+    } else if (hasNameFilter) {
+      base = base.filter((item) =>
+        (item.name || '').toLowerCase().includes(searchLower) ||
+        (item.currency || '').toLowerCase().includes(searchLower)
+      );
+    }
+    return base;
+  }, [listSource, selectedBase, searchFilter]);
+  const INVENTORY_ITEMS_PER_PAGE = 30;
+  const inventoryTotalPages = Math.max(1, Math.ceil(visibleInventory.length / INVENTORY_ITEMS_PER_PAGE));
+  const pagedVisibleInventory = useMemo(() => {
+    const start = inventoryPage * INVENTORY_ITEMS_PER_PAGE;
+    return visibleInventory.slice(start, start + INVENTORY_ITEMS_PER_PAGE);
+  }, [visibleInventory, inventoryPage]);
+
+  useEffect(() => {
+    if (inventoryPage > inventoryTotalPages - 1) {
+      setInventoryPage(Math.max(0, inventoryTotalPages - 1));
+    }
+  }, [inventoryPage, inventoryTotalPages]);
+
+  const upgradeValidationMessage = useMemo(() => {
+    if (!isAuthenticated) return 'Connect wallet to upgrade.';
+    if (!selectedItems.length) return 'Select at least one item to start upgrade.';
+    if (isUpgradeBlocked) return 'Multiplier is too low chance. Keep win chance at 75% or less.';
+    return null;
+  }, [isAuthenticated, selectedItems.length, isUpgradeBlocked]);
 
   // SVG Geometry
   const RADIUS = 120;
@@ -111,13 +240,34 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     const endAngle = degreesSpan;
 
     let targetAngle = 0;
+    const useBaitLanding = Math.random() < 0.5;
+    const normalizeAngle = (value: number) => ((value % 360) + 360) % 360;
+    const insideEdgeWindow = Math.max(0.03, Math.min(6, degreesSpan * 0.35));
+    const outsideEdgeWindow = Math.max(0.8, Math.min(8, (360 - degreesSpan) * 0.05));
 
     if (isSuccess) {
-      targetAngle = startAngle + (Math.random() * degreesSpan);
+      if (useBaitLanding) {
+        // Land very close to the win/fail border, but still in the win zone.
+        const offset = Math.random() * insideEdgeWindow;
+        targetAngle = Math.max(startAngle + 0.01, endAngle - offset);
+      } else {
+        targetAngle = startAngle + (Math.random() * degreesSpan);
+      }
+    } else if (useBaitLanding) {
+      // Bait failure: either slight overshoot, or just "not reaching" the start boundary.
+      const nearOvershoot = Math.random() < 0.5;
+      if (nearOvershoot) {
+        const offset = Math.random() * outsideEdgeWindow;
+        targetAngle = endAngle + offset;
+      } else {
+        const offset = Math.random() * outsideEdgeWindow;
+        targetAngle = 360 - offset;
+      }
     } else {
       const remainingSpan = 360 - degreesSpan;
       targetAngle = endAngle + (Math.random() * remainingSpan);
     }
+    targetAngle = normalizeAngle(targetAngle);
 
     // Add Rotations
     const spinPadding = fastUpgrade ? 0 : 360 * 5;
@@ -132,7 +282,6 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     setRotation(finalRotation);
 
     // Animation End Handling
-    const duration = spinDurationMs;
     const resultDelay = spinDurationMs;
     const resultRevealPauseMs = 300;
     const resetDelay = fastUpgrade ? 1000 : 1500;
@@ -165,15 +314,13 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     const node = pointerRef.current;
     if (!node) return;
 
-    const startedAt = performance.now();
     let frameId = 0;
     let lastRawAngle: number | null = null;
-    let sectionAccumulator = 0;
-    let smoothedSpeedFactor = 1;
-    // Slightly denser points + speed-adaptive emit makes sync more noticeable.
-    const pointsPerCircle = fastUpgrade ? 24 : 44;
-    const sectionSizeDeg = 360 / pointsPerCircle;
-    const baseClickVolume = fastUpgrade ? 0.07 : 0.105;
+    let totalAnglePassed = 0;
+    let lastTickIndex = 0;
+    const sectionSizeDeg = 360 / UPGRADE_DIVISIONS;
+    const phaseLagDeg = sectionSizeDeg * 0.15;
+    const clickVolume = fastUpgrade ? 0.08 : 0.12;
 
     const readRotationDeg = () => {
       const transform = window.getComputedStyle(node).transform;
@@ -203,35 +350,13 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
         if (delta < -180) delta += 360;
         lastRawAngle = raw;
 
-        const speedDeg = Math.abs(delta); // degrees per frame
-        const targetSpeedFactor = Math.max(0.78, Math.min(1.22, 0.86 + speedDeg / 9));
-        // Smooth speed-to-volume response to avoid audible jump on deceleration phase.
-        smoothedSpeedFactor = smoothedSpeedFactor * 0.82 + targetSpeedFactor * 0.18;
-        sectionAccumulator += speedDeg;
-        // Prevent burst backlog after rapid phase.
-        sectionAccumulator = Math.min(sectionAccumulator, sectionSizeDeg * 2.2);
-        const elapsed = performance.now() - startedAt;
-        const startRamp = Math.max(0, Math.min(1, (elapsed - 120) / 320)); // smooth-in for first ~0.4s
-        const startSectionMultiplier = elapsed < 380 ? 1.35 : 1; // fewer ticks at the very beginning
-        const effectiveSectionSize = sectionSizeDeg * startSectionMultiplier;
-        let emitted = 0;
-        const maxPerFrame =
-          elapsed < 380
-            ? 1
-            : smoothedSpeedFactor < 0.92
-              ? 1
-              : smoothedSpeedFactor < 1.05
-                ? 2
-                : fastUpgrade
-                  ? 2
-                  : 3;
-        while (sectionAccumulator >= effectiveSectionSize && emitted < maxPerFrame) {
-          // First click is stronger, extra catch-up clicks are softer.
-          const perClickVolume =
-            baseClickVolume * startRamp * smoothedSpeedFactor * (emitted === 0 ? 0.9 : 0.66);
-          playDullClick(perClickVolume);
-          sectionAccumulator -= effectiveSectionSize;
-          emitted += 1;
+        totalAnglePassed += Math.abs(delta);
+        const effectiveAngle = Math.max(0, totalAnglePassed - phaseLagDeg);
+        const tickIndex = Math.floor(effectiveAngle / sectionSizeDeg);
+        // Emit at most one click per frame to prevent burst loudness.
+        if (tickIndex > lastTickIndex) {
+          playDullClick(clickVolume);
+          lastTickIndex = tickIndex;
         }
       }
       frameId = window.requestAnimationFrame(tick);
@@ -241,7 +366,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [isSpinning, fastUpgrade]);
+  }, [isSpinning, fastUpgrade, UPGRADE_DIVISIONS, spinDurationMs]);
 
   const handleSelectItem = (item: Item, key: string) => {
     if (isSpinning) return;
@@ -295,18 +420,6 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     if (!nextItems.length) {
       setLastResult(null);
     }
-  };
-
-  const CoinVisual = ({ item, size = 'md' }: { item: Item, size?: 'sm'|'md'|'lg' }) => {
-    const dims = size === 'lg' ? 'w-24 h-24 text-4xl' : size === 'md' ? 'w-16 h-16 text-2xl' : 'w-12 h-12 text-xl';
-    return (
-      <div
-        className={`${dims} rounded-full bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 border-2 flex items-center justify-center shadow-[0_0_18px_rgba(102,252,241,0.12)] relative z-10`}
-        style={{ borderColor: item.color }}
-      >
-        <span>{item.image}</span>
-      </div>
-    );
   };
 
   const chanceLabel =
@@ -400,19 +513,52 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                   stroke="#1F2833" 
                   strokeWidth="12" 
                 />
-                {/* Win Zone (Success) - Green */}
+                {/* Win Zone (Success) - placed below divisions */}
                 {displayItem && (
+                <>
                 <circle 
                   cx="130" cy="130" r={RADIUS} 
                   fill="transparent" 
-                  stroke="#10B981" 
-                  strokeWidth="12"
+                  stroke="rgba(16,185,129,0.22)" 
+                  strokeWidth="14"
                     strokeLinecap="butt"
                   strokeDasharray={CIRCUMFERENCE}
                   strokeDashoffset={strokeDashoffset}
                   className="transition-all duration-500 ease-out"
                 />
+                <circle 
+                  cx="130" cy="130" r={RADIUS} 
+                  fill="transparent" 
+                  stroke="rgba(52,211,153,0.72)" 
+                  strokeWidth="8"
+                    strokeLinecap="butt"
+                  strokeDasharray={CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  className="transition-all duration-500 ease-out"
+                  style={{ filter: 'drop-shadow(0 0 8px rgba(52,211,153,0.5))' }}
+                />
+                </>
                 )}
+                {/* Clock-like divisions */}
+                {Array.from({ length: UPGRADE_DIVISIONS }).map((_, idx) => {
+                  const isLong = idx % 2 === 0;
+                  const isHalfMark = idx === 0 || idx === UPGRADE_DIVISIONS / 2;
+                  const y1 = isLong ? 4 : 8;
+                  const y2 = isLong ? 18 : 14;
+                  return (
+                    <line
+                      key={`upgrade-tick-${idx}`}
+                      x1="130"
+                      y1={y1}
+                      x2="130"
+                      y2={y2}
+                      stroke={isHalfMark ? '#93C5FD' : 'rgba(255,255,255,0.34)'}
+                      strokeWidth={isHalfMark ? 1.8 : 1.1}
+                      strokeLinecap="round"
+                      transform={`rotate(${(360 / UPGRADE_DIVISIONS) * idx} 130 130)`}
+                    />
+                  );
+                })}
               </svg>
               
               <div className="absolute inset-0 rounded-full border border-white/[0.08]"></div>
@@ -522,6 +668,11 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 disabled={isSpinning || isUpgradeBlocked || (!selectedItems.length && isAuthenticated)}
                 className={`w-full py-3 text-lg tracking-widest font-black rounded-xl shadow-[0_0_20px_rgba(102,252,241,0.18)] ${isSpinning ? 'opacity-50' : 'animate-pulse-fast'}`}
               />
+              {upgradeValidationMessage && (
+                <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-500">
+                  {upgradeValidationMessage}
+                </div>
+              )}
 
               <button 
                 onClick={() => !isSpinning && setFastUpgrade(!fastUpgrade)}
@@ -539,7 +690,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
 
           {/* Right: Result + Settings */}
           <div className="w-full max-w-sm flex flex-col gap-6 flex-1">
-            <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl h-[420px] flex flex-col">
+            <div className="bg-black/20 border border-white/[0.12] p-5 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl min-h-[420px] flex flex-col">
               <div className="text-xs text-gray-400 uppercase tracking-widest mb-3">Result</div>
               {lastResult ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
@@ -549,7 +700,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                       value: lastResult.value,
                     }}
                     size="lg"
-                    className="w-full h-full max-h-[280px]"
+                    className="w-full h-full max-h-[230px]"
                     status={lastResult.success ? 'normal' : 'burnt'}
                     currencyPrefix="$"
                   />
@@ -562,7 +713,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                       value: displayTargetValue,
                     }}
                     size="lg"
-                    className="w-full h-full max-h-[280px] opacity-80"
+                    className="w-full h-full max-h-[230px] opacity-80"
                     currencyPrefix="$"
                   />
                 </div>
@@ -570,24 +721,63 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 <div className="flex-1 flex items-center justify-center text-gray-600">Select item to preview</div>
               )}
 
-              <div className="mt-6 border-t border-white/[0.06] pt-4">
+              <div className="mt-4 border-t border-white/[0.06] pt-3">
                 <div className="flex justify-between items-center mb-3"></div>
 
                 <div className="mb-2">
-                  <div className="text-gray-400 text-xs mb-2">Multiplier</div>
-                  <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-white/[0.12] backdrop-blur-xl">
-                    <button onClick={() => setMultiplier(m => Math.max(1.2, m - 0.1))} disabled={isSpinning} className="w-10 h-10 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">-</button>
-                    <div className="flex-1 text-center font-mono text-xl font-bold text-white">
-                      {multiplier.toFixed(2)}x
-                    </div>
-                    <button onClick={() => setMultiplier(m => Math.min(20, m + 0.1))} disabled={isSpinning} className="w-10 h-10 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">+</button>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-gray-400 text-xs">Presets</div>
+                    <button
+                      onClick={openPresetSettings}
+                      disabled={isSpinning}
+                      className="w-8 h-8 rounded-md border border-white/[0.12] bg-black/30 text-gray-400 hover:text-white hover:border-web3-accent/40 transition flex items-center justify-center"
+                      title="Customize presets"
+                    >
+                      <Settings2 size={14} />
+                    </button>
                   </div>
-                  <div className="flex justify-between mt-2 gap-2">
-                    {[1.2, 1.5, 2, 5, 10].map(m => (
-                      <button key={m} onClick={() => !isSpinning && setMultiplier(m)} className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-400 transition border border-white/[0.06]">
-                        {m}x
-                </button>
-                    ))}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {percentPresets.map((preset, idx) => (
+                        <button
+                          key={`p-preset-${idx}`}
+                          onClick={() => {
+                            if (isSpinning) return;
+                            setChancePercent(Number(preset));
+                          }}
+                          className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
+                        >
+                          {preset}%
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {xPresets.map((preset, idx) => (
+                        <button
+                          key={`x-preset-${idx}`}
+                          onClick={() => {
+                            if (isSpinning) return;
+                            setMultiplier(Math.max(MIN_MULTIPLIER_FROM_MAX_CHANCE, Number(preset)));
+                          }}
+                          className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
+                        >
+                          {preset}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-gray-400 text-xs">Chance</div>
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">
+                      Multiplier: {multiplier.toFixed(2)}x
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-white/[0.12] backdrop-blur-xl">
+                    <button onClick={() => setChancePercent(effectiveChance - 1)} disabled={isSpinning} className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">-</button>
+                    <div className="flex-1 text-center font-mono text-lg font-bold text-white">
+                      {effectiveChance.toFixed(2)}%
+                    </div>
+                    <button onClick={() => setChancePercent(effectiveChance + 1)} disabled={isSpinning} className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">+</button>
                   </div>
                 </div>
               </div>
@@ -597,63 +787,42 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
       </div>
 
       {/* Bottom Section: Inventory Grid */}
-      <div className="h-[280px] flex flex-col flex-shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.35)] bg-black/20 backdrop-blur-2xl border-t border-white/[0.12]">
+      <div className="h-[440px] lg:h-[520px] flex flex-col flex-shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.35)] bg-black/20 backdrop-blur-2xl border-t border-white/[0.12]">
         <div className="px-6 py-3 border-b border-white/[0.12] flex justify-between items-center bg-black/20 backdrop-blur-2xl">
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm uppercase tracking-wider text-gray-300">Your Inventory</span>
-            <span className="bg-gray-700 text-xs px-2 py-0.5 rounded text-white ml-2">{inventory.length}</span>
+            <span className="bg-gray-700 text-xs px-2 py-0.5 rounded text-white ml-2">
+              {visibleInventory.length}
+              {isFilterLocked ? ` / ${inventory.length}` : ''}
+            </span>
+            {isFilterLocked && (
+              <span className="text-[10px] uppercase tracking-widest text-web3-accent">
+                Showing ${selectedBase?.currency || 'TOKEN'} only
+              </span>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-black/30 px-2 py-1.5 rounded border border-white/[0.12] backdrop-blur-xl">
-              <button
-                onClick={() => setSortBy('price')}
-                disabled={isSpinning}
-                className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider transition ${
-                  sortBy === 'price'
-                    ? 'bg-web3-accent/20 text-web3-accent'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Price
-              </button>
-              <button
-                onClick={() => setSortBy('alpha')}
-                disabled={isSpinning}
-                className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider transition ${
-                  sortBy === 'alpha'
-                    ? 'bg-web3-accent/20 text-web3-accent'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                A-Z
-              </button>
-            </div>
-          <button 
-            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-white transition uppercase tracking-wider bg-black/30 px-3 py-1.5 rounded border border-white/[0.12] hover:border-web3-accent/40"
-            disabled={isSpinning}
-          >
-              <span className="text-gray-500 mr-1">{sortBy === 'alpha' ? 'Alpha:' : 'Price:'}</span>
-              {sortBy === 'alpha'
-                ? (sortOrder === 'asc' ? 'A-Z' : 'Z-A')
-                : (sortOrder === 'asc' ? 'Asc' : 'Desc')}
-            {sortOrder === 'asc' ? <ArrowUp size={14} className="text-web3-accent" /> : <ArrowDown size={14} className="text-web3-accent" />}
-          </button>
+            <SearchInput
+              value={searchFilter}
+              onChange={handleSearchChange}
+              placeholder="Search by name, token ($DOGE) or max price (500)"
+              className="w-[320px]"
+            />
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          {(isSpinning || upgradeResult !== 'idle' ? (frozenInventory || sortedInventory) : sortedInventory).length === 0 ? (
+          {visibleInventory.length === 0 ? (
             <EmptyState
               icon={<Package size={48} />}
-              message="Your inventory is empty. Open some cases!"
+              message={isFilterLocked ? 'No more cards for selected token/case.' : 'Your inventory is empty. Open some cases!'}
             />
           ) : (
             <ItemGrid>
-              {(isSpinning || upgradeResult !== 'idle' ? (frozenInventory || sortedInventory) : sortedInventory).map((item, index) => {
+              {pagedVisibleInventory.map((item) => {
                 if (!item || !item.id) return null;
-                const key = `${item.id}-${index}`;
+                const key = String(item.id);
                 return (
                   <ItemCard
                     key={key}
@@ -669,8 +838,112 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               })}
             </ItemGrid>
           )}
+          {inventoryTotalPages > 1 && (
+            <Pagination
+              currentPage={inventoryPage}
+              totalPages={inventoryTotalPages}
+              onPageChange={setInventoryPage}
+              className="mt-4"
+            />
+          )}
+          {isFilterLocked && !isSpinning && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => {
+                  setSelectedItems([]);
+                  setSelectedKeys([]);
+                  setDisplayItem(null);
+                  setUpgradeResult('idle');
+                  setRotation(0);
+                  setSelectionError(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-white/[0.14] text-[10px] uppercase tracking-widest text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+              >
+                Clear token filter
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {isPresetSettingsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="w-full max-w-md rounded-xl border border-white/[0.14] bg-[#0F1014] p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm uppercase tracking-widest text-gray-300">Preset Settings</div>
+              <button
+                onClick={() => setIsPresetSettingsOpen(false)}
+                className="w-8 h-8 rounded-md border border-white/[0.12] text-gray-400 hover:text-white hover:border-white/[0.28] transition"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {xDraft.map((value, idx) => (
+                <input
+                  key={`x-draft-${idx}`}
+                  value={value}
+                  onChange={(event) => {
+                    const next = [...xDraft];
+                    next[idx] = event.target.value.replace(/[^0-9.,]/g, '');
+                    setXDraft(next);
+                  }}
+                  placeholder={`x${idx + 1}`}
+                  className="h-10 rounded-md border border-white/[0.12] bg-black/30 px-2 text-sm text-white outline-none focus:border-web3-accent/60"
+                />
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {percentDraft.map((value, idx) => (
+                <input
+                  key={`p-draft-${idx}`}
+                  value={value}
+                  onChange={(event) => {
+                    const next = [...percentDraft];
+                    next[idx] = event.target.value.replace(/[^0-9.,]/g, '');
+                    setPercentDraft(next);
+                  }}
+                  placeholder={`%${idx + 1}`}
+                  className="h-10 rounded-md border border-white/[0.12] bg-black/30 px-2 text-sm text-white outline-none focus:border-web3-accent/60"
+                />
+              ))}
+            </div>
+
+            <div className="text-[10px] text-gray-500 mb-4">
+              X range: 1.33-1000, % range: 0.1-75
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setIsPresetSettingsOpen(false)}
+                className="px-3 py-1.5 rounded-md text-xs border border-white/[0.12] text-gray-300 hover:text-white transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setXDraft(DEFAULT_X_PRESETS.map((value) => value.toString()));
+                  setPercentDraft(DEFAULT_PERCENT_PRESETS.map((value) => value.toString()));
+                }}
+                className="px-3 py-1.5 rounded-md text-xs border border-white/[0.12] text-gray-300 hover:text-white transition"
+              >
+                Reset
+              </button>
+              <button
+                onClick={savePresetSettings}
+                disabled={!presetDraftsAreValid}
+                className={`px-3 py-1.5 rounded-md text-xs border transition ${
+                  presetDraftsAreValid
+                    ? 'border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10'
+                    : 'border-white/[0.08] text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

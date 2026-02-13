@@ -427,8 +427,12 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
       <div className="max-w-6xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs uppercase tracking-widest text-gray-500">Create</div>
-            <h1 className="text-4xl font-black tracking-tight">Your Custom Case</h1>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+              MY
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                CUSTOMCASE
+              </span>
+            </h1>
           </div>
         </div>
 

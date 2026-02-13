@@ -41,6 +41,9 @@ export const topUpBalance = async (req: Request, res: Response, next: NextFuncti
 
 export const upgradeItem = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const MIN_UPGRADE_CHANCE = 0.1;
+    const MAX_UPGRADE_CHANCE = 75;
+    const MIN_UPGRADE_MULTIPLIER = 100 / MAX_UPGRADE_CHANCE;
     const userId = (req as any).userId;
     const { itemId, itemIds, multiplier } = req.body;
     const mult = Number(multiplier);
@@ -56,7 +59,7 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
           .filter(Boolean)
       )
     );
-    if (!requestedIds.length || requestedIds.length > 9 || !Number.isFinite(mult) || mult < 1.2) {
+    if (!requestedIds.length || requestedIds.length > 9 || !Number.isFinite(mult) || mult < MIN_UPGRADE_MULTIPLIER) {
       return next(new AppError('Invalid upgrade parameters', 400));
     }
 
@@ -90,14 +93,15 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
     }
 
     const rawChance = (1 / mult) * 100;
-    if (rawChance > 90) {
+    if (rawChance > MAX_UPGRADE_CHANCE + 1e-9) {
       return next(new AppError('Upgrade blocked', 400));
     }
-    const winChance = Math.min(75, Math.max(1, rawChance));
+    const winChance = Math.min(MAX_UPGRADE_CHANCE, Math.max(MIN_UPGRADE_CHANCE, rawChance));
     const totalBaseValue = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
     const targetValue = roundToTwo(totalBaseValue * mult);
 
-    let forceFailByRtu = false;
+    let reserveToken = 0;
+    let neededDelta = Math.max(0, targetValue - totalBaseValue);
     if (baseItem.caseId) {
       const caseInfo = await prisma.case.findUnique({
         where: { id: baseItem.caseId },
@@ -110,13 +114,24 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
             tokenSymbol,
           },
         });
-        const reserveToken = Math.max(0, Number(ledger?.bufferDebtToken || 0));
-        const neededDelta = Math.max(0, targetValue - totalBaseValue);
-        forceFailByRtu = neededDelta > reserveToken + 1e-9;
+        reserveToken = Math.max(0, Number(ledger?.bufferDebtToken || 0));
       }
     }
 
-    const isSuccess = !forceFailByRtu && Math.random() * 100 <= winChance;
+    // Surplus-aware chance shaping:
+    // - large reserve surplus => noticeably higher chance
+    // - low reserve => noticeably lower chance
+    const coverage = neededDelta <= 1e-9 ? 1 : reserveToken / neededDelta;
+    const surplusBoostFactor = Math.max(0, Math.min(1, (coverage - 1) / 3)); // reserve 1x..4x needed => 0..1
+    const deficitPenaltyFactor = Math.max(0, Math.min(1, (1 - coverage) / 1)); // reserve 100%..0% needed => 0..1
+    const adjustedWinChance = Math.max(
+      MIN_UPGRADE_CHANCE,
+      Math.min(
+        95,
+        winChance + surplusBoostFactor * 24 - deficitPenaltyFactor * 26
+      )
+    );
+    const isSuccess = Math.random() * 100 <= adjustedWinChance;
 
     const result = await prisma.$transaction(async (tx) => {
       let newItem = null;
@@ -154,6 +169,11 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
             totalBaseValue,
             targetValue,
             success: isSuccess,
+            baseWinChance: winChance,
+            adjustedWinChance,
+            reserveToken,
+            neededDelta,
+            reserveCoverage: coverage,
           },
         },
       });
@@ -174,7 +194,17 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
               type: 'UPGRADE',
               deltaSpentUsdt: 0,
               deltaToken,
-              metadata: { itemIds: requestedIds, targetValue, totalBaseValue, success: isSuccess },
+              metadata: {
+                itemIds: requestedIds,
+                targetValue,
+                totalBaseValue,
+                success: isSuccess,
+                baseWinChance: winChance,
+                adjustedWinChance,
+                reserveToken,
+                neededDelta,
+                reserveCoverage: coverage,
+              },
             },
             tx
           );
@@ -189,6 +219,8 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
       data: {
         success: isSuccess,
         targetValue,
+        baseWinChance: winChance,
+        adjustedWinChance,
         newItem: result.newItem,
         burntItemIds: requestedIds,
         consumedItemIds: requestedIds,

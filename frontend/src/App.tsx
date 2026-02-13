@@ -529,9 +529,8 @@ const App = () => {
     }
     setActiveTab(tab);
     updateUrl(tab, mode);
-    if (tab !== 'profile') {
-      setProfileView(null);
-    }
+    // Navigation via header/history should return to own profile context.
+    setProfileView(null);
   };
 
   const handleCreateCase = () => {
@@ -889,6 +888,14 @@ const App = () => {
     setActiveTab('profile');
   };
 
+  const getUserAvatarByName = (username: string) => {
+    if (!username) return undefined;
+    if (username === user.username) {
+      return user.avatar || undefined;
+    }
+    return botProfiles[username]?.user?.avatar || undefined;
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
       {/* Global Parallax Background - Fixed positioning */}
@@ -1036,6 +1043,8 @@ const App = () => {
                   balance={balance}
                   cases={cases}
                   isEditable={!profileView}
+                  onSelectUser={handleSelectUser}
+                  getUserAvatarByName={getUserAvatarByName}
                   onUpdateUsername={handleUpdateUsername}
                   onUploadAvatar={handleUploadAvatar}
                   onUpdateAvatarMeta={handleUpdateAvatarMeta}

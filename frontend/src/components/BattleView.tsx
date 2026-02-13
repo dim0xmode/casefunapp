@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Case, Item } from '../types';
-import { Swords, Bot, Trophy, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Sparkles, Trash2 } from 'lucide-react';
+import { Bot, Trophy, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Sparkles, Trash2 } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
@@ -605,9 +605,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       <div className="h-full flex flex-col">
         <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
           <div className="flex flex-col items-center gap-4 mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Swords className="text-web3-accent" /> Available Battles
-          </h2>
+            <h2 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+              AVAILABLE
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                BATTLES
+              </span>
+            </h2>
             <AdminActionButton
               isAuthenticated={isAuthenticated}
               isAdmin={isAdmin}

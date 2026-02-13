@@ -26,6 +26,11 @@ interface BattleRecord {
   cost: number;
   wonValue: number;
   wonItems: Item[];
+  opponentWonItems?: Item[];
+  lostItems?: Item[];
+  timestamp?: number;
+  caseCount?: number;
+  mode?: 'BOT' | 'PVP' | string;
 }
 
 interface ProfileViewProps {
@@ -37,6 +42,8 @@ interface ProfileViewProps {
   balance: number;
   cases: Case[];
   isEditable?: boolean;
+  onSelectUser?: (username: string) => void;
+  getUserAvatarByName?: (username: string) => string | undefined;
   onUpdateUsername?: (username: string) => Promise<void> | void;
   onUploadAvatar?: (file: File, meta?: ImageMeta) => Promise<string | void> | string | void;
   onUpdateAvatarMeta?: (meta: ImageMeta) => Promise<void> | void;
@@ -52,6 +59,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   balance,
   cases,
   isEditable = false,
+  onSelectUser,
+  getUserAvatarByName,
   onUpdateUsername,
   onUploadAvatar,
   onUpdateAvatarMeta,
@@ -156,6 +165,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const formatAddress = (address?: string | null) => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  const formatBattleTime = (timestamp?: number) => {
+    if (!timestamp || !Number.isFinite(timestamp)) return 'Unknown time';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return 'Unknown time';
+    return date.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const handleCopyAddress = async (address?: string | null) => {
@@ -294,6 +316,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   React.useEffect(() => {
     setEditName(user?.username || '');
+    // When opening another profile, always land on main inventory tab.
+    setTab('inventory');
+    setInventoryPage(0);
+    setBurntPage(0);
+    setClaimedPage(0);
+    setBattlePage(0);
   }, [user?.username]);
 
   React.useEffect(() => {
@@ -753,7 +781,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0 content-start">
                       {pagedBattleHistory.map((battle) => {
                         if (!battle || !battle.id) return null;
                         try {
@@ -763,39 +791,171 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                             acc[item.currency] = (acc[item.currency] || 0) + value;
                             return acc;
                           }, {} as Record<string, number>);
-                          
+                          const opponentItems = battle.opponentWonItems || battle.lostItems || [];
+                          const opponentByCategory = opponentItems.reduce((acc, item) => {
+                            if (!item || !item.currency) return acc;
+                            const value = Number(item.value) || 0;
+                            acc[item.currency] = (acc[item.currency] || 0) + value;
+                            return acc;
+                          }, {} as Record<string, number>);
+
                           const hasWinnings = Object.keys(winningsByCategory).length > 0;
+                          const hasOpponentWinnings = Object.keys(opponentByCategory).length > 0;
+                          const cost = Number(battle.cost) || 0;
+                          const modeLabel = String(battle.mode || '').toUpperCase() === 'PVP' ? 'PVP' : 'BOT';
+                          const roundsLabel = Math.max(1, Number(battle.caseCount) || (battle.wonItems?.length || 1));
+                          const topWonItems = (battle.wonItems || []).slice(0, 4);
+                          const extraWonItems = Math.max(0, (battle.wonItems || []).length - topWonItems.length);
+                          const opponentName = String(battle.opponent || 'Unknown');
+                          const opponentAvatar = getUserAvatarByName?.(opponentName);
+                          const canOpenOpponentProfile = Boolean(
+                            onSelectUser &&
+                              opponentName &&
+                              opponentName.toLowerCase() !== 'unknown'
+                          );
 
                           return (
-                            <div key={battle.id} className="bg-web3-card/80 backdrop-blur-sm p-4 rounded-xl border border-gray-700 flex items-center justify-between hover:border-web3-accent/30 transition-colors group">
-                            <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-sm border-2 ${battle.result === 'WIN' ? 'text-web3-success bg-green-900/20 border-green-900/40 shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'text-red-500 bg-red-900/20 border-red-900/40 shadow-[0_0_8px_rgba(239,68,68,0.3)]'}`}>
-                                {battle.result === 'WIN' ? 'W' : 'L'}
-                              </div>
-                              <div>
-                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">VS {battle.opponent || 'Unknown'}</div>
-                                <div className="font-mono font-bold text-white text-sm">Cost: {Number(battle.cost) || 0} ₮</div>
-                              </div>
-                            </div>
-                            
-                            <div className="flex flex-col items-end gap-2">
-                              {hasWinnings ? (
-                                <div className="flex flex-wrap justify-end gap-2 max-w-[250px]">
-                                  {Object.entries(winningsByCategory).map(([currency, amount]) => (
-                                    <div key={currency} className="flex items-center gap-1.5 bg-web3-card/60 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-gray-700/50 group-hover:border-web3-accent/30 transition-colors">
-                                      <span className="text-xs font-mono font-bold text-white">{Number(amount) || 0}</span>
-                                      <span className="text-[10px] font-bold text-web3-accent">${currency}</span>
+                            <div
+                              key={battle.id}
+                              className={`bg-black/15 backdrop-blur-2xl p-4 rounded-xl border transition-colors ${
+                                battle.result === 'WIN'
+                                  ? 'border-web3-success/25 hover:border-web3-success/40'
+                                  : 'border-red-500/20 hover:border-red-500/35'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  {canOpenOpponentProfile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSelectUser?.(opponentName)}
+                                      className={`w-10 h-10 rounded-full overflow-hidden border-2 flex items-center justify-center transition ${
+                                        battle.result === 'WIN'
+                                          ? 'border-web3-success/45 hover:border-web3-success/70'
+                                          : 'border-red-500/45 hover:border-red-500/70'
+                                      }`}
+                                      title={`Open ${opponentName} profile`}
+                                    >
+                                      {opponentAvatar ? (
+                                        <ImageWithMeta src={opponentAvatar} className="w-full h-full" />
+                                      ) : (
+                                        <div className="w-full h-full bg-black/40 flex items-center justify-center">
+                                          <UserIcon size={16} className="text-gray-300" />
+                                        </div>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <div className={`w-10 h-10 rounded-full overflow-hidden border-2 flex items-center justify-center ${
+                                      battle.result === 'WIN'
+                                        ? 'border-web3-success/45 bg-green-900/15'
+                                        : 'border-red-500/45 bg-red-900/15'
+                                    }`}>
+                                      {opponentAvatar ? (
+                                        <ImageWithMeta src={opponentAvatar} className="w-full h-full" />
+                                      ) : (
+                                        <UserIcon size={16} className="text-gray-300" />
+                                      )}
                                     </div>
-                                  ))}
+                                  )}
+                                  <div>
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
+                                      {modeLabel} • {roundsLabel} rounds
+                                    </div>
+                                    <div className="text-sm font-bold text-white">
+                                      Battle vs {opponentName}
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 mt-0.5">
+                                      {formatBattleTime(battle.timestamp)}
+                                    </div>
+                                  </div>
                                 </div>
-                              ) : (
-                                <div className="font-mono font-bold text-sm text-gray-500">
-                                  -{Number(battle.cost) || 0} ₮
+
+                                <div className={`text-xs font-black px-2 py-1 rounded-md border ${
+                                  battle.result === 'WIN'
+                                    ? 'text-web3-success border-web3-success/30 bg-web3-success/10'
+                                    : 'text-red-400 border-red-500/30 bg-red-500/10'
+                                }`}>
+                                  {battle.result === 'WIN' ? 'WIN' : 'LOSS'}
+                                </div>
+                              </div>
+
+                              <div className="mt-3 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2">
+                                <div className="text-[10px] uppercase tracking-widest text-gray-500">Table stake</div>
+                                <div className="font-mono text-sm font-bold text-gray-300">{cost.toFixed(2)} ₮</div>
+                              </div>
+
+                              <div className="mt-3">
+                                {battle.result === 'WIN' ? (
+                                  <>
+                                    <div className="text-[10px] uppercase tracking-widest text-web3-success mb-2">
+                                      Received tokens
+                                    </div>
+                                    {hasWinnings ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {Object.entries(winningsByCategory).map(([currency, amount]) => (
+                                          <div key={currency} className="flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-web3-success/20">
+                                            <span className="text-xs font-mono font-bold text-white">{Number(amount).toFixed(2)}</span>
+                                            <span className="text-[10px] font-bold text-web3-accent">${currency}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
+                                        Win without token details
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="text-[10px] uppercase tracking-widest text-red-400 mb-2">
+                                      Loss
+                                    </div>
+                                    {hasOpponentWinnings ? (
+                                      <>
+                                        <div className="text-[11px] text-gray-400 mb-2">
+                                          Opponent received:
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                          {Object.entries(opponentByCategory).map(([currency, amount]) => (
+                                            <div key={currency} className="flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-red-500/20">
+                                              <span className="text-xs font-mono font-bold text-white">{Number(amount).toFixed(2)}</span>
+                                              <span className="text-[10px] font-bold text-red-300">${currency}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <div className="text-[11px] text-gray-400">
+                                        You did not receive tokens in this battle.
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+
+                              {battle.result === 'WIN' && (
+                                <div className="mt-3">
+                                  <>
+                                    <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+                                      Loot items
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-2">
+                                      {topWonItems.map((item, idx) => (
+                                        <div key={`${battle.id}-won-${item.id || idx}`} className="text-[10px] px-2 py-1 rounded-md bg-black/35 border border-white/[0.08] text-gray-300 truncate max-w-[120px]">
+                                          {(item.name || item.currency || 'Item').toUpperCase()}
+                                        </div>
+                                      ))}
+                                      {extraWonItems > 0 && (
+                                        <div className="text-[10px] px-2 py-1 rounded-md bg-black/35 border border-white/[0.08] text-gray-400">
+                                          +{extraWonItems} more
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
                                 </div>
                               )}
                             </div>
-                          </div>
-                        );
+                          );
                         } catch (error) {
                           console.error('Error rendering battle:', error, battle);
                           return null;
