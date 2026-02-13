@@ -555,8 +555,29 @@ export const listBattleLobbies = async (req: Request, res: Response, next: NextF
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
+      include: {
+        hostUser: {
+          select: {
+            avatarUrl: true,
+            avatarMeta: true,
+          },
+        },
+        joinerUser: {
+          select: {
+            avatarUrl: true,
+            avatarMeta: true,
+          },
+        },
+      },
     });
-    res.json({ status: 'success', data: { lobbies } });
+    const serialized = lobbies.map((lobby) => ({
+      ...lobby,
+      hostAvatar: lobby.hostUser?.avatarUrl || null,
+      hostAvatarMeta: lobby.hostUser?.avatarMeta || null,
+      joinerAvatar: lobby.joinerUser?.avatarUrl || null,
+      joinerAvatarMeta: lobby.joinerUser?.avatarMeta || null,
+    }));
+    res.json({ status: 'success', data: { lobbies: serialized } });
   } catch (error) {
     next(error);
   }

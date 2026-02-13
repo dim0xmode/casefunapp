@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Case, Item } from '../types';
-import { Bot, Trophy, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Sparkles, Trash2 } from 'lucide-react';
+import { Case, Item, ImageMeta } from '../types';
+import { Bot, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Trash2, Sparkles } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
@@ -8,6 +8,7 @@ import { Pagination } from './ui/Pagination';
 import { ConfirmModal } from './ui/ConfirmModal';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { CaseIcon } from './CaseIcon';
+import { ImageWithMeta } from './ui/ImageWithMeta';
 import { formatShortfallUp } from '../utils/number';
 import { api } from '../services/api';
 
@@ -16,6 +17,8 @@ const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Or
 interface BattleViewProps {
   cases: Case[];
   userName: string;
+  userAvatar?: string;
+  userAvatarMeta?: ImageMeta;
   onBattleFinish: (
     wonItems: Item[],
     totalCost: number,
@@ -29,7 +32,7 @@ interface BattleViewProps {
   isAdmin: boolean;
 }
 
-export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAvatar, userAvatarMeta, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
   const format2 = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
   type BattleEntry = {
     id: string;
@@ -40,6 +43,10 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     mode?: 'BOT' | 'PVP' | null;
     roundsJson?: any[] | null;
     winnerName?: string | null;
+    hostAvatar?: string | null;
+    hostAvatarMeta?: ImageMeta | null;
+    joinerAvatar?: string | null;
+    joinerAvatarMeta?: ImageMeta | null;
     cases: Case[];
     createdAt: number;
     source?: 'LOBBY' | 'BOT';
@@ -69,6 +76,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const [forcedWinnerName, setForcedWinnerName] = useState<string | null>(null);
   const [prefetchedRounds, setPrefetchedRounds] = useState<any[] | null>(null);
   const [priceFilter, setPriceFilter] = useState('');
+  const [leftPlayerAvatar, setLeftPlayerAvatar] = useState<string | null>(null);
+  const [leftPlayerAvatarMeta, setLeftPlayerAvatarMeta] = useState<ImageMeta | undefined>(undefined);
+  const [rightPlayerAvatar, setRightPlayerAvatar] = useState<string | null>(null);
+  const [rightPlayerAvatarMeta, setRightPlayerAvatarMeta] = useState<ImageMeta | undefined>(undefined);
+  const [leftPlayerIsBot, setLeftPlayerIsBot] = useState(false);
+  const [rightPlayerIsBot, setRightPlayerIsBot] = useState(false);
 
   const isCaseExpired = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
@@ -178,6 +191,10 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
             host: String(lobby.hostName || 'Unknown'),
             hostUserId: String(lobby.hostUserId || ''),
             joinerName: lobby.joinerName || null,
+            hostAvatar: lobby.hostAvatar || null,
+            hostAvatarMeta: lobby.hostAvatarMeta || null,
+            joinerAvatar: lobby.joinerAvatar || null,
+            joinerAvatarMeta: lobby.joinerAvatarMeta || null,
             status: lobby.status,
             mode: lobby.mode || null,
             roundsJson: Array.isArray(lobby.roundsJson) ? lobby.roundsJson : null,
@@ -243,6 +260,22 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
         : battle.host;
     setBotName(nextBotName);
     setOpponent({ name: nextBotName, type: 'BOT' });
+    const isBotOpponent = Boolean(isHost && !battle.joinerName);
+    if (isHost) {
+      setLeftPlayerAvatar(userAvatar || null);
+      setLeftPlayerAvatarMeta(userAvatarMeta);
+      setLeftPlayerIsBot(false);
+      setRightPlayerAvatar(isBotOpponent ? null : (battle.joinerAvatar || null));
+      setRightPlayerAvatarMeta(isBotOpponent ? undefined : (battle.joinerAvatarMeta || undefined));
+      setRightPlayerIsBot(isBotOpponent);
+    } else {
+      setLeftPlayerAvatar(battle.hostAvatar || null);
+      setLeftPlayerAvatarMeta(battle.hostAvatarMeta || undefined);
+      setLeftPlayerIsBot(false);
+      setRightPlayerAvatar(userAvatar || null);
+      setRightPlayerAvatarMeta(userAvatarMeta);
+      setRightPlayerIsBot(false);
+    }
     setGameState('BATTLE');
     setCountdown(null);
     setStartConfirm(false);
@@ -585,6 +618,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     setIsSpectator(false);
     setForcedWinnerName(null);
     setPrefetchedRounds(null);
+    setLeftPlayerAvatar(null);
+    setLeftPlayerAvatarMeta(undefined);
+    setRightPlayerAvatar(null);
+    setRightPlayerAvatarMeta(undefined);
+    setLeftPlayerIsBot(false);
+    setRightPlayerIsBot(false);
     setGameState('SETUP');
   };
 
@@ -1016,7 +1055,13 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
             </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gray-800 rounded-full border border-web3-accent flex items-center justify-center">
-                {leftIsUser ? <UserIcon className="text-web3-accent" size={20}/> : <Bot className="text-web3-accent" size={20}/>}
+                {leftPlayerIsBot ? (
+                  <Bot className="text-web3-accent" size={20} />
+                ) : leftPlayerAvatar ? (
+                  <ImageWithMeta src={leftPlayerAvatar} meta={leftPlayerAvatarMeta} className="w-full h-full rounded-full" />
+                ) : (
+                  <UserIcon className="text-web3-accent" size={20}/>
+                )}
               </div>
               <div className="font-bold text-white">{leftName}</div>
             </div>
@@ -1035,7 +1080,13 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
             ) : (
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gray-800 rounded-full border border-red-500 flex items-center justify-center">
-                  {leftIsUser ? <Bot className="text-red-500" size={20}/> : <UserIcon className="text-red-500" size={20}/>}
+                  {rightPlayerIsBot ? (
+                    <Bot className="text-red-500" size={20} />
+                  ) : rightPlayerAvatar ? (
+                    <ImageWithMeta src={rightPlayerAvatar} meta={rightPlayerAvatarMeta} className="w-full h-full rounded-full" />
+                  ) : (
+                    <UserIcon className="text-red-500" size={20}/>
+                  )}
                 </div>
                 <div className="font-bold text-white">{rightName}</div>
               </div>
@@ -1123,19 +1174,6 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                           : 'Join'}
                   </span>
                 </button>
-                {startConfirm && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-[420px] px-12 py-10 rounded-3xl bg-black/30 border border-white/[0.12] shadow-[0_25px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl text-center">
-                      <div className="text-xs uppercase tracking-widest text-gray-400 mb-4">Confirm</div>
-                      <button
-                        onClick={handleStartBattle}
-                        className="px-7 py-2 rounded-2xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs hover:scale-105 transition"
-                      >
-                        {isOwnBattle ? 'Call Bot' : 'Start Battle'}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
               </div>
             </>
@@ -1214,25 +1252,72 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
           )}
         </div>
 
+        {startConfirm && !battleStarted && opponent.type && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)]">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Confirm battle</div>
+              <h3 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">
+                JOIN
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                  BATTLE
+                </span>
+              </h3>
+
+              <div className="mt-4 space-y-2 rounded-xl border border-white/[0.1] bg-black/35 p-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400 uppercase tracking-widest text-[10px]">Opponent</span>
+                  <span className="font-bold text-white uppercase">{hostName || opponent.name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400 uppercase tracking-widest text-[10px]">Rounds</span>
+                  <span className="font-bold text-white">{selectedCases.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400 uppercase tracking-widest text-[10px]">Battle cost</span>
+                  <span className="font-black text-web3-accent">{format2(totalCost)} ₮</span>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setStartConfirm(false)}
+                  className="px-4 py-2 rounded-lg border border-white/[0.14] text-[10px] uppercase tracking-widest text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartBattle}
+                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black font-black text-[10px] uppercase tracking-widest hover:scale-105 transition"
+                >
+                  {isOwnBattle ? 'Call Bot' : 'Start Battle'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {isResult && (
           <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in">
             <div className="bg-slate-800/70 border border-white/[0.20] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-sm">
           {displayWin ? (
             <div className="flex flex-col items-center">
-                  <div className="relative mb-3">
-                    <div className="absolute inset-0 bg-web3-success/30 blur-2xl rounded-full animate-pulse"></div>
-                    <Trophy size={56} className="text-yellow-400 drop-shadow-xl relative z-10 animate-bounce-in" />
-                    <div className="absolute -top-4 -left-4 text-web3-accent animate-ping">
-                      <Sparkles size={14} />
+                  <div className="relative mb-2">
+                    <div className="absolute -top-3 -left-6 text-web3-accent animate-ping">
+                      <Sparkles size={13} />
                     </div>
-                    <div className="absolute -top-4 -right-4 text-web3-success animate-ping" style={{ animationDelay: '0.3s' }}>
-                      <Sparkles size={14} />
+                    <div className="absolute -top-3 -right-6 text-web3-success animate-ping" style={{ animationDelay: '0.3s' }}>
+                      <Sparkles size={13} />
                     </div>
-                    <div className="absolute -bottom-4 -left-4 text-web3-purple animate-ping" style={{ animationDelay: '0.6s' }}>
-                      <Sparkles size={14} />
+                    <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-web3-purple animate-ping" style={{ animationDelay: '0.55s' }}>
+                      <Sparkles size={13} />
                     </div>
-              </div>
-                  <h1 className="text-3xl font-black text-white uppercase tracking-tight mb-2 animate-fade-in">Victory</h1>
+                  <h1 className="text-3xl font-black uppercase tracking-tight mb-2 animate-fade-in text-white">
+                    YOU
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                      VICTORY
+                    </span>
+                  </h1>
+                  </div>
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>

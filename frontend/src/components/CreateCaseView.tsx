@@ -218,6 +218,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
   const normalizedTicker = tokenTicker.trim().toUpperCase();
   const imageTrimmed = imageUrl.trim();
   const priceValueNumber = Number(price);
+  const rtuValueNumber = Number(rtu);
   const tokenPriceValueNumber = Number(tokenPrice);
   const dropsAreValid =
     drops.length > 0 &&
@@ -234,10 +235,37 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     : !Number.isFinite(tokenPriceValueNumber) || tokenPriceValueNumber <= 0
       ? 'Token price must be greater than 0.'
       : null;
+  const dropRangeHint = useMemo(() => {
+    if (!Number.isFinite(priceValueNumber) || priceValueNumber <= 0) return null;
+    if (!Number.isFinite(rtuValueNumber) || rtuValueNumber <= 0) return null;
+    if (!Number.isFinite(tokenPriceValueNumber) || tokenPriceValueNumber <= 0) return null;
+
+    const minAllowedToken = priceValueNumber * 0.5;
+    const maxAllowedToken = priceValueNumber * 15;
+    const validDropValues = normalizedDrops
+      .map((drop) => Number(drop.value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    const hasCompleteValidDrops =
+      normalizedDrops.length > 0 && validDropValues.length === normalizedDrops.length;
+    const minToken = validDropValues.length ? Math.min(...validDropValues) : null;
+    const maxToken = validDropValues.length ? Math.max(...validDropValues) : null;
+    const feasible = hasCompleteValidDrops
+      ? (minToken !== null && maxToken !== null && minToken <= minAllowedToken && maxToken >= maxAllowedToken)
+      : false;
+
+    return {
+      minAllowedToken,
+      maxAllowedToken,
+      hasCompleteValidDrops,
+      feasible,
+    };
+  }, [priceValueNumber, rtuValueNumber, tokenPriceValueNumber, normalizedDrops]);
+
   const dropsError = drops.length === 0
     ? 'Add at least one drop.'
     : drops.some((drop) => !drop.value || Number(drop.value) <= 0)
-      ? 'Each drop must have a positive value.'
+      ? (dropRangeHint ? null : 'Each drop must have a positive value.')
       : new Set(drops.map((drop) => Number(drop.value))).size !== drops.length
         ? 'Drop values must be unique.'
         : null;
@@ -255,7 +283,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
     liveRtuError || (!rtu ? 'RTU is required.' : null),
     priceError,
     tokenPriceError,
-    dropsError,
     imageValidationError,
     isImageUploading ? 'Wait for image upload to finish.' : null,
   ].filter((message): message is string => Boolean(message));
@@ -278,31 +305,16 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
   const tokenPriceValue = Number(tokenPrice);
 
   const rtuHelper = useMemo(() => {
-    if (!Number.isFinite(priceValue) || priceValue <= 0) return null;
-    if (!Number.isFinite(rtuValue) || rtuValue <= 0) return null;
-    if (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0) return null;
-    if (!normalizedDrops.length || normalizedDrops.some((drop) => !Number.isFinite(drop.value) || drop.value <= 0)) {
-      return null;
-    }
-
-    const minAllowedToken = priceValue * 0.5;
-    const maxAllowedToken = priceValue * 15;
-    const tokenValues = normalizedDrops.map((drop) => drop.value);
-    const minToken = Math.min(...tokenValues);
-    const maxToken = Math.max(...tokenValues);
-
-    const constraintsOk = minToken <= minAllowedToken && maxToken >= maxAllowedToken;
-    const feasible = constraintsOk;
-
+    if (!dropRangeHint) return null;
     return {
-      minAllowedToken,
-      maxAllowedToken,
-      feasible,
-      hint: feasible
-        ? 'Drop limits are valid.'
-        : 'Drop limits are out of range.',
+      minAllowedToken: dropRangeHint.minAllowedToken,
+      maxAllowedToken: dropRangeHint.maxAllowedToken,
+      feasible: dropRangeHint.feasible,
+      hint: dropRangeHint.hasCompleteValidDrops
+        ? (dropRangeHint.feasible ? 'Drop limits are valid.' : 'Drop limits are out of range.')
+        : 'Set drop values to match required min/max range.',
     };
-  }, [priceValue, rtuValue, tokenPriceValue, normalizedDrops]);
+  }, [dropRangeHint]);
 
   const handleSubmit = async () => {
     if (isCreating) return;

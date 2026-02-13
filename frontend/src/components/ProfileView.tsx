@@ -162,6 +162,39 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     pagedItems: pagedExpired,
   } = usePagination(groupedExpired, ITEMS_PER_PAGE);
 
+  const groupedClaimed = useMemo(() => {
+    const groups = new Map<string, Item & { count: number }>();
+    if (!claimedItems || !Array.isArray(claimedItems)) return [];
+    for (const item of claimedItems) {
+      if (!item) continue;
+      const currencyKey = item.currency || 'UNKNOWN';
+      const existing = groups.get(currencyKey);
+      if (!existing) {
+        groups.set(currencyKey, {
+          ...item,
+          id: `claimed-${currencyKey}`,
+          name: `${Number(item.value || 0)} ${currencyKey}`,
+          value: Number(item.value || 0),
+          count: 1,
+        });
+      } else {
+        const nextValue = Number(existing.value || 0) + Number(item.value || 0);
+        groups.set(currencyKey, {
+          ...existing,
+          value: nextValue,
+          name: `${nextValue} ${currencyKey}`,
+          count: existing.count + 1,
+        });
+      }
+    }
+    const items = Array.from(groups.values());
+    return items.sort((a, b) => {
+      const aValue = Number(a?.value) || 0;
+      const bValue = Number(b?.value) || 0;
+      return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+    });
+  }, [claimedItems, sortOrder]);
+
   const formatAddress = (address?: string | null) => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -227,13 +260,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const claimedTotalPages = useMemo(() => {
     try {
-      const length = Array.isArray(claimedItems) ? claimedItems.length : 0;
+      const length = Array.isArray(groupedClaimed) ? groupedClaimed.length : 0;
       return Math.max(1, Math.ceil(length / ITEMS_PER_PAGE));
     } catch (error) {
       console.error('Error calculating claimed pages:', error);
       return 1;
     }
-  }, [claimedItems]);
+  }, [groupedClaimed]);
 
   const battleTotalPages = useMemo(() => {
     try {
@@ -269,14 +302,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const pagedClaimed = useMemo(() => {
     try {
-      if (!claimedItems || !Array.isArray(claimedItems)) return [];
+      if (!groupedClaimed || !Array.isArray(groupedClaimed)) return [];
       const start = claimedPage * ITEMS_PER_PAGE;
-      return claimedItems.slice(start, start + ITEMS_PER_PAGE);
+      return groupedClaimed.slice(start, start + ITEMS_PER_PAGE);
     } catch (error) {
       console.error('Error paginating claimed items:', error);
       return [];
     }
-  }, [claimedItems, claimedPage]);
+  }, [groupedClaimed, claimedPage]);
 
   const pagedBattleHistory = useMemo(() => {
     try {
@@ -717,7 +750,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             {tab === 'claimed' && (
               <div className="flex flex-col h-full min-h-0">
-                {(!claimedItems || claimedItems.length === 0) ? (
+                {groupedClaimed.length === 0 ? (
                   <EmptyState
                     icon={<Package size={48} />}
                     message="No claimed tokens"

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Item } from '../types';
-import { TrendingUp, Package, Sparkles, Settings2 } from 'lucide-react';
+import { Package, Sparkles, Settings2 } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { EmptyState } from './ui/EmptyState';
 import { ItemGrid } from './ui/ItemGrid';
@@ -303,7 +303,6 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
         });
         setSelectedItems([]);
         setSelectedKeys([]);
-        setDisplayItem(null);
         setFrozenInventory(null);
       }, resetDelay);
     }, resultDelay + resultRevealPauseMs);
@@ -484,19 +483,6 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                 ) : null}
               </div>
             </div>
-            {!selectionError && (
-              <div className="px-1 mt-1 space-y-2">
-                {selectedItems.length === 0 && (
-                  <div className="text-[10px] uppercase tracking-widest text-gray-600 flex items-center gap-1">
-                    <TrendingUp size={12} className="opacity-70" />
-                    Select items to start upgrade
-                  </div>
-                )}
-                <div className="text-[10px] uppercase tracking-widest text-gray-500">
-                  Only one token type allowed
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Center: The Circle + Action */}
@@ -615,8 +601,10 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                           <div className="absolute -bottom-6 -left-6 text-web3-purple animate-ping" style={{ animationDelay: '0.6s' }}>
                             <Sparkles size={16} />
                           </div>
-                          <div className={`text-2xl font-black uppercase tracking-[0.15em] text-web3-success drop-shadow-[0_0_16px_rgba(16,185,129,0.6)]`}>
-                            Congrats!
+                          <div className="text-2xl font-black uppercase tracking-[0.12em] text-white">
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                              CONGRATS!
+                            </span>
                           </div>
                           <div className="text-xs uppercase tracking-[0.25em] text-gray-300">
                             Upgrade success

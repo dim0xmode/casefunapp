@@ -1021,6 +1021,8 @@ const App = () => {
                 <BattleView 
                   cases={cases} 
                   userName={user.username}
+                  userAvatar={user.avatar}
+                  userAvatarMeta={user.avatarMeta}
                   onBattleFinish={handleBattleFinish}
                   balance={balance}
                   onChargeBattle={handleChargeBattle}
