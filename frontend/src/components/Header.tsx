@@ -1,8 +1,8 @@
-import React from 'react';
-import { Home, Briefcase, Zap, Swords, Wallet, User as UserIcon, PlusSquare, Shield } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Home, Briefcase, Zap, Swords, Wallet, User as UserIcon, PlusSquare, Shield, Volume2, VolumeX } from 'lucide-react';
 import { User } from '../types';
 import { ImageWithMeta } from './ui/ImageWithMeta';
-import { Button } from './Button';
+import { getAudioSettings, setAudioMuted, setAudioVolume, subscribeAudioSettings } from '../utils/audio';
 
 interface HeaderProps {
   user: User;
@@ -37,6 +37,27 @@ export const Header: React.FC<HeaderProps> = ({
   isAuthenticated = false,
   isAdmin = false,
 }) => {
+  const [soundOpen, setSoundOpen] = useState(false);
+  const [audio, setAudio] = useState(getAudioSettings());
+  const soundRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    return subscribeAudioSettings(setAudio);
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!soundRef.current) return;
+      if (!soundRef.current.contains(event.target as Node)) {
+        setSoundOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  const volumePercent = Math.round((audio.volume || 0) * 100);
+
   return (
     <header className="h-20 border-b border-white/[0.08] fixed top-0 left-0 right-0 z-50 flex items-center px-6 justify-between flex-shrink-0" style={{
       backgroundColor: 'rgba(11, 12, 16, 0.5)',
@@ -101,6 +122,55 @@ export const Header: React.FC<HeaderProps> = ({
 
       <div className="flex items-center gap-4 relative z-10">
         <div className="flex items-center gap-3">
+          <div className="relative" ref={soundRef}>
+            <button
+              onClick={() => setSoundOpen((prev) => !prev)}
+              className="h-10 w-10 rounded-xl border border-white/[0.12] bg-black/30 hover:bg-black/40 text-gray-300 hover:text-white transition-all flex items-center justify-center"
+              title="Sound settings"
+              aria-label="Sound settings"
+            >
+              {audio.muted || audio.volume <= 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            </button>
+            {soundOpen && (
+              <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.14] bg-black/90 backdrop-blur-md p-3 shadow-[0_12px_30px_rgba(0,0,0,0.45)] z-[90]">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Sound</div>
+                <button
+                  onClick={() => setAudioMuted(!audio.muted)}
+                  className={`w-full mb-3 px-3 py-2 rounded-lg border text-xs uppercase tracking-widest transition ${
+                    audio.muted
+                      ? 'border-red-500/40 bg-red-500/15 text-red-300'
+                      : 'border-web3-accent/40 bg-web3-accent/15 text-web3-accent'
+                  }`}
+                >
+                  {audio.muted ? 'Sound Off' : 'Sound On'}
+                </button>
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 mb-1">
+                  <span>Volume</span>
+                  <span>{audio.muted ? 0 : volumePercent}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={audio.muted ? 0 : volumePercent}
+                  onChange={(e) => setAudioVolume(Number(e.target.value) / 100)}
+                  className="w-full accent-cyan-300 cursor-pointer"
+                />
+              </div>
+            )}
+          </div>
+          <a
+            href="https://x.com/casefunnet"
+            target="_blank"
+            rel="noreferrer"
+            className="h-10 px-3 rounded-xl border border-white/[0.12] bg-black/30 hover:bg-black/40 text-gray-300 hover:text-white transition-all flex items-center gap-2"
+            title="Casefun on X"
+            aria-label="Casefun on X"
+          >
+            <svg viewBox="0 0 1200 1227" className="w-4 h-4 fill-current" aria-hidden="true">
+              <path d="M714.163 519.284L1160.89 0H1055.14L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.748L515.454 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.06 687.828L521.627 619.936L144.011 79.6944H306.615L611.333 515.664L658.766 583.556L1055.19 1150.69H892.586L569.06 687.854V687.828Z" />
+            </svg>
+          </a>
           {/* Balance */}
           <div className="h-10 px-4 rounded-xl bg-web3-card/60 border border-gray-700/50 backdrop-blur-sm flex items-center gap-2">
             <span className="font-mono text-sm font-bold text-white tabular-nums">{balance.toLocaleString('en-US')}₮</span>

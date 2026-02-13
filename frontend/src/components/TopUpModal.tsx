@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BrowserProvider, parseEther } from 'ethers';
 import { PrimaryButton } from './ui/PrimaryButton';
 import { api } from '../services/api';
+import { addPendingDepositHash, getPendingDepositHashes, removePendingDepositHash } from '../utils/pendingDeposits';
 
 interface TopUpModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface TopUpModalProps {
   isAuthenticated: boolean;
   onConnectWallet: () => void;
   initialUsdtAmount?: number | null;
+  walletAddress?: string | null;
 }
 
 export const TopUpModal: React.FC<TopUpModalProps> = ({
@@ -19,6 +21,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   isAuthenticated,
   onConnectWallet,
   initialUsdtAmount,
+  walletAddress,
 }) => {
   const [usdtAmount, setUsdtAmount] = useState('');
   const [ethAmount, setEthAmount] = useState('');
@@ -35,6 +38,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   const parsedUsdt = useMemo(() => Number(usdtAmount.replace(/,/g, '.').trim()), [usdtAmount]);
   const parsedEth = useMemo(() => Number(ethAmount.replace(/,/g, '.').trim()), [ethAmount]);
+  const activeWalletAddress = useMemo(() => (walletAddress || '').toLowerCase(), [walletAddress]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -78,6 +82,15 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setEthAmount('');
     }
   }, [isOpen, initialUsdtAmount, price]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const pending = getPendingDepositHashes(activeWalletAddress);
+    if (pending.length > 0) {
+      setPendingHash(pending[0]);
+      setStatusMessage('Pending top up found. Check status to sync balance.');
+    }
+  }, [isOpen, activeWalletAddress]);
 
   const hasEthereum = typeof window !== 'undefined' && Boolean(window.ethereum?.request);
 
@@ -154,6 +167,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         setStatusMessage('Top up confirmed');
         setUsdtAmount('');
         setEthAmount('');
+        removePendingDepositHash(activeWalletAddress, txHash);
       }
     } catch (error: any) {
       setStatusMessage(error?.message || 'Confirmation failed');
@@ -194,6 +208,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         value: parseEther(rawEth),
       });
       setPendingHash(tx.hash);
+      addPendingDepositHash(activeWalletAddress, tx.hash);
       setStatusMessage('Transaction sent. Waiting for confirmation...');
       await confirmDeposit(tx.hash);
     } catch (error: any) {

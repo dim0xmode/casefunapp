@@ -18,6 +18,10 @@ import {
   listAuditLogs,
   getOverview,
   adjustRtu,
+  listFeedbackMessages,
+  getFeedbackUnreadCount,
+  updateFeedbackReadStatus,
+  previewBattleResolve,
 } from '../controllers/adminController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
@@ -48,5 +52,9 @@ router.put('/settings/:key', upsertSetting);
 
 router.get('/audit', listAuditLogs);
 router.get('/overview', getOverview);
+router.get('/feedback', listFeedbackMessages);
+router.get('/feedback/unread-count', getFeedbackUnreadCount);
+router.patch('/feedback/:id/read', updateFeedbackReadStatus);
+router.post('/battles/preview-resolve', previewBattleResolve);
 
 export default router;

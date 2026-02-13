@@ -19,6 +19,18 @@ enum InventoryStatus {
   BURNT
 }
 
+enum FeedbackTopic {
+  BUG_REPORT
+  EARLY_ACCESS
+  PARTNERSHIP
+}
+
+enum BattleLobbyStatus {
+  OPEN
+  IN_PROGRESS
+  FINISHED
+}
+
 model User {
   id            String   @id @default(cuid())
   username      String   @unique
@@ -43,6 +55,9 @@ model User {
   rtuEvents     RtuEvent[]
   deposits      Deposit[]
   claims        Claim[]
+  feedbacks     FeedbackMessage[]
+  hostedBattleLobbies BattleLobby[] @relation("BattleLobbyHost")
+  joinedBattleLobbies BattleLobby[] @relation("BattleLobbyJoiner")
   
   @@index([walletAddress])
   @@map("users")
@@ -317,4 +332,50 @@ model RtuEvent {
   @@index([tokenSymbol])
   @@index([type])
   @@map("rtu_events")
+}
+
+model FeedbackMessage {
+  id        String        @id @default(cuid())
+  userId    String
+  topic     FeedbackTopic
+  contact   String
+  message   String
+  isRead    Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  readAt    DateTime?
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([topic])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("feedback_messages")
+}
+
+model BattleLobby {
+  id           String           @id @default(cuid())
+  hostUserId   String
+  joinerUserId String?
+  hostName     String
+  joinerName   String?
+  caseIds      Json
+  totalCost    Float
+  mode         String?
+  roundsJson   Json?
+  winnerName   String?
+  status       BattleLobbyStatus @default(OPEN)
+  createdAt    DateTime         @default(now())
+  startedAt    DateTime?
+  updatedAt    DateTime         @updatedAt
+  finishedAt   DateTime?
+
+  hostUser     User             @relation("BattleLobbyHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  joinerUser   User?            @relation("BattleLobbyJoiner", fields: [joinerUserId], references: [id], onDelete: SetNull)
+
+  @@index([hostUserId])
+  @@index([joinerUserId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("battle_lobbies")
 }

@@ -117,10 +117,17 @@ class ApiClient {
     );
   }
 
-  async recordBattle(result: string, cost: number, wonItems: any[]) {
+  async recordBattle(result: string, cost: number, wonItems: any[], options?: { reserveItems?: any[]; mode?: 'BOT' | 'PVP'; lobbyId?: string }) {
     return this.request<{ items: any[] }>('/user/battles/record', {
       method: 'POST',
-      body: JSON.stringify({ result, cost, wonItems }),
+      body: JSON.stringify({
+        result,
+        cost,
+        wonItems,
+        reserveItems: options?.reserveItems || [],
+        mode: options?.mode || 'PVP',
+        lobbyId: options?.lobbyId || null,
+      }),
     });
   }
 
@@ -128,6 +135,57 @@ class ApiClient {
     return this.request<{ balance: number }>('/user/battles/charge', {
       method: 'POST',
       body: JSON.stringify({ amount }),
+    });
+  }
+
+  async createBattleLobby(caseIds: string[]) {
+    return this.request<{ lobby: any }>('/user/battles/lobbies', {
+      method: 'POST',
+      body: JSON.stringify({ caseIds }),
+    });
+  }
+
+  async getBattleLobbies() {
+    return this.request<{ lobbies: any[] }>('/user/battles/lobbies');
+  }
+
+  async joinBattleLobby(lobbyId: string) {
+    return this.request<{ lobby: any }>(`/user/battles/lobbies/${lobbyId}/join`, {
+      method: 'POST',
+    });
+  }
+
+  async startBattleLobby(lobbyId: string, mode: 'BOT' | 'PVP') {
+    return this.request<{ lobby: any }>(`/user/battles/lobbies/${lobbyId}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  }
+
+  async resolveBattle(caseIds: string[], mode: 'BOT' | 'PVP') {
+    return this.request<{ mode: 'BOT' | 'PVP'; userDrops: any[]; opponentDrops: any[] }>('/user/battles/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ caseIds, mode }),
+    });
+  }
+
+  async finishBattleLobby(lobbyId: string) {
+    return this.request<{ lobby: any }>(`/user/battles/lobbies/${lobbyId}/finish`, {
+      method: 'POST',
+    });
+  }
+
+  async finishBattleLobbyWithWinner(lobbyId: string, winnerName: string) {
+    return this.request<{ lobby: any }>(`/user/battles/lobbies/${lobbyId}/finish`, {
+      method: 'POST',
+      body: JSON.stringify({ winnerName }),
+    });
+  }
+
+  async sendFeedback(payload: { topic: 'BUG_REPORT' | 'EARLY_ACCESS' | 'PARTNERSHIP'; contact: string; message: string }) {
+    return this.request<{ id: string }>('/user/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -291,6 +349,28 @@ class ApiClient {
 
   async getAdminOverview() {
     return this.request<{ stats: any; recentTransactions: any[]; recentOpenings: any[] }>('/admin/overview');
+  }
+
+  async previewAdminBattleResolve(payload: { caseIds: string[]; mode: 'BOT' | 'PVP' }) {
+    return this.request<{ mode: 'BOT' | 'PVP'; rounds: any[] }>('/admin/battles/preview-resolve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getAdminFeedback() {
+    return this.request<{ messages: any[]; unreadCount: number }>('/admin/feedback');
+  }
+
+  async getAdminFeedbackUnreadCount() {
+    return this.request<{ unreadCount: number }>('/admin/feedback/unread-count');
+  }
+
+  async updateAdminFeedbackReadStatus(messageId: string, isRead: boolean) {
+    return this.request<{ message: any }>(`/admin/feedback/${messageId}/read`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isRead }),
+    });
   }
 }
 

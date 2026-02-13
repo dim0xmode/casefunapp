@@ -4,8 +4,10 @@ import { AppError } from '../middleware/errorHandler.js';
 import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
+import { resolveBattleDrops } from '../services/battleResolveService.js';
 
 const roundToTwo = (value: number) => Number(value.toFixed(2));
+const FEEDBACK_TOPICS = ['BUG_REPORT', 'EARLY_ACCESS', 'PARTNERSHIP'] as const;
 
 export const topUpBalance = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -347,7 +349,7 @@ export const updateAvatarMeta = async (req: Request, res: Response, next: NextFu
 export const recordBattle = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
-    const { result, cost, wonItems } = req.body;
+    const { result, cost, wonItems, reserveItems, mode, lobbyId } = req.body;
     if (!result || !Number.isFinite(Number(cost))) {
       return next(new AppError('Invalid battle data', 400));
     }
@@ -409,9 +411,270 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
           }
         }
       }
+
+      // For bot losses we add only user drops to reserve.
+      if (Array.isArray(reserveItems) && reserveItems.length > 0) {
+        for (const item of reserveItems) {
+          if (!item?.caseId) continue;
+          const caseInfo = await tx.case.findUnique({
+            where: { id: item.caseId },
+          });
+          if (!caseInfo?.tokenPrice) continue;
+          await recordRtuEvent(
+            {
+              caseId: item.caseId,
+              userId,
+              tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
+              tokenPriceUsdt: caseInfo.tokenPrice,
+              rtuPercent: caseInfo.rtu,
+              type: 'BATTLE',
+              deltaSpentUsdt: 0,
+              deltaToken: -Number(item.value || 0),
+              metadata: { source: 'battle_reserve', mode: mode || 'BOT' },
+            },
+            tx
+          );
+        }
+      }
+
+      if (lobbyId) {
+        await tx.battleLobby.updateMany({
+          where: { id: String(lobbyId), status: 'OPEN' },
+          data: {
+            status: 'FINISHED',
+            finishedAt: new Date(),
+          },
+        });
+      }
     });
 
     res.json({ status: 'success', data: { items: createdItems } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createBattleLobby = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const caseIdsRaw = Array.isArray(req.body?.caseIds) ? req.body.caseIds : [];
+    const caseIds = caseIdsRaw
+      .map((value: any) => String(value || '').trim())
+      .filter(Boolean)
+      .slice(0, 25);
+
+    if (!caseIds.length) {
+      return next(new AppError('Select at least one case', 400));
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+
+    const caseRows = await prisma.case.findMany({
+      where: { id: { in: caseIds }, isActive: true },
+      select: { id: true, price: true, openDurationHours: true, createdAt: true },
+    });
+    if (caseRows.length !== caseIds.length) {
+      return next(new AppError('Some cases are not available', 400));
+    }
+
+    const now = Date.now();
+    for (const row of caseRows) {
+      if (row.openDurationHours && row.createdAt) {
+        const endAt = new Date(row.createdAt).getTime() + row.openDurationHours * 60 * 60 * 1000;
+        if (now >= endAt) {
+          return next(new AppError('One or more selected cases are expired', 400));
+        }
+      }
+    }
+
+    const totalCost = caseRows.reduce((sum, item) => sum + Number(item.price || 0), 0);
+    const lobby = await prisma.battleLobby.create({
+      data: {
+        hostUserId: userId,
+        hostName: user.username,
+        caseIds,
+        totalCost,
+      },
+    });
+
+    res.json({ status: 'success', data: { lobby } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listBattleLobbies = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const lobbies = await prisma.battleLobby.findMany({
+      where: {
+        status: { in: ['OPEN', 'IN_PROGRESS'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    res.json({ status: 'success', data: { lobbies } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const startBattleLobby = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const lobbyId = String(req.params?.lobbyId || '').trim();
+    const mode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+    if (!lobbyId) {
+      return next(new AppError('Lobby id is required', 400));
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+
+    const lobby = await prisma.battleLobby.findUnique({ where: { id: lobbyId } });
+    if (!lobby) {
+      return next(new AppError('Lobby not found', 404));
+    }
+
+    if (lobby.status === 'IN_PROGRESS' || lobby.status === 'FINISHED') {
+      return res.json({ status: 'success', data: { lobby } });
+    }
+
+    let joinerUserId = lobby.joinerUserId || null;
+    let joinerName = lobby.joinerName || null;
+    if (mode === 'PVP') {
+      if (lobby.hostUserId === userId) {
+        return next(new AppError('Host cannot start PVP without opponent', 400));
+      }
+      joinerUserId = userId;
+      joinerName = user.username;
+    }
+
+    const caseIds = Array.isArray(lobby.caseIds) ? lobby.caseIds.map((v) => String(v || '')) : [];
+    if (!caseIds.length) {
+      return next(new AppError('Lobby has no cases', 400));
+    }
+    const resolved = await resolveBattleDrops(caseIds, mode);
+    const roundsCanonical = resolved.rounds.map((round) => {
+      if (mode === 'PVP') {
+        const starterIsHost = lobby.hostUserId === userId;
+        return starterIsHost
+          ? { ...round, hostDrop: round.userDrop, joinerDrop: round.opponentDrop }
+          : { ...round, hostDrop: round.opponentDrop, joinerDrop: round.userDrop };
+      }
+      // BOT mode: host is always the real player.
+      return { ...round, hostDrop: round.userDrop, joinerDrop: round.opponentDrop };
+    });
+
+    const updated = await prisma.battleLobby.update({
+      where: { id: lobbyId },
+      data: {
+        joinerUserId,
+        joinerName,
+        mode,
+        roundsJson: roundsCanonical as any,
+        status: 'IN_PROGRESS',
+        startedAt: new Date(),
+      },
+    });
+
+    res.json({ status: 'success', data: { lobby: updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const joinBattleLobby = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const lobbyId = String(req.params?.lobbyId || '').trim();
+    if (!lobbyId) {
+      return next(new AppError('Lobby id is required', 400));
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+
+    const lobby = await prisma.battleLobby.findUnique({ where: { id: lobbyId } });
+    if (!lobby || lobby.status !== 'OPEN') {
+      return next(new AppError('Lobby not found', 404));
+    }
+
+    if (lobby.hostUserId === userId) {
+      return res.json({ status: 'success', data: { lobby } });
+    }
+
+    const updated = await prisma.battleLobby.update({
+      where: { id: lobbyId },
+      data: {
+        joinerUserId: userId,
+        joinerName: user.username,
+      },
+    });
+
+    res.json({ status: 'success', data: { lobby: updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resolveBattle = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const caseIdsRaw = Array.isArray(req.body?.caseIds) ? req.body.caseIds : [];
+    const caseIds = caseIdsRaw
+      .map((value: any) => String(value || '').trim())
+      .filter(Boolean)
+      .slice(0, 25);
+    const mode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+    if (!caseIds.length) {
+      return next(new AppError('Select at least one case', 400));
+    }
+    const resolved = await resolveBattleDrops(caseIds, mode);
+
+    res.json({
+      status: 'success',
+      data: {
+        mode: resolved.mode,
+        userDrops: resolved.rounds.map((round) => round.userDrop),
+        opponentDrops: resolved.rounds.map((round) => round.opponentDrop),
+      },
+    });
+  } catch (error) {
+    next(new AppError((error as Error)?.message || 'Failed to resolve battle', 400));
+  }
+};
+
+export const finishBattleLobby = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const lobbyId = String(req.params?.lobbyId || '').trim();
+    if (!lobbyId) {
+      return next(new AppError('Lobby id is required', 400));
+    }
+
+    const lobby = await prisma.battleLobby.findUnique({ where: { id: lobbyId } });
+    if (!lobby || (lobby.status !== 'OPEN' && lobby.status !== 'IN_PROGRESS')) {
+      return next(new AppError('Lobby not found', 404));
+    }
+    if (lobby.hostUserId !== userId && lobby.joinerUserId !== userId) {
+      return next(new AppError('Forbidden', 403));
+    }
+
+    const updated = await prisma.battleLobby.update({
+      where: { id: lobbyId },
+      data: {
+        status: 'FINISHED',
+        winnerName: req.body?.winnerName ? String(req.body.winnerName) : lobby.winnerName,
+        finishedAt: new Date(),
+      },
+    });
+    res.json({ status: 'success', data: { lobby: updated } });
   } catch (error) {
     next(error);
   }
@@ -450,6 +713,38 @@ export const chargeBattle = async (req: Request, res: Response, next: NextFuncti
     });
 
     res.json({ status: 'success', data: { balance: updated.balance } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createFeedbackMessage = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const topic = String(req.body?.topic || '').trim().toUpperCase();
+    const contact = String(req.body?.contact || '').trim();
+    const message = String(req.body?.message || '').trim();
+
+    if (!FEEDBACK_TOPICS.includes(topic as any)) {
+      return next(new AppError('Invalid feedback topic', 400));
+    }
+    if (!contact || contact.length < 2 || contact.length > 100) {
+      return next(new AppError('Contact is required (2-100 chars)', 400));
+    }
+    if (!message || message.length > 500) {
+      return next(new AppError('Message is required (max 500 chars)', 400));
+    }
+
+    const feedback = await prisma.feedbackMessage.create({
+      data: {
+        userId,
+        topic: topic as any,
+        contact,
+        message,
+      },
+    });
+
+    res.json({ status: 'success', data: { id: feedback.id } });
   } catch (error) {
     next(error);
   }

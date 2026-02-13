@@ -10,12 +10,15 @@ import { AdminView } from './components/AdminView';
 import { LiveFeed } from './components/LiveFeed';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { TopUpModal } from './components/TopUpModal';
+import { FeedbackWidget } from './components/FeedbackWidget';
 import { ImageWithMeta } from './components/ui/ImageWithMeta';
 import { INITIAL_USER } from './constants';
 import { User, Item, Case } from './types';
 import { useWallet } from './hooks/useWallet';
 import { BrowserProvider } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
+import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
+import { playCaseCreatedCelebration, playDullClick } from './utils/audio';
 
 interface BattleRecord {
   id: string;
@@ -77,6 +80,14 @@ const App = () => {
   const [topUpInitialUsdt, setTopUpInitialUsdt] = useState<number | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [lastAuthAddress, setLastAuthAddress] = useState<string | null>(null);
+  const [battleStartAlert, setBattleStartAlert] = useState<{
+    lobbyId: string;
+    hostName: string;
+    joinerName: string;
+    rounds: number;
+    totalCost: number;
+    startedAt: string;
+  } | null>(null);
 
   const {
     address: walletAddress,
@@ -296,6 +307,110 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    const targetWallet = (user.walletAddress || walletAddress || '').toLowerCase();
+    if (!lastAuthAddress || !targetWallet) return;
+    if (targetWallet !== lastAuthAddress.toLowerCase()) return;
+
+    let cancelled = false;
+    let running = false;
+
+    const syncPendingDeposits = async () => {
+      if (running || cancelled) return;
+      running = true;
+      try {
+        const hashes = getPendingDepositHashes(targetWallet);
+        if (!hashes.length) return;
+
+        for (const hash of hashes) {
+          if (cancelled) break;
+          try {
+            const response = await api.confirmDeposit(hash);
+            if (typeof response.data?.balance === 'number') {
+              setBalance(response.data.balance);
+              removePendingDepositHash(targetWallet, hash);
+            } else if (!response.data?.pending) {
+              // Unknown non-pending response; keep hash for next sync.
+            }
+          } catch (error: any) {
+            const message = String(error?.message || '').toLowerCase();
+            if (message.includes('already claimed')) {
+              removePendingDepositHash(targetWallet, hash);
+              await loadProfile(targetWallet);
+            }
+          }
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    syncPendingDeposits();
+    const timer = window.setInterval(syncPendingDeposits, 12000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [lastAuthAddress, user.walletAddress, walletAddress]);
+
+  useEffect(() => {
+    if (!lastAuthAddress || !canUseActivities || !user.id) {
+      setBattleStartAlert(null);
+      return;
+    }
+    let cancelled = false;
+    const seenKey = `casefun:seenBattleStarts:${user.id}`;
+    const readSeen = () => {
+      try {
+        const raw = localStorage.getItem(seenKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+    const writeSeen = (items: string[]) => {
+      localStorage.setItem(seenKey, JSON.stringify(items.slice(-80)));
+    };
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const response = await api.getBattleLobbies();
+        const lobbies = Array.isArray(response.data?.lobbies) ? response.data.lobbies : [];
+        const seen = new Set(readSeen());
+        const fresh = lobbies.find((lobby: any) => {
+          if (lobby?.status !== 'IN_PROGRESS' || !lobby?.startedAt) return false;
+          const isParticipant = lobby.hostUserId === user.id || lobby.joinerUserId === user.id;
+          if (!isParticipant) return false;
+          const id = `${lobby.id}:${lobby.startedAt}`;
+          return !seen.has(id);
+        });
+        if (!fresh) return;
+        const marker = `${fresh.id}:${fresh.startedAt}`;
+        seen.add(marker);
+        writeSeen(Array.from(seen));
+        setBattleStartAlert({
+          lobbyId: String(fresh.id),
+          hostName: String(fresh.hostName || 'Host'),
+          joinerName: String(fresh.joinerName || 'Opponent'),
+          rounds: Array.isArray(fresh.caseIds) ? fresh.caseIds.length : 0,
+          totalCost: Number(fresh.totalCost || 0),
+          startedAt: String(fresh.startedAt),
+        });
+        playDullClick(0.33);
+      } catch {
+        // ignore poll errors
+      }
+    };
+
+    poll();
+    const timer = window.setInterval(poll, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [lastAuthAddress, canUseActivities, user.id]);
+
+  useEffect(() => {
     const handlePopState = () => {
       const nextTab = getTabFromPath(window.location.pathname);
       handleTabChange(nextTab, 'none');
@@ -443,6 +558,11 @@ const App = () => {
     setCreatedCaseNotice(newCase);
   };
 
+  useEffect(() => {
+    if (!createdCaseNotice) return;
+    playCaseCreatedCelebration();
+  }, [createdCaseNotice]);
+
 
   const handleOpenCase = async (caseId: string, count: number) => {
     const winners: Item[] = [];
@@ -547,7 +667,11 @@ const App = () => {
     return { success: Boolean(success), targetValue: Number(targetValue || 0) };
   };
 
-  const handleBattleFinish = async (wonItems: Item[], totalCost: number) => {
+  const handleBattleFinish = async (
+    wonItems: Item[],
+    totalCost: number,
+    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null }
+  ) => {
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
@@ -563,7 +687,11 @@ const App = () => {
     setBattleHistory(prev => [battleRecord, ...prev]);
 
     try {
-      const response = await api.recordBattle(isWin ? 'WIN' : 'LOSS', totalCost, wonItems);
+      const response = await api.recordBattle(isWin ? 'WIN' : 'LOSS', totalCost, wonItems, {
+        reserveItems: options?.reserveItems || [],
+        mode: options?.mode || 'PVP',
+        lobbyId: options?.lobbyId || undefined,
+      });
       const created = response.data?.items;
       if (Array.isArray(created) && created.length > 0) {
         const mapped = created.map((item: any) => ({
@@ -943,6 +1071,7 @@ const App = () => {
         isAuthenticated={Boolean(lastAuthAddress)}
         onConnectWallet={() => setIsWalletConnectOpen(true)}
         initialUsdtAmount={topUpInitialUsdt}
+        walletAddress={user.walletAddress || walletAddress}
       />
 
       {createdCaseNotice && (
@@ -1037,6 +1166,35 @@ const App = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {activeTab !== 'admin' && (
+        <>
+        {battleStartAlert && (
+          <button
+            onClick={() => {
+              sessionStorage.setItem('casefun:focusBattleLobbyId', battleStartAlert.lobbyId);
+              handleTabChange('casebattle');
+              setBattleStartAlert(null);
+            }}
+            className="fixed right-24 bottom-6 z-[75] w-[390px] max-w-[calc(100vw-140px)] rounded-2xl border border-web3-accent/55 bg-black/90 backdrop-blur-md px-5 py-4 text-left shadow-[0_0_24px_rgba(102,252,241,0.30)] hover:border-web3-accent/80 transition"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.9)] animate-pulse" />
+              <div className="text-[11px] uppercase tracking-widest text-web3-accent">Battle started</div>
+            </div>
+            <div className="text-base font-black text-white">{battleStartAlert.hostName} vs {battleStartAlert.joinerName}</div>
+            <div className="text-xs text-gray-300 mt-1">
+              {battleStartAlert.rounds} rounds • {Number(battleStartAlert.totalCost || 0).toFixed(2)} ₮
+            </div>
+            <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">Tap to open live battle</div>
+          </button>
+        )}
+        <FeedbackWidget
+          isAuthenticated={Boolean(lastAuthAddress)}
+          onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+        />
+        </>
       )}
 
     </div>

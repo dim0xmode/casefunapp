@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Item, Case, Rarity } from '../types';
 import { Sparkles } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { ImageWithMeta } from './ui/ImageWithMeta';
+import { playDullClick, playSoftWin } from '../utils/audio';
 
 // Rarity colors mapping
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -33,9 +34,27 @@ interface CaseRouletteProps {
   openMode: OpenMode;
   index: number;
   skipReveal?: boolean;
+  initiallyRevealed?: boolean;
+  spinToken?: number;
+  soundEnabled?: boolean;
+  clickSoundEnabled?: boolean;
+  resultSoundEnabled?: boolean;
+  clickVolume?: number;
 }
 
-export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, openMode, index, skipReveal }) => {
+export const CaseRoulette: React.FC<CaseRouletteProps> = ({
+  caseData,
+  winner,
+  openMode,
+  index,
+  skipReveal,
+  initiallyRevealed = false,
+  spinToken = 0,
+  soundEnabled = true,
+  clickSoundEnabled,
+  resultSoundEnabled,
+  clickVolume = 0.16,
+}) => {
   const BASE_STRIP_LENGTH = 80;
   const INITIAL_STRIP_LENGTH = 20;
   const START_OFFSET = -((TOTAL_CARD_SPACE * 4) + MARGIN_X_PX + (CARD_WIDTH / 2));
@@ -49,12 +68,6 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
     image: '❔',
     color: RARITY_COLORS[Rarity.COMMON],
   }), [caseData]);
-
-  const [strip, setStrip] = useState<Item[]>([]);
-  const [offset, setOffset] = useState(START_OFFSET);
-  const [transitionStyle, setTransitionStyle] = useState('none');
-  const [showResult, setShowResult] = useState(false);
-  const [isRevealed, setIsRevealed] = useState(skipReveal ? true : false);
 
   const getSourceItems = () => {
     const drops = caseData?.possibleDrops ?? [];
@@ -73,6 +86,19 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
     }
     return nextStrip;
   };
+
+  const [strip, setStrip] = useState<Item[]>(() => buildStrip(INITIAL_STRIP_LENGTH));
+  const [offset, setOffset] = useState(START_OFFSET);
+  const [transitionStyle, setTransitionStyle] = useState('none');
+  const [showResult, setShowResult] = useState(false);
+  const [isRevealed, setIsRevealed] = useState(skipReveal ? true : initiallyRevealed);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const spinAudioActiveRef = useRef(false);
+  const spinAudioStartedAtRef = useRef(0);
+  const spinAudioDurationMsRef = useRef(0);
+
+  const canPlayClickSound = soundEnabled && (clickSoundEnabled ?? soundEnabled);
+  const canPlayResultSound = soundEnabled && (resultSoundEnabled ?? soundEnabled);
 
   const renderTokenLogo = (item: Item | null, size: 'sm' | 'lg' = 'sm') => {
     const value = item?.image || '';
@@ -94,27 +120,26 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
 
   // Reveal animation
   useEffect(() => {
-    if (!skipReveal) {
+    if (!skipReveal && !initiallyRevealed) {
       const timeoutId = setTimeout(() => {
         setIsRevealed(true);
       }, 100 + index * 100);
       return () => clearTimeout(timeoutId);
     }
+    if (initiallyRevealed) {
+      setIsRevealed(true);
+    }
     return undefined;
-  }, [skipReveal, index]);
+  }, [skipReveal, index, initiallyRevealed]);
 
   useEffect(() => {
     if (!winner) {
-      if (strip.length === 0) {
-        setStrip(buildStrip(INITIAL_STRIP_LENGTH));
-        setOffset(START_OFFSET);
-      }
+      setStrip((prev) => (prev.length ? prev : buildStrip(INITIAL_STRIP_LENGTH)));
+      setOffset(START_OFFSET);
       setShowResult(false);
       setTransitionStyle('none');
       return;
     }
-
-    if (showResult) return;
 
     if (openMode === 'instant') {
       const fastStrip = buildStrip(7, winner);
@@ -122,6 +147,10 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
       setStrip(fastStrip);
       setOffset(centerOffset);
       setTransitionStyle('none');
+      if (canPlayResultSound && !skipReveal) {
+        const delay = Math.min(140, index * 35);
+        window.setTimeout(() => playSoftWin(), delay);
+      }
       setShowResult(true);
       return;
     }
@@ -136,6 +165,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
 
     let rafId = 0;
     let rafId2 = 0;
+    const timeoutIds: number[] = [];
 
     rafId = requestAnimationFrame(() => {
       setStrip(newStrip);
@@ -150,9 +180,14 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
 
         setTransitionStyle(`transform ${duration}ms cubic-bezier(0.1, 1.05, 0.2, 1)`);
         setOffset(driftOffset);
+        if (canPlayClickSound) {
+          spinAudioActiveRef.current = true;
+          spinAudioStartedAtRef.current = Date.now();
+          spinAudioDurationMsRef.current = duration + 720 + 220 + 420;
+        }
 
         // Stage 2: slowdown near card edge (ambiguity) without reverse movement
-        setTimeout(() => {
+        const stage2Timeout = window.setTimeout(() => {
           const winnerCardStart = WINNER_INDEX * TOTAL_CARD_SPACE;
           const winnerCardEnd = winnerCardStart + TOTAL_CARD_SPACE;
           const edgeOffsetStart = -(winnerCardStart + MARGIN_X_PX);
@@ -191,23 +226,79 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
           setOffset(edgeOffset);
 
           // Stage 3: brief pause, then gentle magnet to center
-          setTimeout(() => {
+          const stage3Timeout = window.setTimeout(() => {
             setTransitionStyle('transform 420ms cubic-bezier(0.25, 0.85, 0.25, 1)');
             setOffset(finalOffset);
           }, 220);
+          timeoutIds.push(stage3Timeout);
         }, duration);
+        timeoutIds.push(stage2Timeout);
 
-        setTimeout(() => {
+        const resultTimeout = window.setTimeout(() => {
+          if (canPlayResultSound && !skipReveal) {
+            const delay = Math.min(140, index * 35);
+            window.setTimeout(() => playSoftWin(), delay);
+          }
           setShowResult(true);
         }, duration + 720 + 220 + 200);
+        timeoutIds.push(resultTimeout);
       });
     });
 
     return () => {
+      spinAudioActiveRef.current = false;
+      timeoutIds.forEach((id) => window.clearTimeout(id));
       if (rafId) cancelAnimationFrame(rafId);
       if (rafId2) cancelAnimationFrame(rafId2);
     };
-  }, [winner, openMode, showResult, strip.length, START_OFFSET]);
+  }, [winner, START_OFFSET, canPlayClickSound, canPlayResultSound, skipReveal, index, spinToken]);
+
+  useEffect(() => {
+    if (!canPlayClickSound) return;
+    let frameId = 0;
+    let lastSlot = Number.NaN;
+    let lastClickAt = 0;
+
+    const readTranslateX = () => {
+      const node = stripRef.current;
+      if (!node) return null;
+      const transform = window.getComputedStyle(node).transform;
+      if (!transform || transform === 'none') return 0;
+      try {
+        const matrix = new DOMMatrixReadOnly(transform);
+        return matrix.m41;
+      } catch {
+        const match = transform.match(/matrix\(([^)]+)\)/);
+        if (!match) return 0;
+        const parts = match[1].split(',');
+        const tx = Number(parts[4] || 0);
+        return Number.isFinite(tx) ? tx : 0;
+      }
+    };
+
+    const tick = () => {
+      if (spinAudioActiveRef.current) {
+        const tx = readTranslateX();
+        if (tx !== null) {
+          const slot = Math.floor((-tx) / TOTAL_CARD_SPACE);
+          const now = performance.now();
+          if (slot !== lastSlot && now - lastClickAt > 26) {
+            playDullClick(clickVolume * 0.9);
+            lastSlot = slot;
+            lastClickAt = now;
+          }
+        }
+        const elapsed = Date.now() - spinAudioStartedAtRef.current;
+        if (elapsed >= spinAudioDurationMsRef.current) {
+          spinAudioActiveRef.current = false;
+        }
+      }
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [canPlayClickSound, clickVolume]);
 
   return (
     <div className="relative w-full h-[200px] mb-4 flex justify-center">
@@ -226,6 +317,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({ caseData, winner, op
           }}
         >
           <div 
+            ref={stripRef}
             className="flex items-center absolute left-0 h-full pl-[50%]"
             style={{
               transform: `translateX(${offset}px)`,

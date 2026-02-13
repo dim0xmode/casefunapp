@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
+import { ethers } from 'ethers';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
+import { provider, treasurySigner } from '../services/blockchain.js';
+import { resolveBattleDrops } from '../services/battleResolveService.js';
 
 const normalizeParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
@@ -9,6 +12,8 @@ const normalizeParam = (value: string | string[] | undefined): string => {
   }
   return value ?? '';
 };
+
+const GAS_LOW_THRESHOLD_ETH = 0.03;
 
 const logAdminAction = async (adminId: string, action: string, metadata?: Record<string, any>, entity?: string, entityId?: string) => {
   await prisma.adminAuditLog.create({
@@ -508,6 +513,81 @@ export const listSettings = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const listFeedbackMessages = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const messages = await prisma.feedbackMessage.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            walletAddress: true,
+            role: true,
+          },
+        },
+      },
+    });
+    const unreadCount = messages.filter((item) => !item.isRead).length;
+    res.json({ status: 'success', data: { messages, unreadCount } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getFeedbackUnreadCount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const unreadCount = await prisma.feedbackMessage.count({
+      where: { isRead: false },
+    });
+    res.json({ status: 'success', data: { unreadCount } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const previewBattleResolve = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const caseIdsRaw = Array.isArray(req.body?.caseIds) ? req.body.caseIds : [];
+    const caseIds = caseIdsRaw
+      .map((value: any) => String(value || '').trim())
+      .filter(Boolean)
+      .slice(0, 25);
+    const mode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+
+    if (!caseIds.length) {
+      return next(new AppError('Select at least one case', 400));
+    }
+
+    const preview = await resolveBattleDrops(caseIds, mode);
+    res.json({ status: 'success', data: preview });
+  } catch (error) {
+    next(new AppError((error as Error)?.message || 'Failed to preview battle resolve', 400));
+  }
+};
+
+export const updateFeedbackReadStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('Feedback id is required', 400));
+    }
+
+    const isRead = req.body?.isRead !== undefined ? Boolean(req.body.isRead) : true;
+    const updated = await prisma.feedbackMessage.update({
+      where: { id },
+      data: {
+        isRead,
+        readAt: isRead ? new Date() : null,
+      },
+    });
+
+    res.json({ status: 'success', data: { message: updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const upsertSetting = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const adminId = (req as any).userId;
@@ -552,6 +632,8 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       inventory,
       transactions,
       rtuLedgers,
+      feedbackMessages,
+      feedbackUnread,
       recentTransactions,
       recentOpenings,
       topUsers,
@@ -562,6 +644,8 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       prisma.inventoryItem.count({ where: { status: 'ACTIVE' } }),
       prisma.transaction.count(),
       prisma.rtuLedger.count(),
+      prisma.feedbackMessage.count(),
+      prisma.feedbackMessage.count({ where: { isRead: false } }),
       prisma.transaction.findMany({
         orderBy: { timestamp: 'desc' },
         take: 10,
@@ -611,6 +695,48 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       };
     });
 
+    let gasWallet: {
+      address: string | null;
+      ethBalance: number | null;
+      treasuryEthBalance: number | null;
+      lowThresholdEth: number;
+      isLow: boolean | null;
+      rpcConnected: boolean;
+    } = {
+      address: treasurySigner?.address || null,
+      ethBalance: null,
+      treasuryEthBalance: null,
+      lowThresholdEth: GAS_LOW_THRESHOLD_ETH,
+      isLow: null,
+      rpcConnected: false,
+    };
+
+    if (provider && treasurySigner?.address) {
+      try {
+        const [signerBalanceRaw, treasuryBalanceRaw] = await Promise.all([
+          provider.getBalance(treasurySigner.address),
+          provider.getBalance(process.env.TREASURY_ADDRESS || treasurySigner.address),
+        ]);
+
+        const ethBalance = Number(ethers.formatEther(signerBalanceRaw));
+        const treasuryEthBalance = Number(ethers.formatEther(treasuryBalanceRaw));
+
+        gasWallet = {
+          address: treasurySigner.address,
+          ethBalance,
+          treasuryEthBalance,
+          lowThresholdEth: GAS_LOW_THRESHOLD_ETH,
+          isLow: ethBalance < GAS_LOW_THRESHOLD_ETH,
+          rpcConnected: true,
+        };
+      } catch {
+        gasWallet = {
+          ...gasWallet,
+          rpcConnected: false,
+        };
+      }
+    }
+
     res.json({
       status: 'success',
       data: {
@@ -621,10 +747,13 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
           inventory,
           transactions,
           rtuLedgers,
+          feedbackMessages,
+          feedbackUnread,
         },
         recentTransactions,
         recentOpenings,
         topUsersBySpend: topUsersWithInfo,
+        gasWallet,
       },
     });
   } catch (error) {

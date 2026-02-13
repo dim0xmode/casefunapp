@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Item, Rarity } from '../types';
 import { TrendingUp, ArrowUp, ArrowDown, Settings2, Package, Sparkles } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { EmptyState } from './ui/EmptyState';
 import { ItemGrid } from './ui/ItemGrid';
 import { AdminActionButton } from './ui/AdminActionButton';
+import { playDullClick, playSoftLose, playSoftWin } from '../utils/audio';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -37,6 +38,11 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
   const [fastUpgrade, setFastUpgrade] = useState(false);
   const [frozenInventory, setFrozenInventory] = useState<Item[] | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const pointerRef = useRef<HTMLDivElement | null>(null);
+  const spinDurationMs = fastUpgrade ? 420 : 5600;
+  const spinEasing = fastUpgrade
+    ? 'cubic-bezier(0.35, 0.08, 0.22, 1)'
+    : 'cubic-bezier(0.1, 0.86, 0.18, 1)';
 
   // Calculations
   const selectedTotalValue = selectedItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
@@ -126,13 +132,19 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     setRotation(finalRotation);
 
     // Animation End Handling
-    const duration = fastUpgrade ? 300 : 5000;
-    const resultDelay = fastUpgrade ? 350 : 5000;
+    const duration = spinDurationMs;
+    const resultDelay = spinDurationMs;
+    const resultRevealPauseMs = 300;
     const resetDelay = fastUpgrade ? 1000 : 1500;
 
     setTimeout(() => {
       setUpgradeResult(isSuccess ? 'success' : 'fail');
       setIsSpinning(false);
+      if (isSuccess) {
+        playSoftWin();
+      } else {
+        playSoftLose();
+      }
       
       setTimeout(() => {
         setLastResult({
@@ -145,8 +157,91 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
         setDisplayItem(null);
         setFrozenInventory(null);
       }, resetDelay);
-    }, resultDelay);
+    }, resultDelay + resultRevealPauseMs);
   };
+
+  useEffect(() => {
+    if (!isSpinning) return;
+    const node = pointerRef.current;
+    if (!node) return;
+
+    const startedAt = performance.now();
+    let frameId = 0;
+    let lastRawAngle: number | null = null;
+    let sectionAccumulator = 0;
+    let smoothedSpeedFactor = 1;
+    // Slightly denser points + speed-adaptive emit makes sync more noticeable.
+    const pointsPerCircle = fastUpgrade ? 24 : 44;
+    const sectionSizeDeg = 360 / pointsPerCircle;
+    const baseClickVolume = fastUpgrade ? 0.07 : 0.105;
+
+    const readRotationDeg = () => {
+      const transform = window.getComputedStyle(node).transform;
+      if (!transform || transform === 'none') return 0;
+      try {
+        const matrix = new DOMMatrixReadOnly(transform);
+        const angle = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI);
+        return Number.isFinite(angle) ? angle : 0;
+      } catch {
+        const match = transform.match(/matrix\(([^)]+)\)/);
+        if (!match) return 0;
+        const parts = match[1].split(',').map((entry) => Number(entry.trim()));
+        const a = Number(parts[0] || 1);
+        const b = Number(parts[1] || 0);
+        const angle = Math.atan2(b, a) * (180 / Math.PI);
+        return Number.isFinite(angle) ? angle : 0;
+      }
+    };
+
+    const tick = () => {
+      const raw = readRotationDeg();
+      if (lastRawAngle === null) {
+        lastRawAngle = raw;
+      } else {
+        let delta = raw - lastRawAngle;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        lastRawAngle = raw;
+
+        const speedDeg = Math.abs(delta); // degrees per frame
+        const targetSpeedFactor = Math.max(0.78, Math.min(1.22, 0.86 + speedDeg / 9));
+        // Smooth speed-to-volume response to avoid audible jump on deceleration phase.
+        smoothedSpeedFactor = smoothedSpeedFactor * 0.82 + targetSpeedFactor * 0.18;
+        sectionAccumulator += speedDeg;
+        // Prevent burst backlog after rapid phase.
+        sectionAccumulator = Math.min(sectionAccumulator, sectionSizeDeg * 2.2);
+        const elapsed = performance.now() - startedAt;
+        const startRamp = Math.max(0, Math.min(1, (elapsed - 120) / 320)); // smooth-in for first ~0.4s
+        const startSectionMultiplier = elapsed < 380 ? 1.35 : 1; // fewer ticks at the very beginning
+        const effectiveSectionSize = sectionSizeDeg * startSectionMultiplier;
+        let emitted = 0;
+        const maxPerFrame =
+          elapsed < 380
+            ? 1
+            : smoothedSpeedFactor < 0.92
+              ? 1
+              : smoothedSpeedFactor < 1.05
+                ? 2
+                : fastUpgrade
+                  ? 2
+                  : 3;
+        while (sectionAccumulator >= effectiveSectionSize && emitted < maxPerFrame) {
+          // First click is stronger, extra catch-up clicks are softer.
+          const perClickVolume =
+            baseClickVolume * startRamp * smoothedSpeedFactor * (emitted === 0 ? 0.9 : 0.66);
+          playDullClick(perClickVolume);
+          sectionAccumulator -= effectiveSectionSize;
+          emitted += 1;
+        }
+      }
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => {
+      if (frameId) window.cancelAnimationFrame(frameId);
+    };
+  }, [isSpinning, fastUpgrade]);
 
   const handleSelectItem = (item: Item, key: string) => {
     if (isSpinning) return;
@@ -324,11 +419,12 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
 
               {/* The Pointer */}
               <div 
+                ref={pointerRef}
                 className="absolute inset-0 pointer-events-none z-20"
                 style={{ 
                   transform: `rotate(${rotation}deg)`,
                   transition: isSpinning 
-                    ? `transform ${fastUpgrade ? '0.3s' : '5s'} cubic-bezier(0.55, 0.05, 0.25, 1)` 
+                    ? `transform ${spinDurationMs}ms ${spinEasing}` 
                     : 'none'
                 }}
               >

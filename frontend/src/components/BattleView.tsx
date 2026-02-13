@@ -9,13 +9,18 @@ import { ConfirmModal } from './ui/ConfirmModal';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { CaseIcon } from './CaseIcon';
 import { formatShortfallUp } from '../utils/number';
+import { api } from '../services/api';
 
 const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Orion', 'Helix'];
 
 interface BattleViewProps {
   cases: Case[];
   userName: string;
-  onBattleFinish: (wonItems: Item[], totalCost: number) => void;
+  onBattleFinish: (
+    wonItems: Item[],
+    totalCost: number,
+    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null }
+  ) => void;
   balance: number;
   onChargeBattle: (amount: number) => Promise<boolean>;
   onOpenTopUp: (prefillUsdt?: number) => void;
@@ -25,6 +30,20 @@ interface BattleViewProps {
 }
 
 export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+  const format2 = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
+  type BattleEntry = {
+    id: string;
+    host: string;
+    hostUserId?: string;
+    joinerName?: string | null;
+    status?: 'OPEN' | 'IN_PROGRESS' | 'FINISHED';
+    mode?: 'BOT' | 'PVP' | null;
+    roundsJson?: any[] | null;
+    winnerName?: string | null;
+    cases: Case[];
+    createdAt: number;
+    source?: 'LOBBY' | 'BOT';
+  };
   const [gameState, setGameState] = useState<'SETUP' | 'BATTLE' | 'RESULT'>('SETUP');
   const [selectedCases, setSelectedCases] = useState<Case[]>([]);
   const [currentRound, setCurrentRound] = useState(0);
@@ -35,7 +54,8 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const [userDrops, setUserDrops] = useState<Item[]>([]);
   const [botDrops, setBotDrops] = useState<Item[]>([]);
   const [battleOutcomes, setBattleOutcomes] = useState<{userItem: Item, botItem: Item}[]>([]);
-  const [availableBattles, setAvailableBattles] = useState<{ id: string; host: string; cases: Case[]; createdAt: number }[]>([]);
+  const [availableBattles, setAvailableBattles] = useState<BattleEntry[]>([]);
+  const [botBattles, setBotBattles] = useState<BattleEntry[]>([]);
   const [startConfirm, setStartConfirm] = useState(false);
   const [battleStarted, setBattleStarted] = useState(false);
   const [createBattleOpen, setCreateBattleOpen] = useState(false);
@@ -45,7 +65,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const [createConfirm, setCreateConfirm] = useState(false);
   const [isOwnBattle, setIsOwnBattle] = useState(false);
   const [currentBattleId, setCurrentBattleId] = useState<string | null>(null);
-  const [currentBattleIsBot, setCurrentBattleIsBot] = useState(false);
+  const [isSpectator, setIsSpectator] = useState(false);
+  const [forcedWinnerName, setForcedWinnerName] = useState<string | null>(null);
+  const [prefetchedRounds, setPrefetchedRounds] = useState<any[] | null>(null);
   const [priceFilter, setPriceFilter] = useState('');
 
   const isCaseExpired = (caseData: Case) => {
@@ -59,17 +81,18 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const battleShortfall = Math.max(0, totalCost - balance);
 
   const filteredBattles = useMemo(() => {
+    const allBattles = [...availableBattles, ...botBattles];
     const query = Number(priceFilter);
     const hasFilter = Number.isFinite(query) && query > 0;
     const base = hasFilter
-      ? availableBattles.filter(battle => battle.cases.reduce((sum, c) => sum + c.price, 0) <= query)
-      : availableBattles;
+      ? allBattles.filter(battle => battle.cases.reduce((sum, c) => sum + c.price, 0) <= query)
+      : allBattles;
     return base.sort((a, b) => {
       const totalA = a.cases.reduce((sum, c) => sum + c.price, 0);
       const totalB = b.cases.reduce((sum, c) => sum + c.price, 0);
       return totalB - totalA;
     });
-  }, [availableBattles, priceFilter]);
+  }, [availableBattles, botBattles, priceFilter]);
 
   const ownBattles = filteredBattles.filter(battle => battle.host === userName);
   const otherBattles = filteredBattles.filter(battle => battle.host !== userName);
@@ -79,42 +102,176 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     [cases]
   );
 
-  const buildMockBattle = (seed = Date.now()) => {
+  const toOutcomesFromRounds = (battle: BattleEntry, rounds: any[]) => {
+    if (!Array.isArray(rounds)) return [] as { userItem: Item; botItem: Item }[];
+    const isHost = battle.host === userName;
+    const isJoiner = Boolean(battle.joinerName) && battle.joinerName === userName;
+    const isParticipant = isHost || isJoiner;
+    return rounds.map((round: any) => {
+      // Canonical format (preferred): hostDrop/joinerDrop
+      if (round?.hostDrop || round?.joinerDrop) {
+        const hostDrop = round.hostDrop || round.userDrop || null;
+        const joinerDrop = round.joinerDrop || round.opponentDrop || null;
+        let userDrop = hostDrop;
+        let opponentDrop = joinerDrop;
+        if (isParticipant) {
+          userDrop = isHost ? hostDrop : joinerDrop;
+          opponentDrop = isHost ? joinerDrop : hostDrop;
+        }
+        return {
+          userItem: {
+            ...(userDrop || {}),
+            value: Number(userDrop?.value || 0),
+          } as Item,
+          botItem: {
+            ...(opponentDrop || {}),
+            value: Number(opponentDrop?.value || 0),
+          } as Item,
+        };
+      }
+
+      // Legacy fallback: userDrop/opponentDrop relative to starter.
+      const left = isHost ? round.userDrop : round.opponentDrop;
+      const right = isHost ? round.opponentDrop : round.userDrop;
+      return {
+        userItem: {
+          ...left,
+          value: Number(left?.value || 0),
+        } as Item,
+        botItem: {
+          ...right,
+          value: Number(right?.value || 0),
+        } as Item,
+      };
+    });
+  };
+
+  const buildMockBattle = (seed = Date.now()): BattleEntry | null => {
     const pool = activeCases.length ? activeCases : [];
     if (!pool.length) return null;
     const count = Math.min(5, Math.max(2, Math.floor(Math.random() * 4) + 2));
     const battleCases = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
     const hostNames = BOT_NAMES;
     return {
-      id: `battle-${seed}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `bot-battle-${seed}-${Math.random().toString(36).slice(2, 8)}`,
       host: hostNames[Math.floor(Math.random() * hostNames.length)],
       cases: battleCases,
       createdAt: Date.now(),
+      source: 'BOT',
     };
   };
 
-  useEffect(() => {
-    if (!activeCases.length) return;
-    const initial = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx))
-      .filter(Boolean) as { id: string; host: string; cases: Case[]; createdAt: number }[];
-    setAvailableBattles(initial);
-  }, [activeCases]);
+  const loadBattleLobbies = async () => {
+    try {
+      const response = await api.getBattleLobbies();
+      const lobbies = Array.isArray(response.data?.lobbies) ? response.data.lobbies : [];
+      const mapped: BattleEntry[] = lobbies
+        .filter((lobby: any) => lobby?.status === 'OPEN' || lobby?.status === 'IN_PROGRESS')
+        .map((lobby: any) => {
+          const caseIds = Array.isArray(lobby.caseIds) ? lobby.caseIds : [];
+          const lobbyCases = caseIds
+            .map((id: string) => activeCases.find((entry) => entry.id === id))
+            .filter(Boolean) as Case[];
+          if (!lobbyCases.length) return null;
+          return {
+            id: String(lobby.id),
+            host: String(lobby.hostName || 'Unknown'),
+            hostUserId: String(lobby.hostUserId || ''),
+            joinerName: lobby.joinerName || null,
+            status: lobby.status,
+            mode: lobby.mode || null,
+            roundsJson: Array.isArray(lobby.roundsJson) ? lobby.roundsJson : null,
+            winnerName: lobby.winnerName || null,
+            cases: lobbyCases,
+            createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
+            source: 'LOBBY',
+          };
+        })
+        .filter(Boolean) as BattleEntry[];
+      setAvailableBattles(mapped);
+    } catch {
+      setAvailableBattles([]);
+    }
+  };
 
-  const joinBattle = (battle: { id: string; host: string; cases: Case[] }) => {
+  useEffect(() => {
+    if (!isAuthenticated || !isAdmin) {
+      setAvailableBattles([]);
+      return;
+    }
+    loadBattleLobbies();
+    const timer = setInterval(loadBattleLobbies, 10000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, isAdmin, activeCases.length]);
+
+  useEffect(() => {
+    if (!activeCases.length) {
+      setBotBattles([]);
+      return;
+    }
+    const next = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx)).filter(Boolean) as BattleEntry[];
+    setBotBattles(next);
+    const timer = setInterval(() => {
+      const refreshed = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx)).filter(Boolean) as BattleEntry[];
+      setBotBattles(refreshed);
+    }, 45000);
+    return () => clearInterval(timer);
+  }, [activeCases.length]);
+
+  useEffect(() => {
+    if (gameState !== 'SETUP') return;
+    const focusLobbyId = sessionStorage.getItem('casefun:focusBattleLobbyId');
+    if (!focusLobbyId) return;
+    const target = availableBattles.find((battle) => battle.id === focusLobbyId);
+    if (!target) return;
+    sessionStorage.removeItem('casefun:focusBattleLobbyId');
+    joinBattle(target);
+  }, [availableBattles, gameState]);
+
+  const joinBattle = (battle: BattleEntry) => {
     setSelectedCases(battle.cases);
     setCurrentRound(0);
     setHostName(battle.host);
     const isHost = battle.host === userName;
-    const nextBotName = isHost ? BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)] : battle.host;
+    const nextBotName =
+      battle.source === 'BOT'
+        ? isHost
+          ? BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
+          : battle.host
+        : isHost
+        ? battle.joinerName || 'Opponent'
+        : battle.host;
     setBotName(nextBotName);
     setOpponent({ name: nextBotName, type: 'BOT' });
     setGameState('BATTLE');
     setCountdown(null);
     setStartConfirm(false);
-    setBattleStarted(false);
+    const isLobbyViewer = battle.source === 'LOBBY' && !!battle.status && battle.status !== 'OPEN';
+    const isParticipant = battle.host === userName || battle.joinerName === userName;
+    setIsSpectator(isLobbyViewer && !isParticipant);
+    setForcedWinnerName(battle.winnerName || null);
+    if (isLobbyViewer && battle.roundsJson?.length) {
+      const outcomes = toOutcomesFromRounds(battle, battle.roundsJson);
+      setBattleOutcomes(outcomes);
+      setBattleStarted(true);
+      if (battle.status === 'FINISHED') {
+        setUserDrops(outcomes.map((o) => o.userItem));
+        setBotDrops(outcomes.map((o) => o.botItem));
+        setGameState('RESULT');
+      } else {
+        setCurrentRound(0);
+        setUserDrops([]);
+        setBotDrops([]);
+      }
+    } else {
+      setBattleStarted(false);
+      setBattleOutcomes([]);
+      setUserDrops([]);
+      setBotDrops([]);
+    }
     setIsOwnBattle(battle.host === userName);
     setCurrentBattleId(battle.id);
-    setCurrentBattleIsBot(battle.host !== userName);
+    setPrefetchedRounds(Array.isArray(battle.roundsJson) ? battle.roundsJson : null);
   };
 
   const addCaseToCreate = (caseData: Case) => {
@@ -204,13 +361,20 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       setCreateConfirm(false);
       return;
     }
-    const newBattle = {
-      id: `battle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      host: userName,
+    const lobbyResponse = await api.createBattleLobby(createSelectedCases.map((entry) => entry.id));
+    const lobby = lobbyResponse.data?.lobby;
+    if (!lobby?.id) {
+      setCreateConfirm(false);
+      return;
+    }
+    const newBattle: BattleEntry = {
+      id: String(lobby.id),
+      host: String(lobby.hostName || userName),
+      hostUserId: String(lobby.hostUserId || ''),
       cases: createSelectedCases,
-      createdAt: Date.now(),
+      createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
     };
-    setAvailableBattles(prev => [newBattle, ...prev]);
+    await loadBattleLobbies();
     setCreateSelectedCases([]);
     setCreateBattleOpen(false);
     setCreateConfirm(false);
@@ -223,22 +387,42 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       return;
     }
     if (!isAdmin) return;
+    const requiresCharge = !isOwnBattle && !isSpectator;
     if (!startConfirm) {
-      if (!canAffordBattle) {
+      if (requiresCharge && !canAffordBattle) {
         onOpenTopUp();
         return;
       }
       setStartConfirm(true);
       return;
     }
-    if (!canAffordBattle) {
+    if (requiresCharge && !canAffordBattle) {
       onOpenTopUp();
       return;
     }
-    const charged = await onChargeBattle(totalCost);
-    if (!charged) {
-      setStartConfirm(false);
-      return;
+    if (requiresCharge) {
+      const charged = await onChargeBattle(totalCost);
+      if (!charged) {
+        setStartConfirm(false);
+        return;
+      }
+      if (currentBattleId) {
+        try {
+          await api.joinBattleLobby(currentBattleId);
+        } catch {
+          // if lobby join fails, we still allow local battle flow
+        }
+      }
+    }
+    if (currentBattleId && !isSpectator) {
+      try {
+        const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
+        const startResponse = await api.startBattleLobby(currentBattleId, mode);
+        const rounds = Array.isArray(startResponse.data?.lobby?.roundsJson) ? startResponse.data?.lobby?.roundsJson : null;
+        setPrefetchedRounds(rounds);
+      } catch {
+        // proceed with local resolve fallback
+      }
     }
     setStartConfirm(false);
     setBattleStarted(true);
@@ -257,22 +441,51 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     }
   }, [countdown]);
 
-  const initializeBattle = () => {
-    const outcomes = selectedCases.map(c => ({
-      userItem: {
-        ...c.possibleDrops[Math.floor(Math.random() * c.possibleDrops.length)],
-        caseId: c.id,
-      },
-      botItem: {
-        ...c.possibleDrops[Math.floor(Math.random() * c.possibleDrops.length)],
-        caseId: c.id,
-      },
-    }));
-    
-    setBattleOutcomes(outcomes);
-    setUserDrops([]);
-    setBotDrops([]);
-    setCurrentRound(0);
+  const initializeBattle = async () => {
+    if (prefetchedRounds && currentBattleId) {
+      const battle = [...availableBattles, ...botBattles].find((entry) => entry.id === currentBattleId);
+      if (battle) {
+        const outcomes = toOutcomesFromRounds(battle, prefetchedRounds);
+        setBattleOutcomes(outcomes);
+        setUserDrops([]);
+        setBotDrops([]);
+        setCurrentRound(0);
+        return;
+      }
+    }
+    const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
+    try {
+      const response = await api.resolveBattle(
+        selectedCases.map((entry) => entry.id),
+        mode
+      );
+      const userResolved = Array.isArray(response.data?.userDrops) ? response.data.userDrops : [];
+      const opponentResolved = Array.isArray(response.data?.opponentDrops) ? response.data.opponentDrops : [];
+      if (userResolved.length !== selectedCases.length || opponentResolved.length !== selectedCases.length) {
+        throw new Error('Resolve failed');
+      }
+      const outcomes = selectedCases.map((caseItem, index) => ({
+        userItem: { ...userResolved[index], caseId: caseItem.id },
+        botItem: { ...opponentResolved[index], caseId: caseItem.id },
+      }));
+      setBattleOutcomes(outcomes);
+      setUserDrops([]);
+      setBotDrops([]);
+      setCurrentRound(0);
+    } catch {
+      const outcomes = selectedCases.map((caseItem) => {
+        const sorted = [...caseItem.possibleDrops].sort((a, b) => Number(a.value || 0) - Number(b.value || 0));
+        const safe = sorted[0] || caseItem.possibleDrops[0];
+        return {
+          userItem: { ...safe, caseId: caseItem.id },
+          botItem: { ...safe, caseId: caseItem.id },
+        };
+      });
+      setBattleOutcomes(outcomes);
+      setUserDrops([]);
+      setBotDrops([]);
+      setCurrentRound(0);
+    }
   };
 
   useEffect(() => {
@@ -313,27 +526,38 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const finishGame = () => {
     setGameState('RESULT');
     
-    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + r.userItem.value, 0);
-    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + r.botItem.value, 0);
+    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
+    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
 
     let wonItems: Item[] = [];
+    let reserveItems: Item[] = [];
+    const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
     
     if (finalUserTotal >= finalBotTotal) {
       const allUserItems = battleOutcomes.map(o => o.userItem);
       const allBotItems = battleOutcomes.map(o => o.botItem);
       wonItems = [...allUserItems, ...allBotItems];
+    } else if (isOwnBattle) {
+      // Bot case: user lost, user's own drops are moved to reserve.
+      reserveItems = battleOutcomes.map((entry) => entry.userItem);
     }
-    
-    onBattleFinish(wonItems, totalCost);
-    if (currentBattleId) {
-      setAvailableBattles(prev => {
-        const next = prev.filter(battle => battle.id !== currentBattleId);
-        if (currentBattleIsBot) {
-          const replacement = buildMockBattle(Date.now());
-          return replacement ? [replacement, ...next] : next;
-        }
-        return next;
+
+    if (!isSpectator) {
+      onBattleFinish(wonItems, totalCost, {
+        reserveItems,
+        mode,
+        lobbyId: currentBattleId,
       });
+    }
+    const winnerName = isSpectator
+      ? (finalUserTotal >= finalBotTotal ? (hostName || 'Host') : (botName || 'Opponent'))
+      : (finalUserTotal >= finalBotTotal
+          ? userName
+          : (isOwnBattle ? (botName || 'Bot') : (hostName || 'Opponent')));
+    setForcedWinnerName(winnerName);
+    if (currentBattleId) {
+      setAvailableBattles(prev => prev.filter(battle => battle.id !== currentBattleId));
+      api.finishBattleLobbyWithWinner(currentBattleId, winnerName).catch(() => {});
     }
   };
 
@@ -350,7 +574,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     setStartConfirm(false);
     setBattleStarted(false);
     setCurrentBattleId(null);
-    setCurrentBattleIsBot(false);
+    setIsSpectator(false);
+    setForcedWinnerName(null);
+    setPrefetchedRounds(null);
     setGameState('SETUP');
   };
 
@@ -417,6 +643,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                               size="sm"
                               meta={caseData.imageMeta}
+                              className="rounded-full"
                             />
                           </div>
                         ))}
@@ -428,27 +655,36 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                       <div className="flex items-center justify-between mb-4">
                         <div>
                           <div className="text-xs uppercase tracking-widest text-gray-500">Total Cost</div>
-                          <div className="text-lg font-black text-white">{battleCost} ₮</div>
+                          <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                         </div>
                         <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                       </div>
 
-                      <AdminActionButton
-                        isAuthenticated={isAuthenticated}
-                        isAdmin={isAdmin}
-                        balance={balance}
-                        cost={battleCost}
-                        onConnect={onOpenWalletConnect}
-                        onTopUp={onOpenTopUp}
-                        onAction={() => joinBattle(battle)}
-                        readyLabel={
-                          <>
-                            Join Battle <ChevronRight size={16} />
-                          </>
-                        }
-                        topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
-                        className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                      />
+                      {battle.status && battle.status !== 'OPEN' ? (
+                        <button
+                          onClick={() => joinBattle(battle)}
+                          className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 bg-web3-accent/20 border border-web3-accent/40 text-web3-accent"
+                        >
+                          View <ChevronRight size={16} />
+                        </button>
+                      ) : (
+                        <AdminActionButton
+                          isAuthenticated={isAuthenticated}
+                          isAdmin={isAdmin}
+                          balance={balance}
+                          cost={0}
+                          onConnect={onOpenWalletConnect}
+                          onTopUp={onOpenTopUp}
+                          onAction={() => joinBattle(battle)}
+                          readyLabel={
+                            <>
+                              Join Battle <ChevronRight size={16} />
+                            </>
+                          }
+                          topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
+                          className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -460,8 +696,6 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {otherBattles.map((battle) => {
               const battleCost = battle.cases.reduce((sum, c) => sum + c.price, 0);
-              const canAfford = balance >= battleCost;
-              const shortfall = Math.max(0, battleCost - balance);
               return (
                 <div key={battle.id} className="bg-black/20 border border-white/[0.08] rounded-2xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm">
                   <div className="flex items-center justify-between mb-3">
@@ -479,6 +713,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                           value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                           size="sm"
                           meta={caseData.imageMeta}
+                          className="rounded-full"
                         />
               </div>
             ))}
@@ -490,27 +725,36 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-xs uppercase tracking-widest text-gray-500">Total Cost</div>
-                      <div className="text-lg font-black text-white">{battleCost} ₮</div>
+                      <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                     </div>
                     <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                   </div>
 
-                  <AdminActionButton
-                    isAuthenticated={isAuthenticated}
-                    isAdmin={isAdmin}
-                    balance={balance}
-                    cost={battleCost}
-                    onConnect={onOpenWalletConnect}
-                    onTopUp={onOpenTopUp}
-                    onAction={() => joinBattle(battle)}
-                    readyLabel={
-                      <>
-                        Join Battle <ChevronRight size={16} />
-                      </>
-                    }
-                    topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
-                    className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                  />
+                  {battle.status && battle.status !== 'OPEN' ? (
+                    <button
+                      onClick={() => joinBattle(battle)}
+                      className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 bg-web3-accent/20 border border-web3-accent/40 text-web3-accent"
+                    >
+                      View <ChevronRight size={16} />
+                    </button>
+                  ) : (
+                    <AdminActionButton
+                      isAuthenticated={isAuthenticated}
+                      isAdmin={isAdmin}
+                      balance={balance}
+                      cost={battleCost}
+                      onConnect={onOpenWalletConnect}
+                      onTopUp={onOpenTopUp}
+                      onAction={() => joinBattle(battle)}
+                      readyLabel={
+                        <>
+                          Join Battle <ChevronRight size={16} />
+                        </>
+                      }
+                      topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
+                      className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                    />
+                  )}
                 </div>
               );
             })}
@@ -536,7 +780,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
               {createConfirm && (
                 <ConfirmModal
                   title="Confirm"
-                  message={`${createTotalCost} ₮`}
+                  message={`${format2(createTotalCost)} ₮`}
                   confirmLabel="Create"
                   cancelLabel="Cancel"
                   onConfirm={handleCreateBattle}
@@ -567,7 +811,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               onClick={() => addCaseToCreate(caseData)}
                               className="bg-gradient-to-br from-web3-accent/25 to-web3-purple/25 border border-white/[0.2] rounded-xl p-3 cursor-pointer hover:border-web3-accent/70 hover:from-web3-accent/35 hover:to-web3-purple/35 transition h-[110px] flex flex-col items-center text-center shadow-[0_0_24px_rgba(102,252,241,0.2)]"
                             >
-                              <div className="text-[10px] text-gray-300 font-bold">{caseData.price} ₮</div>
+                              <div className="text-[10px] text-gray-300 font-bold">{format2(caseData.price)} ₮</div>
                               {caseData.openDurationHours && caseData.createdAt && (
                                 <div className="text-[9px] uppercase tracking-wider text-gray-500">
                                   {getRemainingTime(caseData)}
@@ -579,6 +823,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                                     value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                                     size="sm"
                                     meta={caseData.imageMeta}
+                                    className="rounded-full"
                                   />
                                 </div>
                               </div>
@@ -604,7 +849,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               onClick={() => addCaseToCreate(caseData)}
                               className="bg-gradient-to-br from-web3-accent/25 to-web3-purple/25 border border-white/[0.2] rounded-xl p-3 cursor-pointer hover:border-web3-accent/70 hover:from-web3-accent/35 hover:to-web3-purple/35 transition h-[110px] flex flex-col items-center text-center shadow-[0_0_24px_rgba(102,252,241,0.2)]"
                             >
-                              <div className="text-[10px] text-gray-300 font-bold">{caseData.price} ₮</div>
+                              <div className="text-[10px] text-gray-300 font-bold">{format2(caseData.price)} ₮</div>
                               {caseData.openDurationHours && caseData.createdAt && (
                                 <div className="text-[9px] uppercase tracking-wider text-gray-500">
                                   {getRemainingTime(caseData)}
@@ -616,6 +861,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                                     value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                                     size="sm"
                                     meta={caseData.imageMeta}
+                                    className="rounded-full"
                                   />
                                 </div>
                               </div>
@@ -657,6 +903,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                               value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                               size="sm"
                               meta={caseData.imageMeta}
+                              className="rounded-full"
                             />
                           </div>
                           <div className="flex-1 flex flex-col items-center justify-center leading-none">
@@ -681,7 +928,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                       Total Cost
           </div>
                     <div className="text-lg font-black text-white mb-4">
-                      {createTotalCost} ₮
+                      {format2(createTotalCost)} ₮
             </div>
                     <AdminActionButton
                       isAuthenticated={isAuthenticated}
@@ -710,17 +957,20 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
   const userTotal = userDrops.reduce((acc, item) => acc + item.value, 0);
   const botTotal = botDrops.reduce((acc, item) => acc + item.value, 0);
   const isUserWinning = userTotal >= botTotal;
+  const canStartBattleNow = isSpectator ? false : isOwnBattle || canAffordBattle;
   const hasOpponent = opponent.type !== null;
   const leftIsUser = isOwnBattle;
   const leftName = leftIsUser ? userName : hostName || opponent.name;
-  const rightName = leftIsUser ? botName || opponent.name : userName;
+  const rightName = leftIsUser ? botName || opponent.name : isSpectator ? (botName || 'Opponent') : userName;
 
   if (gameState !== 'SETUP') {
     const isResult = gameState === 'RESULT';
-    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + r.userItem.value, 0);
-    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + r.botItem.value, 0);
-    const userWon = finalUserTotal >= finalBotTotal;
-    const wonItems = userWon
+    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
+    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
+    const leftWon = forcedWinnerName
+      ? forcedWinnerName.toLowerCase() === leftName.toLowerCase()
+      : finalUserTotal >= finalBotTotal;
+    const wonItems = leftWon
       ? [...battleOutcomes.map(o => o.userItem), ...battleOutcomes.map(o => o.botItem)]
       : [];
     const winningsByCurrency = wonItems.reduce((acc, item) => {
@@ -781,7 +1031,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
         {/* Cases Strip */}
         <div className="px-6 py-4 border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-visible">
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
-            Total Cost <span className="text-web3-accent font-bold">{totalCost} ₮</span>
+            Total Cost <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
           </div>
           <div className="absolute inset-y-0 left-0 right-0 flex items-center pointer-events-none">
             <div
@@ -804,6 +1054,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                         value={caseData.image || caseData.possibleDrops[0]?.image || ''}
                         size="sm"
                         meta={caseData.imageMeta}
+                        className="rounded-full"
                       />
                     </span>
                   </div>
@@ -839,18 +1090,18 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   className={`w-32 h-32 rounded-full border-2 flex items-center justify-center transition ${
                     !isAuthenticated
                       ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
-                      : canAffordBattle
+                      : canStartBattleNow
                         ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
                         : 'border-red-500/40 bg-gray-800/50'
                   } ${startConfirm ? 'opacity-40 cursor-wait' : ''}`}
                   aria-label="Join Battle"
                 >
                   <span className={`text-xs uppercase tracking-widest font-bold text-center px-2 ${
-                    !isAuthenticated || canAffordBattle ? 'text-web3-accent' : 'text-gray-400'
+                    !isAuthenticated || canStartBattleNow ? 'text-web3-accent' : 'text-gray-400'
                   }`}>
                     {!isAuthenticated
                       ? 'Connect'
-                      : !canAffordBattle
+                      : !canStartBattleNow
                         ? `Need ${formatShortfallUp(battleShortfall)} ₮ more • Top up`
                         : isOwnBattle
                           ? 'Call Bot'
@@ -950,8 +1201,8 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
 
         {isResult && (
           <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in">
-            <div className="bg-black/30 border border-white/[0.12] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-sm">
-          {userWon ? (
+            <div className="bg-slate-800/70 border border-white/[0.20] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-sm">
+          {leftWon ? (
             <div className="flex flex-col items-center">
                   <div className="relative mb-3">
                     <div className="absolute inset-0 bg-web3-success/30 blur-2xl rounded-full animate-pulse"></div>
@@ -969,13 +1220,13 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <h1 className="text-3xl font-black text-white uppercase tracking-tight mb-2 animate-fade-in">Victory</h1>
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">You</div>
-                      <div className="text-lg font-black text-green-400">{finalUserTotal}</div>
+                      <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
+                      <div className="text-lg font-black text-green-400">{format2(finalUserTotal)}</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">Bot</div>
-                      <div className="text-lg font-black text-red-400">{finalBotTotal}</div>
+                      <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
+                      <div className="text-lg font-black text-red-400">{format2(finalBotTotal)}</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
@@ -986,7 +1237,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   ) : (
                     Object.entries(winningsByCurrency).map(([currency, amount]) => (
                           <div key={currency} className="bg-black/40 px-3 py-1.5 rounded border border-white/[0.12] flex items-center gap-2">
-                            <span className="text-white font-mono text-sm font-bold">{amount} ${currency}</span>
+                            <span className="text-white font-mono text-sm font-bold">{format2(Number(amount || 0))} ${currency}</span>
                       </div>
                     ))
                   )}
@@ -1015,18 +1266,18 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <h1 className="text-3xl font-black text-gray-200 uppercase tracking-tight mb-2 animate-fade-in">Defeat</h1>
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">You</div>
-                      <div className="text-lg font-black text-gray-400">{finalUserTotal}</div>
+                      <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
+                      <div className="text-lg font-black text-gray-400">{format2(finalUserTotal)}</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">Bot</div>
-                      <div className="text-lg font-black text-red-400">{finalBotTotal}</div>
+                      <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
+                      <div className="text-lg font-black text-red-400">{format2(finalBotTotal)}</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Cost</div>
-                  <div className="text-2xl font-mono font-bold text-red-500">{totalCost} ₮</div>
+                  <div className="text-2xl font-mono font-bold text-red-500">{format2(totalCost)} ₮</div>
               </div>
             </div>
           )}

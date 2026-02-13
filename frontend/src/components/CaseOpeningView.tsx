@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Case, Item } from '../types';
 import { ArrowLeft, Package, ChevronRight, ChevronsRight, Zap } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
@@ -62,10 +62,12 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
   const [openMode, setOpenMode] = useState<OpenMode>('normal');
   const [hasOpened, setHasOpened] = useState(false);
   const [multiOpen, setMultiOpen] = useState<number>(1);
+  const [activeOpenCount, setActiveOpenCount] = useState<number>(1);
+  const [revealedPrefixCount, setRevealedPrefixCount] = useState(0);
   const [multiResults, setMultiResults] = useState<Item[]>([]);
-  const [openingKey, setOpeningKey] = useState(0);
-  const [currentRevealFrom, setCurrentRevealFrom] = useState(1);
-  const prevOpenCountRef = useRef(1);
+  const [currentRevealFrom, setCurrentRevealFrom] = useState(0);
+  const [spinToken, setSpinToken] = useState(0);
+  const rouletteCount = Math.max(1, activeOpenCount);
 
   const cost = caseData.price * multiOpen;
   const canAfford = balance >= cost;
@@ -73,17 +75,21 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
   const handleSpin = async () => {
     if (isSpinning || isExpired || !canAfford || isStatsView) return;
 
-    const prevCount = prevOpenCountRef.current;
-    setCurrentRevealFrom(prevCount);
+    const prevActiveOpenCount = activeOpenCount;
+    const prevRevealedPrefixCount = revealedPrefixCount;
+    setRevealedPrefixCount(hasOpened ? activeOpenCount : 0);
+    setActiveOpenCount(multiOpen);
+    // Drop previous winners immediately so the next spin never reuses old outcomes.
+    setMultiResults([]);
+    setCurrentRevealFrom(0);
+    setSpinToken((prev) => prev + 1);
 
     setIsSpinning(true);
     setHasOpened(true);
-    setOpeningKey(prev => prev + 1);
 
     try {
       const winners = await onOpenCase(caseData.id, multiOpen);
       setMultiResults(winners);
-      prevOpenCountRef.current = multiOpen;
 
       const speedMultiplier = OPEN_MODE_SPEEDS[openMode] || 1;
       const totalDuration = openMode === 'instant' ? 200 : (SPIN_DURATION_MS / speedMultiplier) + 1200 + 200;
@@ -92,6 +98,8 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
         setIsSpinning(false);
       }, totalDuration);
     } catch (error) {
+      setActiveOpenCount(prevActiveOpenCount);
+      setRevealedPrefixCount(prevRevealedPrefixCount);
       setIsSpinning(false);
     }
   };
@@ -205,27 +213,22 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
 
       {!isStatsView && (
       <div className="max-w-5xl mx-auto mb-8">
-        {multiResults.length > 0 ? (
-          multiResults.map((result, idx) => (
-              <CaseRoulette
-              key={`${openingKey}-${idx}`}
+        {Array.from({ length: rouletteCount }).map((_, idx) => (
+            <CaseRoulette
+              key={`roulette-${idx}`}
               caseData={caseData}
-              winner={result}
+              winner={multiResults[idx] || null}
               openMode={openMode}
               index={idx}
               skipReveal={idx < currentRevealFrom}
+              initiallyRevealed={idx < revealedPrefixCount}
+              spinToken={spinToken}
+              soundEnabled={true}
+              clickSoundEnabled={true}
+              resultSoundEnabled={true}
+              clickVolume={idx === 0 ? 0.15 : 0.08}
             />
-          ))
-        ) : (
-            <CaseRoulette
-            key="placeholder"
-            caseData={caseData}
-              winner={null}
-            openMode={openMode}
-            index={0}
-            skipReveal={false}
-          />
-        )}
+        ))}
       </div>
       )}
 

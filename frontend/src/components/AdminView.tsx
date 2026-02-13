@@ -14,6 +14,7 @@ type TabKey =
   | 'rtu'
   | 'settings'
   | 'audit'
+  | 'feedback'
   | 'reports'
   | 'cms';
 
@@ -27,6 +28,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'rtu', label: 'RTU' },
   { key: 'settings', label: 'Settings' },
   { key: 'audit', label: 'Audit' },
+  { key: 'feedback', label: 'Feedback' },
   { key: 'reports', label: 'Reports' },
   { key: 'cms', label: 'CMS' },
 ];
@@ -45,6 +47,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [caseEdits, setCaseEdits] = useState<Record<string, any>>({});
   const [settingsEdits, setSettingsEdits] = useState<Record<string, string>>({});
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -52,6 +55,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   const [search, setSearch] = useState('');
   const [rtuAlertThreshold, setRtuAlertThreshold] = useState(0);
   const [newSetting, setNewSetting] = useState({ key: '', value: '' });
+  const [battlePreviewInput, setBattlePreviewInput] = useState('');
+  const [battlePreviewMode, setBattlePreviewMode] = useState<'BOT' | 'PVP'>('BOT');
+  const [battlePreviewLoading, setBattlePreviewLoading] = useState(false);
+  const [battlePreviewError, setBattlePreviewError] = useState<string | null>(null);
+  const [battlePreview, setBattlePreview] = useState<any>(null);
   const [rtuAdjust, setRtuAdjust] = useState({
     caseId: '',
     tokenSymbol: '',
@@ -178,6 +186,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
         case 'audit':
           setData((await api.getAdminAudit()).data?.logs ?? []);
           break;
+        case 'feedback': {
+          const response = await api.getAdminFeedback();
+          setData(response.data?.messages ?? []);
+          setFeedbackUnreadCount(Number(response.data?.unreadCount || 0));
+          break;
+        }
         case 'reports':
         case 'cms':
           setData(null);
@@ -195,6 +209,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   useEffect(() => {
     load();
   }, [activeTab]);
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshUnread = async () => {
+      try {
+        const response = await api.getAdminFeedbackUnreadCount();
+        if (!mounted) return;
+        setFeedbackUnreadCount(Number(response.data?.unreadCount || 0));
+      } catch {
+        // ignore polling errors
+      }
+    };
+    refreshUnread();
+    const timer = setInterval(refreshUnread, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     setPages((prev) => ({
@@ -266,6 +299,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     () => (activeTab === 'audit' && Array.isArray(data) ? data : []),
     [activeTab, data]
   );
+  const feedbackMessages = useMemo(
+    () => (activeTab === 'feedback' && Array.isArray(data) ? data : []),
+    [activeTab, data]
+  );
   const rtuLedgers = useMemo(
     () => (activeTab === 'rtu' && data?.ledgers ? data.ledgers : []),
     [activeTab, data]
@@ -327,7 +364,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   : 'bg-black/20 border-white/[0.08] text-gray-400 hover:text-white'
               }`}
             >
-              {tab.label}
+              <span className="inline-flex items-center gap-1.5">
+                {tab.label}
+                {tab.key === 'feedback' && feedbackUnreadCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -531,9 +573,52 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     { label: 'Inventory', value: overview?.stats?.inventory ?? 0 },
                     { label: 'Transactions', value: overview?.stats?.transactions ?? 0 },
                     { label: 'RTU Ledgers', value: overview?.stats?.rtuLedgers ?? 0 },
+                    { label: 'Unread Feedback', value: overview?.stats?.feedbackUnread ?? 0 },
                   ].map((item) => (
                     <StatCard key={item.label} label={item.label} value={item.value} />
                   ))}
+                </div>
+              </div>
+
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Gas Wallet</div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Signer</div>
+                    <div className="text-gray-300 font-mono truncate">
+                      {overview?.gasWallet?.address ? shortWallet(overview.gasWallet.address) : '-'}
+                    </div>
+                  </div>
+                  <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Signer ETH</div>
+                    <div className={`font-bold ${
+                      overview?.gasWallet?.isLow === true ? 'text-red-400' : 'text-web3-success'
+                    }`}>
+                      {overview?.gasWallet?.ethBalance == null ? '-' : Number(overview.gasWallet.ethBalance).toFixed(4)}
+                    </div>
+                  </div>
+                  <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Treasury ETH</div>
+                    <div className="font-bold text-gray-200">
+                      {overview?.gasWallet?.treasuryEthBalance == null ? '-' : Number(overview.gasWallet.treasuryEthBalance).toFixed(4)}
+                    </div>
+                  </div>
+                  <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Status</div>
+                    <div className={`font-bold ${
+                      overview?.gasWallet?.rpcConnected === false
+                        ? 'text-yellow-400'
+                        : overview?.gasWallet?.isLow
+                        ? 'text-red-400'
+                        : 'text-web3-success'
+                    }`}>
+                      {overview?.gasWallet?.rpcConnected === false
+                        ? 'RPC Offline'
+                        : overview?.gasWallet?.isLow
+                        ? `LOW (< ${Number(overview?.gasWallet?.lowThresholdEth || 0.03).toFixed(3)} ETH)`
+                        : 'OK'}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -877,6 +962,86 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'rtu' && (
             <div className="space-y-4">
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Battle Resolve Preview</div>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+                  <input
+                    value={battlePreviewInput}
+                    onChange={(e) => setBattlePreviewInput(e.target.value)}
+                    placeholder="caseId1,caseId2,..."
+                    className="md:col-span-3 bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
+                  />
+                  <select
+                    value={battlePreviewMode}
+                    onChange={(e) => setBattlePreviewMode(e.target.value as 'BOT' | 'PVP')}
+                    className="bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
+                  >
+                    <option value="BOT">BOT</option>
+                    <option value="PVP">PVP</option>
+                  </select>
+                  <button
+                    onClick={async () => {
+                      const caseIds = battlePreviewInput
+                        .split(',')
+                        .map((value) => value.trim())
+                        .filter(Boolean);
+                      if (!caseIds.length) return;
+                      setBattlePreviewLoading(true);
+                      setBattlePreviewError(null);
+                      try {
+                        const response = await api.previewAdminBattleResolve({
+                          caseIds,
+                          mode: battlePreviewMode,
+                        });
+                        setBattlePreview(response.data || null);
+                      } catch (err: any) {
+                        setBattlePreview(null);
+                        setBattlePreviewError(err?.message || 'Preview failed');
+                      } finally {
+                        setBattlePreviewLoading(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs uppercase tracking-widest bg-web3-accent/20 text-web3-accent border border-web3-accent/40"
+                  >
+                    {battlePreviewLoading ? 'Running...' : 'Run Preview'}
+                  </button>
+                </div>
+                {battlePreviewError && (
+                  <div className="mt-2 text-xs text-red-400">{battlePreviewError}</div>
+                )}
+                {battlePreview?.rounds?.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {battlePreview.rounds.map((round: any, index: number) => (
+                      <div key={`${round.caseId}-${index}`} className="rounded-lg border border-white/[0.08] bg-black/20 p-2 text-xs text-gray-300">
+                        <div className="flex flex-wrap items-center gap-3 mb-1">
+                          <span className="uppercase tracking-widest text-gray-500">Round {index + 1}</span>
+                          <span className="font-bold">{round.caseName}</span>
+                          <span className="text-gray-500">{round.token}</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">User drop</div>
+                            <div>{Number(round.userDrop?.value || 0).toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Opponent drop</div>
+                            <div>{Number(round.opponentDrop?.value || 0).toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">Ideal/Max safe</div>
+                            <div>{Number(round.userDebug?.idealDrop || 0).toFixed(2)} / {Number(round.userDebug?.maxSafeDrop || 0).toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-widest text-gray-500">State after</div>
+                            <div>spent {Number(round.stateAfter?.spent || 0).toFixed(2)} / issued {Number(round.stateAfter?.issued || 0).toFixed(2)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3">
                 <input
                   value={rtuAdjust.caseId}
@@ -1071,6 +1236,60 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 totalPages={totalPages(audit)}
                 onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
               />
+            </div>
+          )}
+
+          {!loading && !error && activeTab === 'feedback' && (
+            <div className="space-y-2">
+              {feedbackMessages.map((item: any) => (
+                <div
+                  key={item.id}
+                  className={`grid grid-cols-1 md:grid-cols-8 gap-3 items-center rounded-xl p-3 text-xs ${
+                    item.isRead
+                      ? 'bg-black/30 border border-white/[0.08] text-gray-400'
+                      : 'bg-red-500/10 border border-red-500/30 text-red-200'
+                  }`}
+                >
+                  <div className="md:col-span-2 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">User</div>
+                    <div className="truncate">{item.user?.username || 'Unknown'}</div>
+                    <div className="text-[10px] text-gray-500 truncate">{item.user?.walletAddress || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Topic</div>
+                    <div>{item.topic}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Contact</div>
+                    <div className="truncate">{item.contact}</div>
+                  </div>
+                  <div className="md:col-span-2 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Message</div>
+                    <div className="break-words whitespace-pre-wrap">{item.message}</div>
+                  </div>
+                  <div className="text-[10px] text-gray-500">{formatDate(item.createdAt)}</div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={async () => {
+                        setSaving(item.id);
+                        await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
+                        await load();
+                        setSaving(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+                        item.isRead
+                          ? 'bg-white/5 border-white/10 text-gray-300'
+                          : 'bg-red-500/20 border-red-500/40 text-red-200'
+                      }`}
+                    >
+                      {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!feedbackMessages.length && (
+                <div className="text-sm text-gray-500">No feedback yet.</div>
+              )}
             </div>
           )}
 

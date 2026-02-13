@@ -53,6 +53,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   const styles = sizeStyles[size];
   const isInteractive = Boolean(onClick) && !disabled;
   const isImage = item.image?.startsWith('http') || item.image?.startsWith('/') || item.image?.startsWith('data:');
+  const displayValue = Number.isFinite(Number(item.value)) ? Number(item.value).toFixed(2) : '0.00';
 
   return (
     <div
@@ -101,7 +102,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
       </div>
       {!hideValue && (
         <div className="relative z-10 mt-2 text-center">
-          <div className={`font-bold text-white ${styles.value}`}>{item.value}</div>
+          <div className={`font-bold text-white ${styles.value}`}>{displayValue}</div>
           <div className={`text-gray-400 ${styles.currency}`}>{currencyPrefix}{item.currency}</div>
         </div>
       )}
