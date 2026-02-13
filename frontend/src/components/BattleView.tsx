@@ -356,29 +356,37 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
       onOpenTopUp();
       return;
     }
-    const charged = await onChargeBattle(createTotalCost);
-    if (!charged) {
+    try {
+      const lobbyResponse = await api.createBattleLobby(createSelectedCases.map((entry) => entry.id));
+      const lobby = lobbyResponse.data?.lobby;
+      if (!lobby?.id) {
+        setCreateConfirm(false);
+        return;
+      }
+
+      const charged = await onChargeBattle(createTotalCost);
+      if (!charged) {
+        // rollback unpaid lobby so it doesn't stay visible
+        await api.finishBattleLobby(String(lobby.id)).catch(() => {});
+        setCreateConfirm(false);
+        return;
+      }
+
+      const newBattle: BattleEntry = {
+        id: String(lobby.id),
+        host: String(lobby.hostName || userName),
+        hostUserId: String(lobby.hostUserId || ''),
+        cases: createSelectedCases,
+        createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
+      };
+      await loadBattleLobbies();
+      setCreateSelectedCases([]);
+      setCreateBattleOpen(false);
       setCreateConfirm(false);
-      return;
-    }
-    const lobbyResponse = await api.createBattleLobby(createSelectedCases.map((entry) => entry.id));
-    const lobby = lobbyResponse.data?.lobby;
-    if (!lobby?.id) {
+      joinBattle(newBattle);
+    } catch {
       setCreateConfirm(false);
-      return;
     }
-    const newBattle: BattleEntry = {
-      id: String(lobby.id),
-      host: String(lobby.hostName || userName),
-      hostUserId: String(lobby.hostUserId || ''),
-      cases: createSelectedCases,
-      createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
-    };
-    await loadBattleLobbies();
-    setCreateSelectedCases([]);
-    setCreateBattleOpen(false);
-    setCreateConfirm(false);
-    joinBattle(newBattle);
   };
 
   const handleStartBattle = async () => {
@@ -967,10 +975,14 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
     const isResult = gameState === 'RESULT';
     const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
     const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
+    const leftTotal = leftIsUser ? finalUserTotal : finalBotTotal;
+    const rightTotal = leftIsUser ? finalBotTotal : finalUserTotal;
+    const userWon = finalUserTotal >= finalBotTotal;
     const leftWon = forcedWinnerName
       ? forcedWinnerName.toLowerCase() === leftName.toLowerCase()
-      : finalUserTotal >= finalBotTotal;
-    const wonItems = leftWon
+      : leftTotal >= rightTotal;
+    const displayWin = isSpectator ? leftWon : userWon;
+    const wonItems = userWon
       ? [...battleOutcomes.map(o => o.userItem), ...battleOutcomes.map(o => o.botItem)]
       : [];
     const winningsByCurrency = wonItems.reduce((acc, item) => {
@@ -1202,7 +1214,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
         {isResult && (
           <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in">
             <div className="bg-slate-800/70 border border-white/[0.20] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-sm">
-          {leftWon ? (
+          {displayWin ? (
             <div className="flex flex-col items-center">
                   <div className="relative mb-3">
                     <div className="absolute inset-0 bg-web3-success/30 blur-2xl rounded-full animate-pulse"></div>
@@ -1221,12 +1233,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-green-400">{format2(finalUserTotal)}</div>
+                      <div className="text-lg font-black text-green-400">{format2(leftTotal)}</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(finalBotTotal)}</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)}</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
@@ -1267,12 +1279,12 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, onBattl
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-gray-400">{format2(finalUserTotal)}</div>
+                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)}</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(finalBotTotal)}</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)}</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
