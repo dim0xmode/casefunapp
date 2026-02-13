@@ -504,16 +504,22 @@ export const createBattleLobby = async (req: Request, res: Response, next: NextF
       return next(new AppError('User not found', 404));
     }
 
+    const uniqueCaseIds: string[] = Array.from(new Set<string>(caseIds));
     const caseRows = await prisma.case.findMany({
-      where: { id: { in: caseIds }, isActive: true },
+      where: { id: { in: uniqueCaseIds }, isActive: true },
       select: { id: true, price: true, openDurationHours: true, createdAt: true },
     });
-    if (caseRows.length !== caseIds.length) {
+    if (caseRows.length !== uniqueCaseIds.length) {
       return next(new AppError('Some cases are not available', 400));
     }
+    const caseById = new Map(caseRows.map((row) => [row.id, row]));
 
     const now = Date.now();
-    for (const row of caseRows) {
+    for (const caseId of caseIds) {
+      const row = caseById.get(caseId);
+      if (!row) {
+        return next(new AppError('Some cases are not available', 400));
+      }
       if (row.openDurationHours && row.createdAt) {
         const endAt = new Date(row.createdAt).getTime() + row.openDurationHours * 60 * 60 * 1000;
         if (now >= endAt) {
@@ -522,7 +528,10 @@ export const createBattleLobby = async (req: Request, res: Response, next: NextF
       }
     }
 
-    const totalCost = caseRows.reduce((sum, item) => sum + Number(item.price || 0), 0);
+    const totalCost = caseIds.reduce((sum, caseId) => {
+      const row = caseById.get(caseId);
+      return sum + Number(row?.price || 0);
+    }, 0);
     const lobby = await prisma.battleLobby.create({
       data: {
         hostUserId: userId,
