@@ -895,7 +895,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                       {modeLabel} • {roundsLabel} rounds
                                     </div>
                                     <div className="text-sm font-bold text-white">
-                                      Battle vs {opponentName}
+                                      {(user?.username || 'YOU').toUpperCase()} vs {opponentName}
                                     </div>
                                     <div className="text-[11px] text-gray-500 mt-0.5">
                                       {formatBattleTime(battle.timestamp)}

@@ -76,6 +76,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
   const [forcedWinnerName, setForcedWinnerName] = useState<string | null>(null);
   const [prefetchedRounds, setPrefetchedRounds] = useState<any[] | null>(null);
   const [priceFilter, setPriceFilter] = useState('');
+  const [hasRealOpponent, setHasRealOpponent] = useState(false);
   const [leftPlayerAvatar, setLeftPlayerAvatar] = useState<string | null>(null);
   const [leftPlayerAvatarMeta, setLeftPlayerAvatarMeta] = useState<ImageMeta | undefined>(undefined);
   const [rightPlayerAvatar, setRightPlayerAvatar] = useState<string | null>(null);
@@ -250,6 +251,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     setCurrentRound(0);
     setHostName(battle.host);
     const isHost = battle.host === userName;
+    const isLobby = battle.source === 'LOBBY';
+    const nextHasRealOpponent = isLobby ? (isHost ? Boolean(battle.joinerName) : true) : false;
+    setHasRealOpponent(nextHasRealOpponent);
     const nextBotName =
       battle.source === 'BOT'
         ? isHost
@@ -457,7 +461,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     }
     if (currentBattleId && !isSpectator) {
       try {
-        const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
+        const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
         const startResponse = await api.startBattleLobby(currentBattleId, mode);
         const rounds = Array.isArray(startResponse.data?.lobby?.roundsJson) ? startResponse.data?.lobby?.roundsJson : null;
         setPrefetchedRounds(rounds);
@@ -572,7 +576,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
     let wonItems: Item[] = [];
     let reserveItems: Item[] = [];
-    const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
+    const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
     
     if (finalUserTotal >= finalBotTotal) {
       const allUserItems = battleOutcomes.map(o => o.userItem);
@@ -624,6 +628,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     setRightPlayerAvatarMeta(undefined);
     setLeftPlayerIsBot(false);
     setRightPlayerIsBot(false);
+    setHasRealOpponent(false);
     setGameState('SETUP');
   };
 

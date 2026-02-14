@@ -398,7 +398,9 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     }
     setSelectedKeys((prev) => [...prev, key]);
     setSelectedItems((prev) => [...prev, item]);
-    setDisplayItem((prev) => prev || item);
+    // If this is a new selection sequence (no selected items yet),
+    // switch preview to the newly selected token.
+    setDisplayItem(selectedItems.length === 0 ? item : (displayItem || item));
     setLastResult(null);
     setUpgradeResult('idle');
     setRotation(0);
