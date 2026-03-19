@@ -1,9 +1,49 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Button } from './Button';
-import { ArrowRight, Sparkles, Zap, Shield, TrendingUp, Users, Rocket } from 'lucide-react';
+import { ArrowRight, Sparkles, Zap, Shield, TrendingUp, Rocket, Clock3, ShieldCheck, XCircle, X } from 'lucide-react';
+
+type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+type EarlyAccessBlockReason =
+  | 'PENDING_REVIEW'
+  | 'ALREADY_APPROVED'
+  | 'ALREADY_EARLY_ACCESS'
+  | 'ADMIN_ACCOUNT'
+  | 'SUPPORT_ACCOUNT'
+  | null;
+
+interface EarlyAccessStatusPayload {
+  canSubmit: boolean;
+  blockReason: EarlyAccessBlockReason;
+  request: {
+    id: string;
+    status: EarlyAccessRequestStatus;
+    reviewedAt: string | null;
+  } | null;
+}
+
+const getEarlyAccessBlockMessage = (reason: EarlyAccessBlockReason) => {
+  switch (reason) {
+    case 'PENDING_REVIEW':
+      return 'Your request is currently under review.';
+    case 'ALREADY_APPROVED':
+      return 'Your request has already been approved.';
+    case 'ALREADY_EARLY_ACCESS':
+      return 'You already have early access.';
+    case 'ADMIN_ACCOUNT':
+      return 'Administrators cannot submit early access requests.';
+    case 'SUPPORT_ACCOUNT':
+      return 'Support accounts cannot submit early access requests.';
+    default:
+      return 'Early access request is currently unavailable.';
+  }
+};
 
 interface HomeViewProps {
   onCreateCase: () => void;
+  isAuthenticated: boolean;
+  onOpenWalletConnect: () => void;
+  onSubmitEarlyAccess: (payload: { contact: string; message: string }) => Promise<void>;
+  earlyAccessSubmitting: boolean;
+  earlyAccessStatus: EarlyAccessStatusPayload | null;
 }
 
 // Animated Counter Component
@@ -43,8 +83,20 @@ const AnimatedCounter: React.FC<{ end: number; suffix?: string; duration?: numbe
   return <span ref={countRef}>{count}{suffix}</span>;
 };
 
-export const HomeView: React.FC<HomeViewProps> = ({ onCreateCase }) => {
+export const HomeView: React.FC<HomeViewProps> = ({
+  onCreateCase,
+  isAuthenticated,
+  onOpenWalletConnect,
+  onSubmitEarlyAccess,
+  earlyAccessSubmitting,
+  earlyAccessStatus,
+}) => {
   const [isVisible, setIsVisible] = useState<{ [key: string]: boolean }>({});
+  const [isEarlyAccessOpen, setIsEarlyAccessOpen] = useState(false);
+  const [earlyAccessContact, setEarlyAccessContact] = useState('');
+  const [earlyAccessMessage, setEarlyAccessMessage] = useState('');
+  const [earlyAccessFormStatus, setEarlyAccessFormStatus] = useState<string | null>(null);
+  const [earlyAccessClickNotice, setEarlyAccessClickNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -61,6 +113,73 @@ export const HomeView: React.FC<HomeViewProps> = ({ onCreateCase }) => {
     document.querySelectorAll('[data-animate]').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
   }, []);
+
+  const earlyAccessCharsLeft = 200 - earlyAccessMessage.length;
+  const isEarlyAccessBlocked = Boolean(earlyAccessStatus && !earlyAccessStatus.canSubmit);
+  const earlyAccessBlockMessage = isEarlyAccessBlocked
+    ? getEarlyAccessBlockMessage(earlyAccessStatus?.blockReason || null)
+    : null;
+  const latestRequestStatus = earlyAccessStatus?.request?.status || null;
+  const showLatestRequestStatus = Boolean(
+    latestRequestStatus &&
+    (latestRequestStatus !== 'APPROVED' || isEarlyAccessBlocked)
+  );
+
+  useEffect(() => {
+    if (!isEarlyAccessBlocked) {
+      setEarlyAccessClickNotice(null);
+    }
+  }, [isEarlyAccessBlocked]);
+
+  const closeEarlyAccessModal = () => {
+    setIsEarlyAccessOpen(false);
+    setEarlyAccessFormStatus(null);
+  };
+
+  const handleEarlyAccessButtonClick = () => {
+    if (!isAuthenticated) {
+      onOpenWalletConnect();
+      return;
+    }
+    if (isEarlyAccessBlocked) {
+      setEarlyAccessClickNotice(earlyAccessBlockMessage || 'Early access request is currently unavailable.');
+      return;
+    }
+    setEarlyAccessClickNotice(null);
+    setEarlyAccessFormStatus(null);
+    setIsEarlyAccessOpen(true);
+  };
+
+  const handleEarlyAccessSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAuthenticated) {
+      onOpenWalletConnect();
+      return;
+    }
+    if (isEarlyAccessBlocked) {
+      setEarlyAccessFormStatus(earlyAccessBlockMessage || 'Early access request is currently unavailable.');
+      return;
+    }
+    const safeContact = earlyAccessContact.trim();
+    const safeMessage = earlyAccessMessage.trim();
+    if (!safeContact || safeContact.length < 2 || safeContact.length > 100) {
+      setEarlyAccessFormStatus('Telegram contact is required (2-100 chars).');
+      return;
+    }
+    if (!safeMessage || safeMessage.length > 200) {
+      setEarlyAccessFormStatus('Message is required (max 200 chars).');
+      return;
+    }
+    setEarlyAccessFormStatus(null);
+    try {
+      await onSubmitEarlyAccess({ contact: safeContact, message: safeMessage });
+      setEarlyAccessContact('');
+      setEarlyAccessMessage('');
+      setEarlyAccessFormStatus('Request sent. We will review it soon.');
+    } catch (error: any) {
+      setEarlyAccessFormStatus(error?.message || 'Failed to send early access request.');
+    }
+  };
 
   // Parallax effect on scroll (removed unused scrollY state)
 
@@ -116,7 +235,17 @@ export const HomeView: React.FC<HomeViewProps> = ({ onCreateCase }) => {
               {/* Pulse rings */}
               <span className="absolute -inset-2 rounded-xl bg-web3-accent/30 animate-ping opacity-75"></span>
             </button>
-            
+
+            <button
+              onClick={handleEarlyAccessButtonClick}
+              className="w-full sm:w-auto px-12 py-6 text-xl font-bold rounded-xl border-2 border-web3-purple/45 text-white hover:border-web3-purple/75 hover:bg-web3-purple/10 transition-all duration-300 backdrop-blur-sm"
+            >
+              <span className="inline-flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-web3-purple" />
+                Early Access
+              </span>
+            </button>
+
             <button
               onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
               className="w-full sm:w-auto px-12 py-6 text-xl font-bold rounded-xl border-2 border-white/20 hover:border-web3-accent/50 hover:bg-white/5 transition-all duration-300 backdrop-blur-sm"
@@ -124,6 +253,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ onCreateCase }) => {
               Learn More
             </button>
           </div>
+          {earlyAccessClickNotice && (
+            <div className="mt-4 px-4 py-2 rounded-xl border border-web3-purple/30 bg-web3-purple/10 text-sm text-web3-purple max-w-xl">
+              {earlyAccessClickNotice}
+            </div>
+          )}
         </div>
       </section>
 
@@ -466,6 +600,113 @@ export const HomeView: React.FC<HomeViewProps> = ({ onCreateCase }) => {
 
         </div>
       </section>
+
+      {isEarlyAccessOpen && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeEarlyAccessModal}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border border-white/[0.12] bg-web3-card/95 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-web3-purple">CaseFun</div>
+                <h3 className="text-2xl font-black mt-1">Early Access Request</h3>
+                <p className="text-sm text-gray-400 mt-2">Leave your Telegram and a short message (up to 200 chars).</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEarlyAccessModal}
+                className="w-8 h-8 rounded-lg border border-white/[0.12] bg-black/30 text-gray-300 hover:text-white"
+                aria-label="Close early access form"
+              >
+                <X size={14} className="mx-auto" />
+              </button>
+            </div>
+
+            {showLatestRequestStatus && (
+              <div className="mt-4 rounded-xl border border-white/[0.1] bg-black/25 px-3 py-2 text-xs">
+                {latestRequestStatus === 'PENDING' && (
+                  <div className="inline-flex items-center gap-1.5 text-yellow-300">
+                    <Clock3 size={14} />
+                    Your previous request is under review.
+                  </div>
+                )}
+                {latestRequestStatus === 'APPROVED' && (
+                  <div className="inline-flex items-center gap-1.5 text-web3-success">
+                    <ShieldCheck size={14} />
+                    Your request is approved. Please test the mechanics and report any bugs.
+                  </div>
+                )}
+                {latestRequestStatus === 'REJECTED' && (
+                  <div className="inline-flex items-center gap-1.5 text-red-300">
+                    <XCircle size={14} />
+                    Previous request was rejected. You can submit a new one.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleEarlyAccessSubmit} className="mt-5 space-y-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Telegram</div>
+                <input
+                  value={earlyAccessContact}
+                  onChange={(e) => setEarlyAccessContact(e.target.value)}
+                  placeholder="@username"
+                  maxLength={100}
+                  className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.1] text-sm"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Message</div>
+                  <div className={`text-[10px] ${earlyAccessCharsLeft < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                    {earlyAccessCharsLeft}
+                  </div>
+                </div>
+                <textarea
+                  value={earlyAccessMessage}
+                  onChange={(e) => setEarlyAccessMessage(e.target.value)}
+                  rows={4}
+                  maxLength={200}
+                  placeholder="Tell us why you need early access..."
+                  className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.1] text-sm resize-none"
+                />
+              </div>
+              {earlyAccessFormStatus && (
+                <div className={`text-xs ${earlyAccessFormStatus.toLowerCase().includes('sent') ? 'text-web3-success' : 'text-gray-300'}`}>
+                  {earlyAccessFormStatus}
+                </div>
+              )}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={closeEarlyAccessModal}
+                  className="flex-1 py-2.5 rounded-xl border border-white/[0.12] bg-black/25 text-xs uppercase tracking-widest text-gray-300 hover:text-white"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={earlyAccessSubmitting || isEarlyAccessBlocked}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs disabled:opacity-60"
+                >
+                  {!isAuthenticated
+                    ? 'Connect Wallet'
+                    : earlyAccessSubmitting
+                      ? 'Sending...'
+                      : isEarlyAccessBlocked
+                        ? 'Request Locked'
+                        : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

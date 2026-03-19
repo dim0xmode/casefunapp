@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Header } from './components/Header';
 import { HomeView } from './components/HomeView';
 import { CaseView } from './components/CaseView';
@@ -38,6 +38,30 @@ const TAB_PATHS: Record<string, string> = {
   profile: '/profile',
   admin: '/admin',
 };
+const BACKGROUND_ANIMATION_STORAGE_KEY = 'casefun:bgAnimationEnabled';
+const EARLY_ACCESS_NOTICE_STORAGE_KEY_PREFIX = 'casefun:earlyAccessDecisionSeen:';
+
+type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+interface EarlyAccessStatusPayload {
+  canSubmit: boolean;
+  blockReason:
+    | 'PENDING_REVIEW'
+    | 'ALREADY_APPROVED'
+    | 'ALREADY_EARLY_ACCESS'
+    | 'ADMIN_ACCOUNT'
+    | 'SUPPORT_ACCOUNT'
+    | null;
+  request: {
+    id: string;
+    topic: 'EARLY_ACCESS';
+    status: EarlyAccessRequestStatus;
+    contact: string;
+    message: string;
+    createdAt: string;
+    reviewedAt: string | null;
+  } | null;
+}
 
 const getTabFromPath = (pathname: string) => {
   const normalized = pathname.toLowerCase();
@@ -88,6 +112,23 @@ const App = () => {
     totalCost: number;
     startedAt: string;
   } | null>(null);
+  const [pendingTwitterCode, setPendingTwitterCode] = useState<string | null>(null);
+  const [pendingTwitterState, setPendingTwitterState] = useState<string | null>(null);
+  const [twitterBusy, setTwitterBusy] = useState(false);
+  const [twitterNotice, setTwitterNotice] = useState<string | null>(null);
+  const [twitterError, setTwitterError] = useState<string | null>(null);
+  const [earlyAccessStatus, setEarlyAccessStatus] = useState<EarlyAccessStatusPayload | null>(null);
+  const [earlyAccessSubmitting, setEarlyAccessSubmitting] = useState(false);
+  const [earlyAccessDecisionNotice, setEarlyAccessDecisionNotice] = useState<string | null>(null);
+  const [isBackgroundAnimated, setIsBackgroundAnimated] = useState(() => {
+    try {
+      const saved = localStorage.getItem(BACKGROUND_ANIMATION_STORAGE_KEY);
+      if (saved === null) return true;
+      return saved !== '0';
+    } catch {
+      return true;
+    }
+  });
 
   const {
     address: walletAddress,
@@ -108,6 +149,71 @@ const App = () => {
     }
   };
 
+  const getEarlyAccessDecisionStorageKey = (address: string) =>
+    `${EARLY_ACCESS_NOTICE_STORAGE_KEY_PREFIX}${address.toLowerCase()}`;
+
+  const buildEarlyAccessDecisionMessage = (status: EarlyAccessRequestStatus) => {
+    if (status === 'APPROVED') {
+      return 'Your early access request has been approved. Please test the mechanics and report any bugs.';
+    }
+    return 'Your early access request was rejected. You can submit a new one on the home page.';
+  };
+
+  const fetchEarlyAccessStatus = useCallback(async () => {
+    if (!lastAuthAddress) {
+      setEarlyAccessStatus(null);
+      return;
+    }
+    try {
+      const response = await api.getEarlyAccessFeedbackStatus();
+      const payload = (response.data || null) as EarlyAccessStatusPayload | null;
+      setEarlyAccessStatus(payload);
+
+      const request = payload?.request;
+      if (!request || !request.reviewedAt) return;
+      if (request.status !== 'APPROVED' && request.status !== 'REJECTED') return;
+
+      const storageKey = getEarlyAccessDecisionStorageKey(lastAuthAddress);
+      const fingerprint = `${request.id}:${request.status}:${request.reviewedAt}`;
+      let seenFingerprint: string | null = null;
+      try {
+        seenFingerprint = localStorage.getItem(storageKey);
+      } catch {
+        seenFingerprint = null;
+      }
+      if (seenFingerprint === fingerprint) return;
+
+      setEarlyAccessDecisionNotice(buildEarlyAccessDecisionMessage(request.status));
+      try {
+        localStorage.setItem(storageKey, fingerprint);
+      } catch {
+        // ignore storage errors
+      }
+    } catch {
+      // ignore polling errors for this lightweight status
+    }
+  }, [lastAuthAddress]);
+
+  const handleSubmitEarlyAccess = useCallback(async (payload: { contact: string; message: string }) => {
+    if (!lastAuthAddress) {
+      setIsWalletConnectOpen(true);
+      throw new Error('Connect your wallet first.');
+    }
+    setEarlyAccessSubmitting(true);
+    try {
+      await api.sendFeedback({
+        topic: 'EARLY_ACCESS',
+        contact: payload.contact,
+        message: payload.message,
+      });
+      await fetchEarlyAccessStatus();
+    } catch (error: any) {
+      throw new Error(error?.message || 'Failed to send early access request.');
+    } finally {
+      setEarlyAccessSubmitting(false);
+    }
+  }, [lastAuthAddress, fetchEarlyAccessStatus]);
+
   const resetUserState = () => {
     setUser(INITIAL_USER);
     setInventory([]);
@@ -116,6 +222,9 @@ const App = () => {
     setBattleHistory([]);
     setBalance(0);
     setProfileView(null);
+    setEarlyAccessStatus(null);
+    setEarlyAccessSubmitting(false);
+    setEarlyAccessDecisionNotice(null);
     setActiveTab('home');
   };
 
@@ -214,7 +323,7 @@ const App = () => {
         setBattleHistory(
           response.data.battleHistory.map((battle: any) => ({
             id: battle.id,
-            opponent: battle.opponent || 'Bot',
+            opponent: battle.opponent || battle.opponentId || 'Bot',
             result: battle.result,
             cost: battle.cost,
             wonValue: battle.wonValue,
@@ -307,6 +416,104 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(BACKGROUND_ANIMATION_STORAGE_KEY, isBackgroundAnimated ? '1' : '0');
+    } catch {
+      // ignore storage errors
+    }
+  }, [isBackgroundAnimated]);
+
+  useEffect(() => {
+    if (!lastAuthAddress) {
+      setEarlyAccessStatus(null);
+      setEarlyAccessDecisionNotice(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      await fetchEarlyAccessStatus();
+    };
+    poll();
+    const timer = window.setInterval(poll, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [lastAuthAddress, fetchEarlyAccessStatus]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    const error = params.get('error');
+    const errorDescription = params.get('error_description');
+    if (!code && !error) return;
+
+    window.history.replaceState({}, '', window.location.pathname);
+    setActiveTab('profile');
+
+    if (error) {
+      const reason = errorDescription || error;
+      setTwitterError(`Twitter link failed: ${reason}`);
+      return;
+    }
+
+    if (!code || !state) {
+      setTwitterError('Twitter callback data is incomplete.');
+      return;
+    }
+
+    setPendingTwitterCode(code);
+    setPendingTwitterState(state);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingTwitterCode || !pendingTwitterState) return;
+    if (!lastAuthAddress || !user.id) return;
+
+    let cancelled = false;
+    const linkTwitter = async () => {
+      setTwitterBusy(true);
+      setTwitterError(null);
+      try {
+        const response = await api.linkTwitter(pendingTwitterCode, pendingTwitterState);
+        if (cancelled) return;
+        if (!response.data?.user) {
+          throw new Error('Failed to link Twitter account.');
+        }
+        setUser(prev => ({ ...prev, ...response.data?.user }));
+        setProfileView(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            user: { ...prev.user, ...response.data.user },
+          };
+        });
+        const linkedUsername = response.data.user.twitterUsername
+          ? `@${response.data.user.twitterUsername}`
+          : 'Twitter';
+        setTwitterNotice(`${linkedUsername} connected successfully.`);
+      } catch (error: any) {
+        if (!cancelled) {
+          setTwitterError(error?.message || 'Failed to link Twitter account.');
+        }
+      } finally {
+        if (!cancelled) {
+          setTwitterBusy(false);
+          setPendingTwitterCode(null);
+          setPendingTwitterState(null);
+        }
+      }
+    };
+
+    linkTwitter();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingTwitterCode, pendingTwitterState, lastAuthAddress, user.id]);
+
+  useEffect(() => {
     const targetWallet = (user.walletAddress || walletAddress || '').toLowerCase();
     if (!lastAuthAddress || !targetWallet) return;
     if (targetWallet !== lastAuthAddress.toLowerCase()) return;
@@ -376,11 +583,14 @@ const App = () => {
       try {
         const response = await api.getBattleLobbies();
         const lobbies = Array.isArray(response.data?.lobbies) ? response.data.lobbies : [];
+        const activeBattleLobbyId = sessionStorage.getItem('casefun:activeBattleLobbyId');
         const seen = new Set(readSeen());
         const fresh = lobbies.find((lobby: any) => {
           if (lobby?.status !== 'IN_PROGRESS' || !lobby?.startedAt) return false;
-          const isParticipant = lobby.hostUserId === user.id || lobby.joinerUserId === user.id;
-          if (!isParticipant) return false;
+          const isCreator = lobby.hostUserId === user.id;
+          if (!isCreator) return false;
+          if (activeTab === 'casebattle') return false;
+          if (activeBattleLobbyId && String(activeBattleLobbyId) === String(lobby.id)) return false;
           const id = `${lobby.id}:${lobby.startedAt}`;
           return !seen.has(id);
         });
@@ -408,7 +618,13 @@ const App = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [lastAuthAddress, canUseActivities, user.id]);
+  }, [lastAuthAddress, canUseActivities, user.id, activeTab]);
+
+  useEffect(() => {
+    if (!battleStartAlert) return;
+    const timer = window.setTimeout(() => setBattleStartAlert(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [battleStartAlert]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -669,14 +885,14 @@ const App = () => {
   const handleBattleFinish = async (
     wonItems: Item[],
     totalCost: number,
-    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null }
+    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null; opponentName?: string }
   ) => {
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
     const battleRecord: BattleRecord = {
       id: `battle-${Date.now()}`,
-      opponent: 'Bot_SniperX',
+      opponent: options?.opponentName || 'Bot',
       result: isWin ? 'WIN' : 'LOSS',
       cost: totalCost,
       wonValue: wonValue,
@@ -690,6 +906,7 @@ const App = () => {
         reserveItems: options?.reserveItems || [],
         mode: options?.mode || 'PVP',
         lobbyId: options?.lobbyId || undefined,
+        opponentName: options?.opponentName || undefined,
       });
       const created = response.data?.items;
       if (Array.isArray(created) && created.length > 0) {
@@ -803,6 +1020,45 @@ const App = () => {
     }
   };
 
+  const handleConnectTwitter = async () => {
+    setTwitterNotice(null);
+    setTwitterError(null);
+    try {
+      const response = await api.getTwitterConnectUrl();
+      const url = response.data?.url;
+      if (!url) {
+        throw new Error('Failed to start Twitter linking.');
+      }
+      window.location.href = url;
+    } catch (error: any) {
+      setTwitterError(error?.message || 'Failed to start Twitter linking.');
+    }
+  };
+
+  const handleDisconnectTwitter = async () => {
+    setTwitterBusy(true);
+    setTwitterNotice(null);
+    setTwitterError(null);
+    try {
+      const response = await api.unlinkTwitter();
+      if (response.data?.user) {
+        setUser(prev => ({ ...prev, ...response.data?.user }));
+        setProfileView(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            user: { ...prev.user, ...response.data.user },
+          };
+        });
+      }
+      setTwitterNotice('Twitter account disconnected.');
+    } catch (error: any) {
+      setTwitterError(error?.message || 'Failed to disconnect Twitter account.');
+    } finally {
+      setTwitterBusy(false);
+    }
+  };
+
   const handleChargeBattle = async (amount: number) => {
     try {
       const response = await api.chargeBattle(amount);
@@ -895,13 +1151,14 @@ const App = () => {
     }
     return botProfiles[username]?.user?.avatar || undefined;
   };
+  const backgroundPulseClass = isBackgroundAnimated ? 'animate-pulse-slow' : '';
 
   return (
     <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
       {/* Global Parallax Background - Fixed positioning */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
             <div 
-              className="absolute w-[600px] h-[600px] bg-web3-accent/30 rounded-full blur-[140px] animate-pulse-slow"
+              className={`absolute w-[600px] h-[600px] bg-web3-accent/30 rounded-full blur-[140px] ${backgroundPulseClass}`}
               style={{ 
                 top: '-100px',
                 right: '10%',
@@ -910,7 +1167,7 @@ const App = () => {
             ></div>
             
             <div 
-              className="absolute w-[700px] h-[700px] bg-web3-purple/25 rounded-full blur-[150px] animate-pulse-slow"
+              className={`absolute w-[700px] h-[700px] bg-web3-purple/25 rounded-full blur-[150px] ${backgroundPulseClass}`}
               style={{ 
                 top: '20%',
                 left: '5%',
@@ -919,7 +1176,7 @@ const App = () => {
             ></div>
 
             <div 
-              className="absolute w-[800px] h-[800px] bg-web3-success/20 rounded-full blur-[160px] animate-pulse-slow"
+              className={`absolute w-[800px] h-[800px] bg-web3-success/20 rounded-full blur-[160px] ${backgroundPulseClass}`}
               style={{ 
                 top: '50%',
                 right: '15%',
@@ -928,7 +1185,7 @@ const App = () => {
             ></div>
 
             <div 
-              className="absolute w-[650px] h-[650px] bg-web3-gold/25 rounded-full blur-[140px] animate-pulse-slow"
+              className={`absolute w-[650px] h-[650px] bg-web3-gold/25 rounded-full blur-[140px] ${backgroundPulseClass}`}
               style={{ 
                 bottom: '10%',
                 left: '20%',
@@ -937,7 +1194,7 @@ const App = () => {
             ></div>
 
             <div 
-              className="absolute w-[750px] h-[750px] bg-web3-purple/30 rounded-full blur-[155px] animate-pulse-slow"
+              className={`absolute w-[750px] h-[750px] bg-web3-purple/30 rounded-full blur-[155px] ${backgroundPulseClass}`}
               style={{ 
                 bottom: '-10%',
                 right: '25%',
@@ -970,7 +1227,14 @@ const App = () => {
         <main className="flex-1 overflow-y-auto custom-scrollbar relative pt-20">
           <div className="relative min-h-full">
             {activeTab === 'home' && (
-              <HomeView onCreateCase={handleCreateCase} />
+              <HomeView
+                onCreateCase={handleCreateCase}
+                isAuthenticated={Boolean(lastAuthAddress)}
+                onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                onSubmitEarlyAccess={handleSubmitEarlyAccess}
+                earlyAccessSubmitting={earlyAccessSubmitting}
+                earlyAccessStatus={earlyAccessStatus}
+              />
             )}
 
             {activeTab === 'createcase' && (
@@ -1042,7 +1306,7 @@ const App = () => {
                   burntItems={profileView?.burntItems || burntItems}
                   claimedItems={profileView?.claimedItems || claimedItems}
                   battleHistory={profileView?.battleHistory || battleHistory}
-                  balance={balance}
+                  balance={profileView?.user?.balance ?? balance}
                   cases={cases}
                   isEditable={!profileView}
                   onSelectUser={handleSelectUser}
@@ -1051,6 +1315,13 @@ const App = () => {
                   onUploadAvatar={handleUploadAvatar}
                   onUpdateAvatarMeta={handleUpdateAvatarMeta}
                   onClaimToken={handleClaimToken}
+                  onConnectTwitter={handleConnectTwitter}
+                  onDisconnectTwitter={handleDisconnectTwitter}
+                  twitterBusy={twitterBusy}
+                  twitterNotice={twitterNotice}
+                  twitterError={twitterError}
+                  isBackgroundAnimated={isBackgroundAnimated}
+                  onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                 />
               </div>
             )}
@@ -1200,6 +1471,23 @@ const App = () => {
             </div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">Tap to open live battle</div>
           </button>
+        )}
+        {earlyAccessDecisionNotice && (
+          <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[85] w-[min(92vw,560px)] rounded-2xl border border-web3-accent/35 bg-black/90 backdrop-blur-md px-4 py-3 shadow-[0_16px_36px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-web3-accent">Early Access</div>
+                <div className="text-sm text-white mt-1">{earlyAccessDecisionNotice}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEarlyAccessDecisionNotice(null)}
+                className="px-2 py-1 rounded-md border border-white/[0.12] text-[10px] uppercase tracking-widest text-gray-300 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         )}
         <FeedbackWidget
           isAuthenticated={Boolean(lastAuthAddress)}

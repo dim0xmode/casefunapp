@@ -19,6 +19,9 @@ export const config = {
   treasuryPrivateKey: process.env.TREASURY_PRIVATE_KEY || process.env.PRIVATE_KEY || '',
   treasuryPayoutAddress: process.env.TREASURY_PAYOUT_ADDRESS || '',
   confirmations: parseInt(process.env.CONFIRMATIONS || '1', 10),
+  twitterClientId: process.env.TWITTER_CLIENT_ID || '',
+  twitterClientSecret: process.env.TWITTER_CLIENT_SECRET || '',
+  twitterRedirectUri: process.env.TWITTER_REDIRECT_URI || '',
 };
 
 // Validate required environment variables
@@ -32,6 +35,10 @@ if (config.nodeEnv === 'production' && config.jwtSecret === 'dev-secret-change-i
 
 if (!config.ethereumRpcUrl || !config.treasuryAddress || !config.tokenFactoryAddress) {
   console.warn('⚠️  WARNING: Blockchain config is incomplete (RPC/TREASURY/TOKEN_FACTORY).');
+}
+
+if (config.twitterClientId && !config.twitterClientSecret) {
+  console.warn('⚠️  WARNING: TWITTER_CLIENT_ID is set without TWITTER_CLIENT_SECRET.');
 }
 
 export const isDevelopment = config.nodeEnv === 'development';

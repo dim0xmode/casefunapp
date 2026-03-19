@@ -22,7 +22,7 @@ interface BattleViewProps {
   onBattleFinish: (
     wonItems: Item[],
     totalCost: number,
-    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null }
+    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null; opponentName?: string }
   ) => void;
   balance: number;
   onChargeBattle: (amount: number) => Promise<boolean>;
@@ -83,6 +83,8 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
   const [rightPlayerAvatarMeta, setRightPlayerAvatarMeta] = useState<ImageMeta | undefined>(undefined);
   const [leftPlayerIsBot, setLeftPlayerIsBot] = useState(false);
   const [rightPlayerIsBot, setRightPlayerIsBot] = useState(false);
+  const [isWaitingForOwner, setIsWaitingForOwner] = useState(false);
+  const [ownerWaitSeconds, setOwnerWaitSeconds] = useState(5);
 
   const isCaseExpired = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
@@ -110,6 +112,23 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
   const ownBattles = filteredBattles.filter(battle => battle.host === userName);
   const otherBattles = filteredBattles.filter(battle => battle.host !== userName);
+
+  const pickHostWinsOnTie = () => {
+    // Deterministic tie-break for PVP: both clients compute the same winner.
+    if (!currentBattleId) return Math.random() < 0.5;
+    let hash = 0;
+    for (let i = 0; i < currentBattleId.length; i += 1) {
+      hash = (hash * 31 + currentBattleId.charCodeAt(i)) % 2147483647;
+    }
+    return hash % 2 === 0;
+  };
+
+  const resolveUserWon = (userTotal: number, opponentTotal: number) => {
+    if (userTotal > opponentTotal) return true;
+    if (userTotal < opponentTotal) return false;
+    const hostWinsOnTie = pickHostWinsOnTie();
+    return isOwnBattle ? hostWinsOnTie : !hostWinsOnTie;
+  };
 
   const activeCases = useMemo(
     () => cases.filter((caseData) => !isCaseExpired(caseData)),
@@ -245,6 +264,20 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     sessionStorage.removeItem('casefun:focusBattleLobbyId');
     joinBattle(target);
   }, [availableBattles, gameState]);
+
+  useEffect(() => {
+    if (gameState !== 'SETUP' && currentBattleId) {
+      sessionStorage.setItem('casefun:activeBattleLobbyId', currentBattleId);
+      return;
+    }
+    sessionStorage.removeItem('casefun:activeBattleLobbyId');
+  }, [gameState, currentBattleId]);
+
+  useEffect(() => {
+    return () => {
+      sessionStorage.removeItem('casefun:activeBattleLobbyId');
+    };
+  }, []);
 
   const joinBattle = (battle: BattleEntry) => {
     setSelectedCases(battle.cases);
@@ -459,6 +492,16 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
         }
       }
     }
+    if (hasRealOpponent && !isOwnBattle) {
+      setStartConfirm(false);
+      setIsWaitingForOwner(true);
+      setOwnerWaitSeconds(5);
+      return;
+    }
+    startBattleNow();
+  };
+
+  const startBattleNow = async () => {
     if (currentBattleId && !isSpectator) {
       try {
         const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
@@ -470,9 +513,20 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
       }
     }
     setStartConfirm(false);
+    setIsWaitingForOwner(false);
     setBattleStarted(true);
     setCountdown(3);
   };
+
+  useEffect(() => {
+    if (!isWaitingForOwner) return;
+    if (ownerWaitSeconds <= 0) {
+      startBattleNow();
+      return;
+    }
+    const timer = window.setTimeout(() => setOwnerWaitSeconds((prev) => prev - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [isWaitingForOwner, ownerWaitSeconds]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -498,7 +552,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
         return;
       }
     }
-    const mode: 'BOT' | 'PVP' = isOwnBattle ? 'BOT' : 'PVP';
+    const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
     try {
       const response = await api.resolveBattle(
         selectedCases.map((entry) => entry.id),
@@ -578,7 +632,8 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     let reserveItems: Item[] = [];
     const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
     
-    if (finalUserTotal >= finalBotTotal) {
+    const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
+    if (userWon) {
       const allUserItems = battleOutcomes.map(o => o.userItem);
       const allBotItems = battleOutcomes.map(o => o.botItem);
       wonItems = [...allUserItems, ...allBotItems];
@@ -588,17 +643,23 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     }
 
     if (!isSpectator) {
+      const opponentName = isOwnBattle ? (botName || 'Bot') : (hostName || 'Opponent');
       onBattleFinish(wonItems, totalCost, {
         reserveItems,
         mode,
         lobbyId: currentBattleId,
+        opponentName,
       });
     }
     const winnerName = isSpectator
-      ? (finalUserTotal >= finalBotTotal ? (hostName || 'Host') : (botName || 'Opponent'))
-      : (finalUserTotal >= finalBotTotal
-          ? userName
-          : (isOwnBattle ? (botName || 'Bot') : (hostName || 'Opponent')));
+      ? (() => {
+          const spectatorTie = finalUserTotal === finalBotTotal;
+          if (spectatorTie) {
+            return pickHostWinsOnTie() ? (hostName || 'Host') : (botName || 'Opponent');
+          }
+          return finalUserTotal > finalBotTotal ? (hostName || 'Host') : (botName || 'Opponent');
+        })()
+      : (userWon ? userName : (isOwnBattle ? (botName || 'Bot') : (hostName || 'Opponent')));
     setForcedWinnerName(winnerName);
     if (currentBattleId) {
       setAvailableBattles(prev => prev.filter(battle => battle.id !== currentBattleId));
@@ -629,6 +690,8 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     setLeftPlayerIsBot(false);
     setRightPlayerIsBot(false);
     setHasRealOpponent(false);
+    setIsWaitingForOwner(false);
+    setOwnerWaitSeconds(5);
     setGameState('SETUP');
   };
 
@@ -1024,10 +1087,10 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
     const leftTotal = leftIsUser ? finalUserTotal : finalBotTotal;
     const rightTotal = leftIsUser ? finalBotTotal : finalUserTotal;
-    const userWon = finalUserTotal >= finalBotTotal;
+    const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
     const leftWon = forcedWinnerName
       ? forcedWinnerName.toLowerCase() === leftName.toLowerCase()
-      : leftTotal >= rightTotal;
+      : (leftTotal === rightTotal ? (leftIsUser ? userWon : !userWon) : leftTotal > rightTotal);
     const displayWin = isSpectator ? leftWon : userWon;
     const wonItems = userWon
       ? [...battleOutcomes.map(o => o.userItem), ...battleOutcomes.map(o => o.botItem)]
@@ -1157,14 +1220,14 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
               <div className="relative mt-20 flex flex-col items-center animate-fade-in">
                 <button
                   onClick={handleStartBattle}
-                  disabled={startConfirm}
+                  disabled={startConfirm || isWaitingForOwner}
                   className={`w-32 h-32 rounded-full border-2 flex items-center justify-center transition ${
                     !isAuthenticated
                       ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
                       : canStartBattleNow
                         ? 'border-web3-accent/60 bg-black/30 shadow-[0_0_24px_rgba(102,252,241,0.35)] hover:scale-105'
                         : 'border-red-500/40 bg-gray-800/50'
-                  } ${startConfirm ? 'opacity-40 cursor-wait' : ''}`}
+                  } ${(startConfirm || isWaitingForOwner) ? 'opacity-40 cursor-wait' : ''}`}
                   aria-label="Join Battle"
                 >
                   <span className={`text-xs uppercase tracking-widest font-bold text-center px-2 ${
@@ -1176,7 +1239,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                         ? `Need ${formatShortfallUp(battleShortfall)} ₮ more • Top up`
                         : isOwnBattle
                           ? 'Call Bot'
-                          : 'Join'}
+                          : isWaitingForOwner
+                            ? 'Waiting'
+                            : 'Join'}
                   </span>
                 </button>
               </div>
@@ -1296,6 +1361,26 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                 >
                   {isOwnBattle ? 'Call Bot' : 'Start Battle'}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isWaitingForOwner && !battleStarted && opponent.type && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)] text-center">
+              <div className="text-[10px] uppercase tracking-widest text-gray-500">Lobby status</div>
+              <h3 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">
+                Waiting
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                  OWNER
+                </span>
+              </h3>
+              <div className="mt-3 text-sm text-gray-300">
+                Waiting for battle owner to join lobby...
+              </div>
+              <div className="mt-2 text-xs uppercase tracking-widest text-web3-accent">
+                Starting in {ownerWaitSeconds}s
               </div>
             </div>
           </div>

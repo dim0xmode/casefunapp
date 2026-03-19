@@ -35,6 +35,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const treasuryAddress = String(import.meta.env.VITE_TREASURY_ADDRESS || '');
   const rpcUrl = String(import.meta.env.VITE_RPC_URL || '');
   const explorerUrl = String(import.meta.env.VITE_EXPLORER_URL || '');
+  const sepoliaFaucetUrl = 'https://sepolia-faucet.pk910.de/';
 
   const parsedUsdt = useMemo(() => Number(usdtAmount.replace(/,/g, '.').trim()), [usdtAmount]);
   const parsedEth = useMemo(() => Number(ethAmount.replace(/,/g, '.').trim()), [ethAmount]);
@@ -249,6 +250,18 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">You pay</div>
                   <div className="text-sm font-bold text-white">ETH (Sepolia)</div>
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    Need test ETH? Use{' '}
+                    <a
+                      href={sepoliaFaucetUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-web3-accent hover:text-white transition underline decoration-dotted"
+                    >
+                      faucet
+                    </a>
+                    .
+                  </div>
                 </div>
               </div>
               <input

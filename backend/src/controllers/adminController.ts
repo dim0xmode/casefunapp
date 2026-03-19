@@ -14,6 +14,7 @@ const normalizeParam = (value: string | string[] | undefined): string => {
 };
 
 const GAS_LOW_THRESHOLD_ETH = 0.03;
+const FEEDBACK_REVIEW_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 
 const logAdminAction = async (adminId: string, action: string, metadata?: Record<string, any>, entity?: string, entityId?: string) => {
   await prisma.adminAuditLog.create({
@@ -583,6 +584,86 @@ export const updateFeedbackReadStatus = async (req: Request, res: Response, next
     });
 
     res.json({ status: 'success', data: { message: updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateFeedbackStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const adminId = (req as any).userId;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('Feedback id is required', 400));
+    }
+
+    const status = String(req.body?.status || '').trim().toUpperCase();
+    if (!FEEDBACK_REVIEW_STATUSES.includes(status as any)) {
+      return next(new AppError('Invalid feedback status', 400));
+    }
+
+    const resolvedAt = status === 'PENDING' ? null : new Date();
+    const updateData: Record<string, any> = {
+      status,
+      reviewedAt: resolvedAt,
+    };
+    if (status !== 'PENDING') {
+      updateData.isRead = true;
+      updateData.readAt = new Date();
+    }
+
+    const { updatedMessage, roleUpdatedTo } = await prisma.$transaction(async (tx) => {
+      const feedback = await tx.feedbackMessage.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          topic: true,
+          userId: true,
+        },
+      });
+      if (!feedback) {
+        throw new AppError('Feedback message not found', 404);
+      }
+
+      const updatedMessage = await tx.feedbackMessage.update({
+        where: { id },
+        data: updateData,
+      });
+
+      let roleUpdatedTo: string | null = null;
+      // Early access approval grants MODERATOR role to regular users.
+      if (feedback.topic === 'EARLY_ACCESS' && status === 'APPROVED') {
+        const targetUser = await tx.user.findUnique({
+          where: { id: feedback.userId },
+          select: { id: true, role: true },
+        });
+        if (targetUser && targetUser.role === 'USER') {
+          await tx.user.update({
+            where: { id: targetUser.id },
+            data: { role: 'MODERATOR' },
+          });
+          roleUpdatedTo = 'MODERATOR';
+        }
+      }
+
+      return { updatedMessage, roleUpdatedTo };
+    });
+
+    await logAdminAction(
+      adminId,
+      'FEEDBACK_STATUS_UPDATE',
+      { status, roleUpdatedTo },
+      'FeedbackMessage',
+      id
+    );
+
+    res.json({
+      status: 'success',
+      data: {
+        message: updatedMessage,
+        roleUpdatedTo,
+      },
+    });
   } catch (error) {
     next(error);
   }

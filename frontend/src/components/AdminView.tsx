@@ -1241,52 +1241,117 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'feedback' && (
             <div className="space-y-2">
-              {feedbackMessages.map((item: any) => (
-                <div
-                  key={item.id}
-                  className={`grid grid-cols-1 md:grid-cols-8 gap-3 items-center rounded-xl p-3 text-xs ${
-                    item.isRead
-                      ? 'bg-black/30 border border-white/[0.08] text-gray-400'
-                      : 'bg-red-500/10 border border-red-500/30 text-red-200'
-                  }`}
-                >
-                  <div className="md:col-span-2 min-w-0">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">User</div>
-                    <div className="truncate">{item.user?.username || 'Unknown'}</div>
-                    <div className="text-[10px] text-gray-500 truncate">{item.user?.walletAddress || '-'}</div>
+              {feedbackMessages.map((item: any) => {
+                const status = String(item.status || 'PENDING').toUpperCase();
+                const isEarlyAccessRequest = item.topic === 'EARLY_ACCESS';
+                const isResolvedEarlyAccess = isEarlyAccessRequest && (status === 'APPROVED' || status === 'REJECTED');
+                const resolvedLabel =
+                  status === 'APPROVED'
+                    ? 'Early access granted'
+                    : status === 'REJECTED'
+                      ? 'Request rejected'
+                      : 'Resolved';
+                const statusClass =
+                  status === 'APPROVED'
+                    ? 'bg-web3-success/20 border-web3-success/40 text-web3-success'
+                    : status === 'REJECTED'
+                      ? 'bg-red-500/15 border-red-500/40 text-red-300'
+                      : 'bg-yellow-400/15 border-yellow-400/35 text-yellow-300';
+                return (
+                  <div
+                    key={item.id}
+                    className={`grid grid-cols-1 md:grid-cols-10 gap-3 items-center rounded-xl p-3 text-xs ${
+                      item.isRead
+                        ? 'bg-black/30 border border-white/[0.08] text-gray-400'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-200'
+                    }`}
+                  >
+                    <div className="md:col-span-2 min-w-0">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">User</div>
+                      <div className="truncate">{item.user?.username || 'Unknown'}</div>
+                      <div className="text-[10px] text-gray-500 truncate">{item.user?.walletAddress || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Topic</div>
+                      <div>{item.topic}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Status</div>
+                      <div className={`inline-flex px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-widest ${statusClass}`}>
+                        {status}
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-1">{item.reviewedAt ? formatDate(item.reviewedAt) : '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Contact</div>
+                      <div className="truncate">{item.contact}</div>
+                    </div>
+                    <div className="md:col-span-2 min-w-0">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Message</div>
+                      <div className="break-words whitespace-pre-wrap">{item.message}</div>
+                    </div>
+                    <div className="text-[10px] text-gray-500">{formatDate(item.createdAt)}</div>
+                    <div className="flex justify-end gap-1.5 flex-wrap">
+                      {!isResolvedEarlyAccess && (
+                        <button
+                          onClick={async () => {
+                            setSaving(item.id);
+                            await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
+                            await load();
+                            setSaving(null);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+                            item.isRead
+                              ? 'bg-white/5 border-white/10 text-gray-300'
+                              : 'bg-red-500/20 border-red-500/40 text-red-200'
+                          }`}
+                        >
+                          {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
+                        </button>
+                      )}
+                      {isEarlyAccessRequest && status === 'PENDING' && (
+                        <>
+                          <button
+                            onClick={async () => {
+                              setSaving(item.id);
+                              await api.updateAdminFeedbackStatus(item.id, 'APPROVED');
+                              await load();
+                              setSaving(null);
+                            }}
+                            disabled={saving === item.id}
+                            className="px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border bg-web3-success/20 border-web3-success/40 text-web3-success disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={async () => {
+                              setSaving(item.id);
+                              await api.updateAdminFeedbackStatus(item.id, 'REJECTED');
+                              await load();
+                              setSaving(null);
+                            }}
+                            disabled={saving === item.id}
+                            className="px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border bg-red-500/15 border-red-500/40 text-red-300 disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {isResolvedEarlyAccess && (
+                        <div
+                          className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+                            status === 'APPROVED'
+                              ? 'bg-web3-success/10 border-web3-success/35 text-web3-success'
+                              : 'bg-red-500/10 border-red-500/35 text-red-300'
+                          }`}
+                        >
+                          {resolvedLabel}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Topic</div>
-                    <div>{item.topic}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Contact</div>
-                    <div className="truncate">{item.contact}</div>
-                  </div>
-                  <div className="md:col-span-2 min-w-0">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">Message</div>
-                    <div className="break-words whitespace-pre-wrap">{item.message}</div>
-                  </div>
-                  <div className="text-[10px] text-gray-500">{formatDate(item.createdAt)}</div>
-                  <div className="flex justify-end">
-                    <button
-                      onClick={async () => {
-                        setSaving(item.id);
-                        await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
-                        await load();
-                        setSaving(null);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
-                        item.isRead
-                          ? 'bg-white/5 border-white/10 text-gray-300'
-                          : 'bg-red-500/20 border-red-500/40 text-red-200'
-                      }`}
-                    >
-                      {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {!feedbackMessages.length && (
                 <div className="text-sm text-gray-500">No feedback yet.</div>
               )}

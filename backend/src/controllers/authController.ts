@@ -94,7 +94,7 @@ export const loginWithWallet = async (
         data: {
           walletAddress: normalizedAddress,
           username,
-          balance: 5000,
+          balance: 0,
         },
       });
     }
@@ -147,6 +147,10 @@ export const loginWithWallet = async (
           role: user.role,
           avatar: user.avatarUrl,
           avatarMeta: user.avatarMeta,
+          twitterId: user.twitterId,
+          twitterUsername: user.twitterUsername,
+          twitterName: user.twitterName,
+          twitterLinkedAt: user.twitterLinkedAt,
         },
       },
     });
@@ -199,6 +203,10 @@ export const getProfile = async (
         role: true,
         avatarUrl: true,
         avatarMeta: true,
+        twitterId: true,
+        twitterUsername: true,
+        twitterName: true,
+        twitterLinkedAt: true,
         createdAt: true,
         inventory: {
           where: { status: 'ACTIVE', claimedAt: null },
@@ -258,6 +266,10 @@ export const getProfile = async (
           role: user.role,
           avatar: user.avatarUrl,
           avatarMeta: user.avatarMeta,
+          twitterId: user.twitterId,
+          twitterUsername: user.twitterUsername,
+          twitterName: user.twitterName,
+          twitterLinkedAt: user.twitterLinkedAt,
           createdAt: user.createdAt,
           stats: {
             casesOpened: caseOpeningsAgg._count._all,

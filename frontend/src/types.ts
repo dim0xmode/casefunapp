@@ -87,6 +87,10 @@ export interface User {
   role?: 'USER' | 'ADMIN' | 'MODERATOR';
   avatar?: string;
   avatarMeta?: ImageMeta;
+  twitterId?: string | null;
+  twitterUsername?: string | null;
+  twitterName?: string | null;
+  twitterLinkedAt?: string | number | null;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {

@@ -117,7 +117,7 @@ class ApiClient {
     );
   }
 
-  async recordBattle(result: string, cost: number, wonItems: any[], options?: { reserveItems?: any[]; mode?: 'BOT' | 'PVP'; lobbyId?: string }) {
+  async recordBattle(result: string, cost: number, wonItems: any[], options?: { reserveItems?: any[]; mode?: 'BOT' | 'PVP'; lobbyId?: string; opponentName?: string }) {
     return this.request<{ items: any[] }>('/user/battles/record', {
       method: 'POST',
       body: JSON.stringify({
@@ -127,6 +127,7 @@ class ApiClient {
         reserveItems: options?.reserveItems || [],
         mode: options?.mode || 'PVP',
         lobbyId: options?.lobbyId || null,
+        opponentName: options?.opponentName || null,
       }),
     });
   }
@@ -189,6 +190,28 @@ class ApiClient {
     });
   }
 
+  async getEarlyAccessFeedbackStatus() {
+    return this.request<{
+      canSubmit: boolean;
+      blockReason:
+        | 'PENDING_REVIEW'
+        | 'ALREADY_APPROVED'
+        | 'ALREADY_EARLY_ACCESS'
+        | 'ADMIN_ACCOUNT'
+        | 'SUPPORT_ACCOUNT'
+        | null;
+      request: {
+        id: string;
+        topic: 'EARLY_ACCESS';
+        status: 'PENDING' | 'APPROVED' | 'REJECTED';
+        contact: string;
+        message: string;
+        createdAt: string;
+        reviewedAt: string | null;
+      } | null;
+    }>('/user/feedback/early-access/status');
+  }
+
   async updateProfile(username: string) {
     return this.request<{ user: any }>('/user/profile', {
       method: 'PATCH',
@@ -219,6 +242,23 @@ class ApiClient {
     return this.request<{ available: boolean; reason?: string }>(
       `/user/username/check?username=${encodeURIComponent(username)}`
     );
+  }
+
+  async getTwitterConnectUrl() {
+    return this.request<{ url: string }>('/user/twitter/connect-url');
+  }
+
+  async linkTwitter(code: string, state: string) {
+    return this.request<{ user: any }>('/user/twitter/link', {
+      method: 'POST',
+      body: JSON.stringify({ code, state }),
+    });
+  }
+
+  async unlinkTwitter() {
+    return this.request<{ user: any }>('/user/twitter/link', {
+      method: 'DELETE',
+    });
   }
 
   // Case endpoints
@@ -370,6 +410,13 @@ class ApiClient {
     return this.request<{ message: any }>(`/admin/feedback/${messageId}/read`, {
       method: 'PATCH',
       body: JSON.stringify({ isRead }),
+    });
+  }
+
+  async updateAdminFeedbackStatus(messageId: string, status: 'PENDING' | 'APPROVED' | 'REJECTED') {
+    return this.request<{ message: any }>(`/admin/feedback/${messageId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     });
   }
 }

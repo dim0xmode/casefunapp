@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, Item, Case, ImageMeta } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, Coins, User as UserIcon, Settings } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Link2, Unlink2, Gift, Play, Pause } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -48,6 +48,13 @@ interface ProfileViewProps {
   onUploadAvatar?: (file: File, meta?: ImageMeta) => Promise<string | void> | string | void;
   onUpdateAvatarMeta?: (meta: ImageMeta) => Promise<void> | void;
   onClaimToken?: (caseId: string) => Promise<void> | void;
+  onConnectTwitter?: () => Promise<void> | void;
+  onDisconnectTwitter?: () => Promise<void> | void;
+  twitterBusy?: boolean;
+  twitterNotice?: string | null;
+  twitterError?: string | null;
+  isBackgroundAnimated?: boolean;
+  onToggleBackgroundAnimation?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -65,6 +72,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onUploadAvatar,
   onUpdateAvatarMeta,
   onClaimToken,
+  onConnectTwitter,
+  onDisconnectTwitter,
+  twitterBusy = false,
+  twitterError = null,
+  isBackgroundAnimated = true,
+  onToggleBackgroundAnimation,
 }) => {
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -210,6 +223,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       year: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+    });
+  };
+
+  const formatTwitterLinkedAt = (value?: string | number | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
     });
   };
 
@@ -511,13 +535,82 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto min-h-screen">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
-        
-        {/* Left: Profile Card */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          <div className="bg-black/20 border border-white/[0.12] p-8 rounded-2xl flex flex-col items-center text-center relative overflow-hidden backdrop-blur-2xl">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-web3-accent to-web3-purple"></div>
-            {isEditable && (
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8">
+        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl flex flex-col h-[440px] backdrop-blur-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">
+              Asset Portfolio
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPortfolioSort('name')}
+                className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                  portfolioSort === 'name'
+                    ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
+                    : 'text-gray-500 border-white/10 hover:text-white'
+                }`}
+              >
+                Name
+              </button>
+              <button
+                onClick={() => setPortfolioSort('amount')}
+                className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                  portfolioSort === 'amount'
+                    ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
+                    : 'text-gray-500 border-white/10 hover:text-white'
+                }`}
+              >
+                Amount
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <SearchInput
+              value={portfolioSearch}
+              onChange={setPortfolioSearch}
+              placeholder="Search token"
+              className="md:w-full"
+            />
+          </div>
+
+          <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0">
+            {portfolioEntries.length === 0 && (
+              <div className="text-gray-600 text-sm italic py-4 text-center">No tokens found.</div>
+            )}
+            {portfolioEntries.map(({ currency, total }) => (
+              <div key={currency} className="bg-black/25 backdrop-blur-xl px-4 py-3 rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${total > 0 ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}></div>
+                  <span className="font-bold text-gray-300 text-sm">${currency}</span>
+                </div>
+                <span className="font-mono text-white font-bold">{total}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl h-[440px] backdrop-blur-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple bg-size-200 animate-gradient"></div>
+          {isEditable && (
+            <>
+              {onToggleBackgroundAnimation && (
+                <button
+                  onClick={onToggleBackgroundAnimation}
+                  className={`absolute left-4 top-4 h-9 px-2.5 rounded-full border flex items-center justify-center gap-1.5 transition ${
+                    isBackgroundAnimated
+                      ? 'border-web3-accent/45 bg-web3-accent/15 text-web3-accent hover:border-web3-accent/70'
+                      : 'border-white/[0.12] bg-white/5 text-gray-300 hover:text-white hover:border-web3-accent/40'
+                  }`}
+                  title={isBackgroundAnimated ? 'Disable background animation' : 'Enable background animation'}
+                  aria-label="Toggle background animation"
+                >
+                  {isBackgroundAnimated ? <Pause size={13} /> : <Play size={13} />}
+                  <span className="text-[9px] font-bold uppercase tracking-widest">
+                    {isBackgroundAnimated ? 'FX ON' : 'FX OFF'}
+                  </span>
+                </button>
+              )}
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="absolute right-4 top-4 w-9 h-9 rounded-full bg-white/5 border border-white/[0.12] flex items-center justify-center text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
@@ -525,135 +618,162 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               >
                 <Settings size={16} />
               </button>
-            )}
-            
-            <div className="relative mb-6">
+            </>
+          )}
+
+          <div className="h-full flex flex-col items-center text-center">
+            <div className="relative mt-1 mb-4">
               <div className="absolute inset-0 bg-web3-accent/20 blur-xl rounded-full"></div>
-              <div className="w-32 h-32 rounded-full bg-gray-800 border-4 border-web3-accent flex items-center justify-center relative z-10 overflow-hidden">
+              <div className="w-24 h-24 rounded-full bg-gray-800 border-4 border-web3-accent flex items-center justify-center relative z-10 overflow-hidden">
                 {user?.avatar ? (
                   <ImageWithMeta src={user.avatar} meta={user.avatarMeta} className="w-full h-full" />
                 ) : (
-                  <UserIcon size={64} className="text-web3-accent" />
+                  <UserIcon size={48} className="text-web3-accent" />
                 )}
               </div>
             </div>
-            
-            <h1 className="text-3xl font-black text-white mb-2">{user?.username || 'User'}</h1>
-            
-            {/* Balance */}
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/30 border border-white/[0.12] backdrop-blur-xl mb-2">
-              <span className="font-mono text-sm font-bold text-white tabular-nums">{balance.toLocaleString('en-US')}₮</span>
+
+            <h2 className="text-2xl font-black text-white">{user?.username || 'User'}</h2>
+
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/30 border border-white/[0.12] backdrop-blur-xl mt-2 mb-2">
+              <span className="font-mono text-sm font-bold text-white tabular-nums">
+                {balance.toLocaleString('en-US')}₮
+              </span>
             </div>
-            
-            {/* Wallet */}
+
             {user?.walletAddress && (
-              <div 
-                className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mt-1 mb-4 hover:border-web3-accent/50 transition-colors cursor-pointer group/wallet"
+              <div
+                className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mb-4 hover:border-web3-accent/50 transition-colors cursor-pointer group/wallet"
                 onClick={() => navigator.clipboard.writeText(user.walletAddress)}
                 title={`Click to copy: ${user.walletAddress}`}
               >
                 <div className="w-2 h-2 rounded-full bg-web3-success shadow-[0_0_5px_#10B981] animate-pulse"></div>
-                <span className="font-mono text-web3-accent text-sm font-bold tracking-wide">{formatWalletAddress(user.walletAddress)}</span>
+                <span className="font-mono text-web3-accent text-xs font-bold tracking-wide">{formatWalletAddress(user.walletAddress)}</span>
                 <Copy size={12} className="text-gray-500 group-hover/wallet:text-web3-accent transition-colors ml-1" />
               </div>
             )}
 
-            <div className="w-full h-[1px] bg-white/5 my-6"></div>
+            <div className="w-full h-[1px] bg-white/5 mb-4"></div>
 
-            <div className="grid grid-cols-2 gap-4 w-full">
-              <StatCard label="Cases Opened" value={user?.stats?.casesOpened || 0} />
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <StatCard
+                label="Cases Opened"
+                value={user?.stats?.casesOpened || 0}
+                className="px-3 py-2 rounded-lg"
+                valueClassName="text-lg font-black text-white"
+              />
               <StatCard
                 label="Win Rate"
                 value={`${successRate}%`}
-                valueClassName={`text-2xl font-black ${parseFloat(successRate) > 50 ? 'text-web3-success' : 'text-gray-400'}`}
+                className="px-3 py-2 rounded-lg"
+                valueClassName={`text-lg font-black ${parseFloat(successRate) > 50 ? 'text-web3-success' : 'text-gray-400'}`}
               />
-            </div>
-          </div>
-
-          {/* Portfolio */}
-          <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl flex flex-col h-[356px] backdrop-blur-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">
-                Asset Portfolio
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPortfolioSort('name')}
-                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                    portfolioSort === 'name'
-                      ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
-                      : 'text-gray-500 border-white/10 hover:text-white'
-                  }`}
-                >
-                  Name
-                </button>
-                <button
-                  onClick={() => setPortfolioSort('amount')}
-                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                    portfolioSort === 'amount'
-                      ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
-                      : 'text-gray-500 border-white/10 hover:text-white'
-                  }`}
-                >
-                  Amount
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-3">
-              <SearchInput
-                value={portfolioSearch}
-                onChange={setPortfolioSearch}
-                placeholder="Search token"
-                className="md:w-full"
-              />
-            </div>
-
-            <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0">
-              {portfolioEntries.length === 0 && (
-                <div className="text-gray-600 text-sm italic py-4 text-center">No tokens found.</div>
-              )}
-              {portfolioEntries.map(({ currency, total }) => (
-                <div key={currency} className="bg-black/25 backdrop-blur-xl px-4 py-3 rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${total > 0 ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}></div>
-                    <span className="font-bold text-gray-300 text-sm">${currency}</span>
-                  </div>
-                  <span className="font-mono text-white font-bold">{total}</span>
-                </div>
-              ))}
             </div>
           </div>
         </div>
 
-        {/* Right: Tabs */}
-        <div className="lg:col-span-8 flex flex-col self-stretch">
-          <div className="flex items-center gap-2 mb-6">
-            <Tabs
-              className="flex-1"
-              tabs={[
-                { id: 'inventory', label: 'Items' },
-                { id: 'expired', label: 'Expired' },
-                { id: 'claimed', label: 'Claimed' },
-                { id: 'burnt', label: 'Burnt' },
-                { id: 'battles', label: 'Battles' },
-              ]}
-              activeId={tab}
-              onChange={(id) => setTab(id as any)}
-            />
-            {tab === 'inventory' && (
-              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-                Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl h-[440px] backdrop-blur-2xl flex flex-col">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">
+            Social & Rewards
+          </div>
+
+          <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Twitter / X</div>
+                {user?.twitterId ? (
+                  <>
+                    <div className="text-white font-bold text-sm mt-1">
+                      @{user.twitterUsername || 'connected'}
+                    </div>
+                    {user?.twitterName && (
+                      <div className="text-[11px] text-gray-400 mt-0.5">{user.twitterName}</div>
+                    )}
+                    {formatTwitterLinkedAt(user?.twitterLinkedAt) && (
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">
+                        Linked {formatTwitterLinkedAt(user?.twitterLinkedAt)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[11px] text-gray-400 mt-1">Not linked</div>
+                )}
+              </div>
+              <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${user?.twitterId ? 'border-web3-success/40 text-web3-success' : 'border-white/15 text-gray-400'}`}>
+                {user?.twitterId ? <Unlink2 size={14} /> : <Link2 size={14} />}
+              </div>
+            </div>
+
+            {isEditable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (user?.twitterId) {
+                    onDisconnectTwitter?.();
+                  } else {
+                    onConnectTwitter?.();
+                  }
+                }}
+                disabled={twitterBusy || (!user?.twitterId && !onConnectTwitter) || (Boolean(user?.twitterId) && !onDisconnectTwitter)}
+                className={`mt-4 w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                  user?.twitterId
+                    ? 'border-red-500/35 text-red-300 hover:border-red-400/60'
+                    : 'border-web3-accent/40 text-web3-accent hover:border-web3-accent/70'
+                } ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                {twitterBusy ? 'Please wait...' : user?.twitterId ? 'Disconnect Twitter' : 'Connect Twitter'}
               </button>
-            )}
-            {tab === 'expired' && (
-              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-                Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-              </button>
+            ) : (
+              <div className="mt-4 text-[10px] uppercase tracking-widest text-gray-500">
+                Social links visible only
+              </div>
             )}
           </div>
 
-          <div className="bg-black/20 border border-white/[0.12] rounded-2xl p-6 flex flex-col h-[810px] backdrop-blur-2xl">
+          <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4 mt-3 min-h-[106px]">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
+              <Gift size={12} />
+              Rewards
+            </div>
+            <div className="mt-2 text-[11px] text-gray-300">
+              Connect social account to unlock future reward quests and community bonuses.
+            </div>
+          </div>
+
+          {isEditable && twitterError && (
+            <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">
+              {twitterError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-6">
+        <Tabs
+          className="flex-1"
+          tabs={[
+            { id: 'inventory', label: 'Items' },
+            { id: 'expired', label: 'Expired' },
+            { id: 'claimed', label: 'Claimed' },
+            { id: 'burnt', label: 'Burnt' },
+            { id: 'battles', label: 'Battles' },
+          ]}
+          activeId={tab}
+          onChange={(id) => setTab(id as any)}
+        />
+        {tab === 'inventory' && (
+          <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+            Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+          </button>
+        )}
+        {tab === 'expired' && (
+          <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+            Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+          </button>
+        )}
+      </div>
+
+      <div className="bg-black/20 border border-white/[0.12] rounded-2xl p-6 flex flex-col h-[810px] backdrop-blur-2xl">
             {/* Inventory Tab */}
             {tab === 'inventory' && (
               <div className="flex flex-col h-full min-h-0">
@@ -1005,13 +1125,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
             )}
-          </div>
-        </div>
       </div>
 
       {isEditable && isSettingsOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-[92%] max-w-md bg-black/40 border border-white/[0.12] rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 animate-fade-in">
+          <div className="w-[92%] max-w-md bg-web3-card/95 border border-white/[0.12] rounded-3xl px-8 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)] animate-scale-in">
             <div className="text-xs uppercase tracking-widest text-gray-500">Profile Settings</div>
             <div className="text-2xl font-black text-white mt-1">Edit Profile</div>
 

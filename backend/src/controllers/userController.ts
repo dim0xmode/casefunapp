@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { config } from '../config/env.js';
 import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
@@ -8,6 +10,153 @@ import { resolveBattleDrops } from '../services/battleResolveService.js';
 
 const roundToTwo = (value: number) => Number(value.toFixed(2));
 const FEEDBACK_TOPICS = ['BUG_REPORT', 'EARLY_ACCESS', 'PARTNERSHIP'] as const;
+const EARLY_ACCESS_MESSAGE_MAX_LENGTH = 200;
+const EARLY_ACCESS_BLOCK_REASONS = {
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  ALREADY_APPROVED: 'ALREADY_APPROVED',
+  ALREADY_EARLY_ACCESS: 'ALREADY_EARLY_ACCESS',
+  ADMIN_ACCOUNT: 'ADMIN_ACCOUNT',
+  SUPPORT_ACCOUNT: 'SUPPORT_ACCOUNT',
+} as const;
+const TWITTER_AUTHORIZE_URL = 'https://twitter.com/i/oauth2/authorize';
+const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
+const TWITTER_ME_URL = 'https://api.twitter.com/2/users/me?user.fields=id,name,username';
+const TWITTER_STATE_TTL_MS = 10 * 60 * 1000;
+const TWITTER_SCOPE = 'users.read tweet.read offline.access';
+
+const encodeBase64Url = (value: Buffer | string) => {
+  const raw = Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf8');
+  return raw
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+};
+
+const decodeBase64Url = (value: string) => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  return Buffer.from(padded, 'base64').toString('utf8');
+};
+
+interface TwitterStatePayload {
+  userId: string;
+  ts: number;
+  nonce: string;
+  verifier: string;
+}
+
+const signTwitterState = (payload: TwitterStatePayload) => {
+  const serialized = JSON.stringify(payload);
+  return createHmac('sha256', config.jwtSecret).update(serialized).digest('hex');
+};
+
+const createTwitterCodeVerifier = () => encodeBase64Url(randomBytes(48));
+
+const createTwitterCodeChallenge = (verifier: string) => {
+  return encodeBase64Url(createHash('sha256').update(verifier).digest());
+};
+
+const createTwitterState = (userId: string) => {
+  const payload: TwitterStatePayload = {
+    userId,
+    ts: Date.now(),
+    nonce: encodeBase64Url(randomBytes(12)),
+    verifier: createTwitterCodeVerifier(),
+  };
+  const signature = signTwitterState(payload);
+  return encodeBase64Url(JSON.stringify({ payload, signature }));
+};
+
+const parseTwitterState = (rawState: string) => {
+  try {
+    const decoded = decodeBase64Url(rawState);
+    const parsed = JSON.parse(decoded) as { payload?: TwitterStatePayload; signature?: string };
+    if (!parsed?.payload || !parsed?.signature) {
+      return null;
+    }
+    const expectedSignature = signTwitterState(parsed.payload);
+    if (expectedSignature !== parsed.signature) {
+      return null;
+    }
+    const ageMs = Date.now() - Number(parsed.payload.ts || 0);
+    if (ageMs < 0 || ageMs > TWITTER_STATE_TTL_MS) {
+      return null;
+    }
+    if (!parsed.payload.userId || !parsed.payload.verifier) {
+      return null;
+    }
+    return parsed.payload;
+  } catch {
+    return null;
+  }
+};
+
+const ensureTwitterConfigured = () => {
+  if (!config.twitterClientId || !config.twitterClientSecret || !config.twitterRedirectUri) {
+    throw new AppError('Twitter integration is not configured', 503);
+  }
+};
+
+const buildPublicUser = (user: any) => ({
+  id: user.id,
+  username: user.username,
+  walletAddress: user.walletAddress,
+  balance: user.balance,
+  role: user.role,
+  avatar: user.avatarUrl,
+  avatarMeta: user.avatarMeta,
+  twitterId: user.twitterId,
+  twitterUsername: user.twitterUsername,
+  twitterName: user.twitterName,
+  twitterLinkedAt: user.twitterLinkedAt,
+});
+
+const exchangeTwitterCode = async (code: string, verifier: string) => {
+  ensureTwitterConfigured();
+
+  const body = new URLSearchParams({
+    code,
+    grant_type: 'authorization_code',
+    client_id: config.twitterClientId,
+    redirect_uri: config.twitterRedirectUri,
+    code_verifier: verifier,
+  });
+  const basicAuth = Buffer.from(`${config.twitterClientId}:${config.twitterClientSecret}`).toString('base64');
+  const response = await fetch(TWITTER_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth}`,
+    },
+    body: body.toString(),
+  });
+  const payload: any = await response.json().catch(() => null);
+  if (!response.ok || !payload?.access_token) {
+    const reason = payload?.error_description || payload?.error || 'Twitter token exchange failed';
+    throw new AppError(String(reason), 400);
+  }
+  return String(payload.access_token);
+};
+
+const fetchTwitterProfile = async (accessToken: string) => {
+  const response = await fetch(TWITTER_ME_URL, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const payload: any = await response.json().catch(() => null);
+  const profile = payload?.data;
+  if (!response.ok || !profile?.id || !profile?.username) {
+    const reason = payload?.title || payload?.detail || 'Failed to fetch Twitter profile';
+    throw new AppError(String(reason), 400);
+  }
+  return {
+    id: String(profile.id),
+    username: String(profile.username),
+    name: profile.name ? String(profile.name) : null,
+  };
+};
 
 export const topUpBalance = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -260,15 +409,7 @@ export const updateProfile = async (req: Request, res: Response, next: NextFunct
     res.json({
       status: 'success',
       data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          walletAddress: user.walletAddress,
-          balance: user.balance,
-          role: user.role,
-          avatar: user.avatarUrl,
-          avatarMeta: user.avatarMeta,
-        },
+        user: buildPublicUser(user),
       },
     });
   } catch (error) {
@@ -330,15 +471,7 @@ export const uploadAvatar = async (req: Request, res: Response, next: NextFuncti
       status: 'success',
       data: {
         avatarUrl,
-        user: {
-          id: user.id,
-          username: user.username,
-          walletAddress: user.walletAddress,
-          balance: user.balance,
-          role: user.role,
-          avatar: user.avatarUrl,
-          avatarMeta: user.avatarMeta,
-        },
+        user: buildPublicUser(user),
       },
     });
   } catch (error) {
@@ -362,15 +495,120 @@ export const updateAvatarMeta = async (req: Request, res: Response, next: NextFu
     res.json({
       status: 'success',
       data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          walletAddress: user.walletAddress,
-          balance: user.balance,
-          role: user.role,
-          avatar: user.avatarUrl,
-          avatarMeta: user.avatarMeta,
-        },
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTwitterConnectUrl = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    ensureTwitterConfigured();
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const state = createTwitterState(userId);
+    const payload = parseTwitterState(state);
+    if (!payload) {
+      return next(new AppError('Failed to prepare Twitter auth state', 500));
+    }
+    const authUrl = new URL(TWITTER_AUTHORIZE_URL);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', config.twitterClientId);
+    authUrl.searchParams.set('redirect_uri', config.twitterRedirectUri);
+    authUrl.searchParams.set('scope', TWITTER_SCOPE);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('code_challenge', createTwitterCodeChallenge(payload.verifier));
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+
+    res.json({
+      status: 'success',
+      data: {
+        url: authUrl.toString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const linkTwitterAccount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    const code = String(req.body?.code || '').trim();
+    const state = String(req.body?.state || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    if (!code || !state) {
+      return next(new AppError('Twitter code/state are required', 400));
+    }
+
+    const parsedState = parseTwitterState(state);
+    if (!parsedState || parsedState.userId !== userId) {
+      return next(new AppError('Invalid or expired Twitter state', 400));
+    }
+
+    const accessToken = await exchangeTwitterCode(code, parsedState.verifier);
+    const twitterProfile = await fetchTwitterProfile(accessToken);
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        twitterId: twitterProfile.id,
+        NOT: { id: userId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return next(new AppError('This Twitter account is already linked to another user', 409));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twitterId: twitterProfile.id,
+        twitterUsername: twitterProfile.username,
+        twitterName: twitterProfile.name,
+        twitterLinkedAt: new Date(),
+      },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const unlinkTwitterAccount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twitterId: null,
+        twitterUsername: null,
+        twitterName: null,
+        twitterLinkedAt: null,
+      },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: buildPublicUser(user),
       },
     });
   } catch (error) {
@@ -381,7 +619,7 @@ export const updateAvatarMeta = async (req: Request, res: Response, next: NextFu
 export const recordBattle = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
-    const { result, cost, wonItems, reserveItems, mode, lobbyId } = req.body;
+    const { result, cost, wonItems, reserveItems, mode, lobbyId, opponentName } = req.body;
     if (!result || !Number.isFinite(Number(cost))) {
       return next(new AppError('Invalid battle data', 400));
     }
@@ -395,6 +633,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
       await tx.battle.create({
         data: {
           userId,
+          opponentId: opponentName ? String(opponentName).trim() : null,
           result,
           cost: Number(cost),
           wonValue,
@@ -786,6 +1025,15 @@ export const createFeedbackMessage = async (req: Request, res: Response, next: N
     const topic = String(req.body?.topic || '').trim().toUpperCase();
     const contact = String(req.body?.contact || '').trim();
     const message = String(req.body?.message || '').trim();
+    const isEarlyAccess = topic === 'EARLY_ACCESS';
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true },
+    });
+
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
 
     if (!FEEDBACK_TOPICS.includes(topic as any)) {
       return next(new AppError('Invalid feedback topic', 400));
@@ -793,20 +1041,148 @@ export const createFeedbackMessage = async (req: Request, res: Response, next: N
     if (!contact || contact.length < 2 || contact.length > 100) {
       return next(new AppError('Contact is required (2-100 chars)', 400));
     }
-    if (!message || message.length > 500) {
-      return next(new AppError('Message is required (max 500 chars)', 400));
+    if (!message || message.length > (isEarlyAccess ? EARLY_ACCESS_MESSAGE_MAX_LENGTH : 500)) {
+      const max = isEarlyAccess ? EARLY_ACCESS_MESSAGE_MAX_LENGTH : 500;
+      return next(new AppError(`Message is required (max ${max} chars)`, 400));
+    }
+
+    if (isEarlyAccess) {
+      const normalizedRole = String(user.role || '').toUpperCase();
+      if (normalizedRole === 'MODERATOR') {
+        return next(new AppError('You already have early access.', 409));
+      }
+      if (normalizedRole === 'ADMIN') {
+        return next(new AppError('Administrators cannot submit early access requests.', 403));
+      }
+      if (normalizedRole === 'SUPPORT') {
+        return next(new AppError('Support accounts cannot submit early access requests.', 403));
+      }
+
+      const latestEarlyAccessRequest = await prisma.feedbackMessage.findFirst({
+        where: {
+          userId,
+          topic: 'EARLY_ACCESS',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (latestEarlyAccessRequest?.status === 'PENDING') {
+        return next(new AppError('Your previous early access request is still under review.', 409));
+      }
     }
 
     const feedback = await prisma.feedbackMessage.create({
       data: {
         userId,
         topic: topic as any,
+        status: 'PENDING',
         contact,
         message,
       },
     });
 
-    res.json({ status: 'success', data: { id: feedback.id } });
+    res.json({
+      status: 'success',
+      data: {
+        id: feedback.id,
+        topic: feedback.topic,
+        status: feedback.status,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEarlyAccessRequestStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const [user, latestRequest] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true },
+      }),
+      prisma.feedbackMessage.findFirst({
+        where: {
+          userId,
+          topic: 'EARLY_ACCESS',
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          topic: true,
+          status: true,
+          contact: true,
+          message: true,
+          createdAt: true,
+          reviewedAt: true,
+        },
+      }),
+    ]);
+
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+
+    const normalizedRole = String(user.role || '').toUpperCase();
+    if (normalizedRole === 'MODERATOR') {
+      res.json({
+        status: 'success',
+        data: {
+          canSubmit: false,
+          blockReason: EARLY_ACCESS_BLOCK_REASONS.ALREADY_EARLY_ACCESS,
+          request: latestRequest || null,
+        },
+      });
+      return;
+    }
+    if (normalizedRole === 'ADMIN') {
+      res.json({
+        status: 'success',
+        data: {
+          canSubmit: false,
+          blockReason: EARLY_ACCESS_BLOCK_REASONS.ADMIN_ACCOUNT,
+          request: latestRequest || null,
+        },
+      });
+      return;
+    }
+    if (normalizedRole === 'SUPPORT') {
+      res.json({
+        status: 'success',
+        data: {
+          canSubmit: false,
+          blockReason: EARLY_ACCESS_BLOCK_REASONS.SUPPORT_ACCOUNT,
+          request: latestRequest || null,
+        },
+      });
+      return;
+    }
+
+    if (!latestRequest) {
+      res.json({
+        status: 'success',
+        data: {
+          canSubmit: true,
+          blockReason: null,
+          request: null,
+        },
+      });
+      return;
+    }
+
+    const canSubmit = latestRequest.status !== 'PENDING';
+    const blockReason = latestRequest.status === 'PENDING'
+      ? EARLY_ACCESS_BLOCK_REASONS.PENDING_REVIEW
+      : null;
+
+    res.json({
+      status: 'success',
+      data: {
+        canSubmit,
+        blockReason,
+        request: latestRequest,
+      },
+    });
   } catch (error) {
     next(error);
   }

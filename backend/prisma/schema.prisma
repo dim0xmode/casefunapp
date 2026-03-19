@@ -25,6 +25,12 @@ enum FeedbackTopic {
   PARTNERSHIP
 }
 
+enum FeedbackStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BattleLobbyStatus {
   OPEN
   IN_PROGRESS
@@ -35,9 +41,13 @@ model User {
   id            String   @id @default(cuid())
   username      String   @unique
   walletAddress String   @unique
-  balance       Float    @default(5000)
+  balance       Float    @default(0)
   avatarUrl     String?
   avatarMeta    Json?
+  twitterId     String?  @unique
+  twitterUsername String?
+  twitterName   String?
+  twitterLinkedAt DateTime?
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?
@@ -338,18 +348,22 @@ model FeedbackMessage {
   id        String        @id @default(cuid())
   userId    String
   topic     FeedbackTopic
+  status    FeedbackStatus @default(PENDING)
   contact   String
   message   String
   isRead    Boolean       @default(false)
   createdAt DateTime      @default(now())
   readAt    DateTime?
+  reviewedAt DateTime?
 
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([topic])
+  @@index([status])
   @@index([isRead])
   @@index([createdAt])
+  @@index([userId, topic, createdAt])
   @@map("feedback_messages")
 }
 

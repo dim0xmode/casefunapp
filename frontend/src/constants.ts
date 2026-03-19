@@ -88,10 +88,14 @@ export const MOCK_CASES: Case[] = [
 export const INITIAL_USER: User = {
   username: 'CryptoKing',
   walletAddress: '0x71C...3a2',
-  balance: 2000,
+  balance: 0,
   role: 'USER',
   avatar: '',
   avatarMeta: { fit: 'cover', scale: 1, x: 0, y: 0 },
+  twitterId: null,
+  twitterUsername: null,
+  twitterName: null,
+  twitterLinkedAt: null,
   transactions: [],
   battleHistory: [],
   stats: {
