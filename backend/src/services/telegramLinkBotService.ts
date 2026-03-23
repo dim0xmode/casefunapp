@@ -7,6 +7,9 @@ interface TelegramLinkSession {
   userId: string;
   issuedAt: number;
   expiresAt: number;
+  state: 'PENDING' | 'LINKED' | 'FAILED';
+  failureCode?: 'ALREADY_LINKED' | 'TARGET_USER_MISSING' | 'INTERNAL_ERROR';
+  failureMessage?: string;
   consumedAt?: number;
 }
 
@@ -154,6 +157,27 @@ const normalizeNullable = (value: unknown) => {
   return text || null;
 };
 
+const markSessionFailed = (
+  token: string,
+  session: TelegramLinkSession,
+  failureCode: 'ALREADY_LINKED' | 'TARGET_USER_MISSING' | 'INTERNAL_ERROR',
+  failureMessage: string
+) => {
+  session.state = 'FAILED';
+  session.failureCode = failureCode;
+  session.failureMessage = failureMessage;
+  session.consumedAt = Date.now();
+  telegramLinkSessions.set(token, session);
+};
+
+const markSessionLinked = (token: string, session: TelegramLinkSession) => {
+  session.state = 'LINKED';
+  session.failureCode = undefined;
+  session.failureMessage = undefined;
+  session.consumedAt = Date.now();
+  telegramLinkSessions.set(token, session);
+};
+
 const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
   const message = update.message;
   if (!message?.text || !message?.chat?.id || !message?.from?.id) return;
@@ -192,7 +216,9 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
       select: { id: true },
     });
     if (!targetUser) {
-      await sendBotMessage(chatId, 'The website account was not found. Please log in and try again.');
+      const failureMessage = 'The website account was not found. Please log in and try again.';
+      markSessionFailed(linkToken, session, 'TARGET_USER_MISSING', failureMessage);
+      await sendBotMessage(chatId, failureMessage);
       return;
     }
 
@@ -204,7 +230,10 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
       select: { id: true },
     });
     if (existing) {
-      await sendBotMessage(chatId, 'This Telegram account is already linked to another casefun account.');
+      const failureMessage =
+        'This Telegram account is already linked to another casefun account. Unlink it there first or use a different Telegram account.';
+      markSessionFailed(linkToken, session, 'ALREADY_LINKED', failureMessage);
+      await sendBotMessage(chatId, failureMessage);
       return;
     }
 
@@ -219,12 +248,13 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
         telegramLinkedAt: new Date(),
       },
     });
-    session.consumedAt = Date.now();
-    telegramLinkSessions.set(linkToken, session);
+    markSessionLinked(linkToken, session);
 
     await sendBotMessage(chatId, 'Telegram linked successfully. Return to casefun and open Mini App.');
   } catch {
-    await sendBotMessage(chatId, 'Linking failed. Please try again in a few seconds.').catch(() => {});
+    const failureMessage = 'Linking failed. Please try again in a few seconds.';
+    markSessionFailed(linkToken, session, 'INTERNAL_ERROR', failureMessage);
+    await sendBotMessage(chatId, failureMessage).catch(() => {});
   }
 };
 
@@ -299,6 +329,7 @@ export const createTelegramBotLink = async (userId: string) => {
     userId: normalizedUserId,
     issuedAt,
     expiresAt,
+    state: 'PENDING',
   });
   const startParam = `${TELEGRAM_LINK_PREFIX}${token}`;
   const url = `https://t.me/${botUsername}?start=${encodeURIComponent(startParam)}`;

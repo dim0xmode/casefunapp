@@ -520,6 +520,12 @@ const App = () => {
                 }
                 return { status: 'success' as const, data: { user: status.data.user } };
               }
+              if (status.data?.failed) {
+                throw new Error(
+                  status.data.reason ||
+                    'Telegram link failed. Start a new link from profile and try again.'
+                );
+              }
             }
 
             throw new Error(

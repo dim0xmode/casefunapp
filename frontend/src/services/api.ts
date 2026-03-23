@@ -298,7 +298,9 @@ class ApiClient {
 
   async getTelegramBotLinkStatus(token: string) {
     const encoded = encodeURIComponent(token);
-    return this.request<{ linked: boolean; user: any }>(`/user/telegram/link-bot/status?token=${encoded}`);
+    return this.request<{ linked: boolean; failed?: boolean; reason?: string; user: any }>(
+      `/user/telegram/link-bot/status?token=${encoded}`
+    );
   }
 
   async getTelegramBotInfo() {

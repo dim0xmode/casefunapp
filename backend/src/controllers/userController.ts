@@ -696,12 +696,27 @@ export const getTelegramBotLinkStatus = async (req: Request, res: Response, next
     if (!token) {
       return next(new AppError('Telegram link token is required', 400));
     }
-    getTelegramBotLinkTokenPayload(token, userId);
+    const session = getTelegramBotLinkTokenPayload(token, userId);
+
+    if (session.state === 'FAILED') {
+      return res.json({
+        status: 'success',
+        data: {
+          linked: false,
+          failed: true,
+          reason:
+            session.failureMessage ||
+            'Telegram link failed. Start a new link from profile and try again.',
+          user: buildPublicUser(user),
+        },
+      });
+    }
 
     res.json({
       status: 'success',
       data: {
         linked: false,
+        failed: false,
         user: buildPublicUser(user),
       },
     });
