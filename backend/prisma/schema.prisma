@@ -41,9 +41,17 @@ model User {
   id            String   @id @default(cuid())
   username      String   @unique
   walletAddress String   @unique
+  hasLinkedWallet Boolean @default(true)
+  walletLinkedAt DateTime?
   balance       Float    @default(0)
   avatarUrl     String?
   avatarMeta    Json?
+  telegramId    String?  @unique
+  telegramUsername String?
+  telegramFirstName String?
+  telegramLastName String?
+  telegramPhotoUrl String?
+  telegramLinkedAt DateTime?
   twitterId     String?  @unique
   twitterUsername String?
   twitterName   String?

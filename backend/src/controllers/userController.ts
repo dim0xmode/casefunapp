@@ -7,6 +7,16 @@ import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
+import {
+  verifyTelegramWebAppInitData,
+  verifyTelegramLoginPayload,
+  verifyTelegramOidcIdToken,
+} from '../utils/telegramAuth.js';
+import {
+  createTelegramBotLink,
+  getTelegramBotLinkTokenPayload,
+  getTelegramBotPublicInfo,
+} from '../services/telegramLinkBotService.js';
 
 const roundToTwo = (value: number) => Number(value.toFixed(2));
 const FEEDBACK_TOPICS = ['BUG_REPORT', 'EARLY_ACCESS', 'PARTNERSHIP'] as const;
@@ -102,10 +112,18 @@ const buildPublicUser = (user: any) => ({
   id: user.id,
   username: user.username,
   walletAddress: user.walletAddress,
+  hasLinkedWallet: Boolean(user.hasLinkedWallet),
+  walletLinkedAt: user.walletLinkedAt,
   balance: user.balance,
   role: user.role,
   avatar: user.avatarUrl,
   avatarMeta: user.avatarMeta,
+  telegramId: user.telegramId,
+  telegramUsername: user.telegramUsername,
+  telegramFirstName: user.telegramFirstName,
+  telegramLastName: user.telegramLastName,
+  telegramPhotoUrl: user.telegramPhotoUrl,
+  telegramLinkedAt: user.telegramLinkedAt,
   twitterId: user.twitterId,
   twitterUsername: user.twitterUsername,
   twitterName: user.twitterName,
@@ -490,6 +508,256 @@ export const updateAvatarMeta = async (req: Request, res: Response, next: NextFu
     const user = await prisma.user.update({
       where: { id: userId },
       data: { avatarMeta: meta },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const ensureTelegramMiniAppConfigured = () => {
+  if (!config.telegramBotToken) {
+    throw new AppError('Telegram integration is not configured', 503);
+  }
+};
+
+const getTelegramWebLoginClientId = () => {
+  const clientId = String(config.telegramAuthClientId || '').trim();
+  if (!clientId) {
+    throw new AppError('Telegram web login is not configured', 503);
+  }
+  return clientId;
+};
+
+export const linkTelegramAccount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    const initData = String(req.body?.initData || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    ensureTelegramMiniAppConfigured();
+
+    const telegram = verifyTelegramWebAppInitData({
+      initData,
+      botToken: config.telegramBotToken,
+      maxAgeSeconds: config.telegramAuthMaxAgeSeconds,
+    });
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        telegramId: telegram.telegramId,
+        NOT: { id: userId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return next(new AppError('This Telegram account is already linked to another user', 409));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        telegramId: telegram.telegramId,
+        telegramUsername: telegram.telegramUsername,
+        telegramFirstName: telegram.telegramFirstName,
+        telegramLastName: telegram.telegramLastName,
+        telegramPhotoUrl: telegram.telegramPhotoUrl,
+        telegramLinkedAt: new Date(),
+      },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const linkTelegramWebAccount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    const payload = (req.body || {}) as Record<string, unknown>;
+    const idToken = String(payload.id_token || '').trim();
+    const telegram = idToken
+      ? await verifyTelegramOidcIdToken({
+          idToken,
+          clientId: getTelegramWebLoginClientId(),
+          maxAgeSeconds: config.telegramAuthMaxAgeSeconds,
+        })
+      : verifyTelegramLoginPayload({
+          payload,
+          botToken: config.telegramBotToken,
+          maxAgeSeconds: config.telegramAuthMaxAgeSeconds,
+        });
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        telegramId: telegram.telegramId,
+        NOT: { id: userId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return next(new AppError('This Telegram account is already linked to another user', 409));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        telegramId: telegram.telegramId,
+        telegramUsername: telegram.telegramUsername,
+        telegramFirstName: telegram.telegramFirstName,
+        telegramLastName: telegram.telegramLastName,
+        telegramPhotoUrl: telegram.telegramPhotoUrl,
+        telegramLinkedAt: new Date(),
+      },
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const startTelegramBotLink = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const current = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, telegramId: true },
+    });
+    if (!current) {
+      return next(new AppError('User not found', 404));
+    }
+    if (current.telegramId) {
+      return next(new AppError('Telegram is already linked', 409));
+    }
+
+    const link = await createTelegramBotLink(userId);
+    res.json({
+      status: 'success',
+      data: {
+        url: link.url,
+        token: link.token,
+        botUsername: link.botUsername,
+        expiresAt: link.expiresAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTelegramBotLinkStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
+    if (user.telegramId) {
+      return res.json({
+        status: 'success',
+        data: {
+          linked: true,
+          user: buildPublicUser(user),
+        },
+      });
+    }
+
+    const token = String(req.query?.token || '').trim();
+    if (!token) {
+      return next(new AppError('Telegram link token is required', 400));
+    }
+    getTelegramBotLinkTokenPayload(token, userId);
+
+    res.json({
+      status: 'success',
+      data: {
+        linked: false,
+        user: buildPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTelegramBotInfo = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    const info = await getTelegramBotPublicInfo();
+    res.json({
+      status: 'success',
+      data: info,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const unlinkTelegramAccount = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = String((req as any).userId || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const current = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, hasLinkedWallet: true, telegramId: true },
+    });
+    if (!current) {
+      return next(new AppError('User not found', 404));
+    }
+    if (!current.telegramId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      return res.json({ status: 'success', data: { user: user ? buildPublicUser(user) : null } });
+    }
+    if (!current.hasLinkedWallet) {
+      return next(new AppError('Link wallet first, then you can unlink Telegram', 409));
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        telegramId: null,
+        telegramUsername: null,
+        telegramFirstName: null,
+        telegramLastName: null,
+        telegramPhotoUrl: null,
+        telegramLinkedAt: null,
+      },
     });
 
     res.json({

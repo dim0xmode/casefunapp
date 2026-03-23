@@ -1,0 +1,323 @@
+import { randomBytes } from 'crypto';
+import prisma from '../config/database.js';
+import { config } from '../config/env.js';
+import { AppError } from '../middleware/errorHandler.js';
+
+interface TelegramLinkSession {
+  userId: string;
+  issuedAt: number;
+  expiresAt: number;
+  consumedAt?: number;
+}
+
+interface TelegramBotUpdate {
+  update_id?: number;
+  message?: {
+    text?: string;
+    chat?: {
+      id?: number;
+      type?: string;
+    };
+    from?: {
+      id?: number;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      photo_url?: string;
+    };
+  };
+}
+
+interface TelegramBotApiResponse<T> {
+  ok: boolean;
+  result?: T;
+  description?: string;
+  error_code?: number;
+}
+
+const TELEGRAM_LINK_PREFIX = 'link_';
+const TELEGRAM_LINK_TOKEN_TTL_MS = 10 * 60 * 1000;
+const TELEGRAM_POLL_INTERVAL_MS = 2500;
+const TELEGRAM_BOT_USERNAME_CACHE_MS = 5 * 60 * 1000;
+const TELEGRAM_LINK_TOKEN_BYTES = 24;
+
+let botUsernameCache: string | null = null;
+let botUsernameCacheAt = 0;
+let lastUpdateId = 0;
+let pollingStarted = false;
+let pollingLocked = false;
+let pollingDisabled = false;
+let pollTimer: NodeJS.Timeout | null = null;
+const telegramLinkSessions = new Map<string, TelegramLinkSession>();
+
+const encodeBase64Url = (value: Buffer | string) => {
+  const raw = Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf8');
+  return raw
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+};
+
+const ensureTelegramBotConfigured = () => {
+  const token = String(config.telegramBotToken || '').trim();
+  if (!token) {
+    throw new AppError('Telegram integration is not configured', 503);
+  }
+  return token;
+};
+
+const cleanupExpiredLinkSessions = () => {
+  const now = Date.now();
+  for (const [token, session] of telegramLinkSessions.entries()) {
+    if (session.expiresAt <= now) {
+      telegramLinkSessions.delete(token);
+      continue;
+    }
+    if (session.consumedAt && now - session.consumedAt > TELEGRAM_LINK_TOKEN_TTL_MS) {
+      telegramLinkSessions.delete(token);
+    }
+  }
+};
+
+const getLinkSession = (token: string, allowConsumed = false) => {
+  cleanupExpiredLinkSessions();
+  const session = telegramLinkSessions.get(token);
+  if (!session) return null;
+  if (!allowConsumed && session.consumedAt) return null;
+  return session;
+};
+
+const buildBotApiUrl = (method: string, query?: URLSearchParams) => {
+  const token = ensureTelegramBotConfigured();
+  const base = `https://api.telegram.org/bot${token}/${method}`;
+  const search = query?.toString();
+  return search ? `${base}?${search}` : base;
+};
+
+const sendBotMessage = async (chatId: number, text: string) => {
+  const query = new URLSearchParams({
+    chat_id: String(chatId),
+    text,
+    disable_web_page_preview: 'true',
+  });
+  const response = await fetch(buildBotApiUrl('sendMessage', query));
+  const payload = (await response.json().catch(() => null)) as TelegramBotApiResponse<any> | null;
+  if (!response.ok || !payload?.ok) {
+    const reason = payload?.description || `HTTP ${response.status}`;
+    throw new Error(`sendMessage failed: ${reason}`);
+  }
+};
+
+const getBotUsername = async () => {
+  const now = Date.now();
+  if (botUsernameCache && now - botUsernameCacheAt < TELEGRAM_BOT_USERNAME_CACHE_MS) {
+    return botUsernameCache;
+  }
+  const response = await fetch(buildBotApiUrl('getMe'));
+  const payload = (await response.json().catch(() => null)) as
+    | TelegramBotApiResponse<{ username?: string }>
+    | null;
+  if (!response.ok || !payload?.ok) {
+    const reason = payload?.description || `HTTP ${response.status}`;
+    throw new AppError(`Failed to contact Telegram bot: ${reason}`, 503);
+  }
+  const username = String(payload.result?.username || '').trim();
+  if (!username) {
+    throw new AppError('Telegram bot username is unavailable', 503);
+  }
+  botUsernameCache = username;
+  botUsernameCacheAt = now;
+  return username;
+};
+
+export const getTelegramBotPublicInfo = async () => {
+  ensureTelegramBotConfigured();
+  const botUsername = await getBotUsername();
+  return {
+    botUsername,
+    botUrl: `https://t.me/${botUsername}`,
+  };
+};
+
+const parseStartLinkToken = (text: string) => {
+  const normalized = String(text || '').trim();
+  if (!normalized.startsWith('/start')) return '';
+  const [, rawArg = ''] = normalized.split(/\s+/, 2);
+  if (!rawArg.startsWith(TELEGRAM_LINK_PREFIX)) return '';
+  return rawArg.slice(TELEGRAM_LINK_PREFIX.length).trim();
+};
+
+const normalizeNullable = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+};
+
+const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
+  const message = update.message;
+  if (!message?.text || !message?.chat?.id || !message?.from?.id) return;
+  const rawText = String(message.text || '').trim();
+  const isStartCommand = rawText.toLowerCase().startsWith('/start');
+  const linkToken = parseStartLinkToken(message.text);
+  if (!linkToken) {
+    if (isStartCommand) {
+      await sendBotMessage(
+        Number(message.chat.id),
+        'To link Telegram: open casefun profile, press Connect Telegram, then tap Start from that generated link.'
+      ).catch(() => {});
+    }
+    return;
+  }
+
+  const chatId = Number(message.chat.id);
+  const session = getLinkSession(linkToken);
+  if (!session) {
+    await sendBotMessage(
+      chatId,
+      'This link request is invalid or expired. Please return to the website and press Connect Telegram again.'
+    ).catch(() => {});
+    return;
+  }
+
+  const telegramId = String(message.from.id);
+  const telegramUsername = normalizeNullable(message.from.username);
+  const telegramFirstName = normalizeNullable(message.from.first_name);
+  const telegramLastName = normalizeNullable(message.from.last_name);
+  const telegramPhotoUrl = normalizeNullable(message.from.photo_url);
+
+  try {
+    const targetUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { id: true },
+    });
+    if (!targetUser) {
+      await sendBotMessage(chatId, 'The website account was not found. Please log in and try again.');
+      return;
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        telegramId,
+        NOT: { id: session.userId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      await sendBotMessage(chatId, 'This Telegram account is already linked to another casefun account.');
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: session.userId },
+      data: {
+        telegramId,
+        telegramUsername,
+        telegramFirstName,
+        telegramLastName,
+        telegramPhotoUrl,
+        telegramLinkedAt: new Date(),
+      },
+    });
+    session.consumedAt = Date.now();
+    telegramLinkSessions.set(linkToken, session);
+
+    await sendBotMessage(chatId, 'Telegram linked successfully. Return to casefun and open Mini App.');
+  } catch {
+    await sendBotMessage(chatId, 'Linking failed. Please try again in a few seconds.').catch(() => {});
+  }
+};
+
+const pollTelegramUpdatesOnce = async () => {
+  const query = new URLSearchParams({
+    offset: String(lastUpdateId + 1),
+    timeout: '1',
+    allowed_updates: JSON.stringify(['message']),
+  });
+  const response = await fetch(buildBotApiUrl('getUpdates', query));
+  const payload = (await response.json().catch(() => null)) as TelegramBotApiResponse<TelegramBotUpdate[]> | null;
+
+  if (!response.ok || !payload?.ok) {
+    const reason = String(payload?.description || `HTTP ${response.status}`).toLowerCase();
+    if (reason.includes('webhook') || reason.includes('terminated by other getupdates request')) {
+      pollingDisabled = true;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      console.warn('Telegram bot link polling disabled due to webhook/getUpdates conflict.');
+      return;
+    }
+    throw new Error(payload?.description || `Telegram getUpdates failed: ${response.status}`);
+  }
+
+  const updates = Array.isArray(payload.result) ? payload.result : [];
+  for (const update of updates) {
+    const updateId = Number(update.update_id || 0);
+    if (updateId > lastUpdateId) {
+      lastUpdateId = updateId;
+    }
+    await handleStartLinkMessage(update);
+  }
+};
+
+const runPollCycle = async () => {
+  if (pollingLocked || pollingDisabled) return;
+  pollingLocked = true;
+  try {
+    await pollTelegramUpdatesOnce();
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    console.warn(`Telegram bot polling error: ${text}`);
+  } finally {
+    pollingLocked = false;
+  }
+};
+
+export const ensureTelegramBotLinkPolling = () => {
+  if (pollingStarted || pollingDisabled) return;
+  ensureTelegramBotConfigured();
+  pollingStarted = true;
+  void runPollCycle();
+  pollTimer = setInterval(() => {
+    void runPollCycle();
+  }, TELEGRAM_POLL_INTERVAL_MS);
+};
+
+export const createTelegramBotLink = async (userId: string) => {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) {
+    throw new AppError('Authentication required', 401);
+  }
+  ensureTelegramBotConfigured();
+  ensureTelegramBotLinkPolling();
+  const botUsername = await getBotUsername();
+  const issuedAt = Date.now();
+  const token = encodeBase64Url(randomBytes(TELEGRAM_LINK_TOKEN_BYTES));
+  const expiresAt = issuedAt + TELEGRAM_LINK_TOKEN_TTL_MS;
+  telegramLinkSessions.set(token, {
+    userId: normalizedUserId,
+    issuedAt,
+    expiresAt,
+  });
+  const startParam = `${TELEGRAM_LINK_PREFIX}${token}`;
+  const url = `https://t.me/${botUsername}?start=${encodeURIComponent(startParam)}`;
+  return {
+    token,
+    url,
+    botUsername,
+    expiresAt: new Date(expiresAt).toISOString(),
+  };
+};
+
+export const getTelegramBotLinkTokenPayload = (token: string, userId: string) => {
+  const session = getLinkSession(token, true);
+  if (!session) {
+    throw new AppError('Telegram link token is invalid or expired', 400);
+  }
+  if (session.userId !== userId) {
+    throw new AppError('Telegram link token does not match current user', 403);
+  }
+  return session;
+};
+

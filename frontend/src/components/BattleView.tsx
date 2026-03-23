@@ -30,9 +30,23 @@ interface BattleViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
+  isTelegramMiniApp?: boolean;
 }
 
-export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAvatar, userAvatarMeta, onBattleFinish, balance, onChargeBattle, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const BattleView: React.FC<BattleViewProps> = ({
+  cases,
+  userName,
+  userAvatar,
+  userAvatarMeta,
+  onBattleFinish,
+  balance,
+  onChargeBattle,
+  onOpenTopUp,
+  isAuthenticated,
+  onOpenWalletConnect,
+  isAdmin,
+  isTelegramMiniApp = false,
+}) => {
   const format2 = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
   type BattleEntry = {
     id: string;
@@ -709,14 +723,25 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
   // SETUP Screen
   if (gameState === 'SETUP') {
     return (
-      <div className="h-full flex flex-col">
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+      <div className={`flex flex-col ${isTelegramMiniApp ? 'h-auto min-h-0' : 'h-full'}`}>
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${isTelegramMiniApp ? 'p-3' : 'p-6'}`}>
           <div className="flex flex-col items-center gap-4 mb-6">
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight text-white">
-              AVAILABLE
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                BATTLES
-              </span>
+            <h2 className={`${isTelegramMiniApp ? 'text-xl' : 'text-3xl md:text-4xl'} font-black tracking-tight text-white`}>
+              {isTelegramMiniApp ? (
+                <>
+                  BATTLE
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                    LOBBY
+                  </span>
+                </>
+              ) : (
+                <>
+                  AVAILABLE
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                    BATTLES
+                  </span>
+                </>
+              )}
             </h2>
             <AdminActionButton
               isAuthenticated={isAuthenticated}
@@ -741,17 +766,24 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
           {ownBattles.length > 0 && (
             <div className="mb-6">
               <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Your Battles</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 ${isTelegramMiniApp ? 'gap-2' : 'gap-4'}`}>
                 {ownBattles.map((battle) => {
                   const battleCost = battle.cases.reduce((sum, c) => sum + c.price, 0);
                   return (
-                    <div key={battle.id} className="bg-black/20 border border-white/[0.08] rounded-2xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+                    <div
+                      key={battle.id}
+                      className={`bg-black/20 border border-white/[0.08] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm ${
+                        isTelegramMiniApp ? 'p-3' : 'p-4'
+                      }`}
+                    >
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-400">
                           <UserIcon size={14} className="text-web3-accent" />
                           {battle.host}
                         </div>
-                        <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
+                        {!isTelegramMiniApp && (
+                          <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 mb-3">
@@ -772,10 +804,14 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
                       <div className="flex items-center justify-between mb-4">
                         <div>
-                          <div className="text-xs uppercase tracking-widest text-gray-500">Total Cost</div>
+                          <div className="text-xs uppercase tracking-widest text-gray-500">
+                            {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
+                          </div>
                           <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                         </div>
-                        <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
+                        {!isTelegramMiniApp && (
+                          <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
+                        )}
                       </div>
 
                       {battle.status && battle.status !== 'OPEN' ? (
@@ -811,17 +847,24 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
           )}
 
           <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">All Battles</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 ${isTelegramMiniApp ? 'gap-2' : 'gap-4'}`}>
             {otherBattles.map((battle) => {
               const battleCost = battle.cases.reduce((sum, c) => sum + c.price, 0);
               return (
-                <div key={battle.id} className="bg-black/20 border border-white/[0.08] rounded-2xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+                <div
+                  key={battle.id}
+                  className={`bg-black/20 border border-white/[0.08] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm ${
+                    isTelegramMiniApp ? 'p-3' : 'p-4'
+                  }`}
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-400">
                       <Bot size={14} className="text-web3-accent" />
                       {battle.host}
                     </div>
-                    <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
+                    {!isTelegramMiniApp && (
+                      <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 mb-3">
@@ -842,10 +885,14 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <div className="text-xs uppercase tracking-widest text-gray-500">Total Cost</div>
+                      <div className="text-xs uppercase tracking-widest text-gray-500">
+                        {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
+                      </div>
                       <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                     </div>
-                    <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
+                    {!isTelegramMiniApp && (
+                      <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
+                    )}
                   </div>
 
                   {battle.status && battle.status !== 'OPEN' ? (
@@ -881,7 +928,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
         {createBattleOpen && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 animate-fade-in">
-            <div className="relative bg-black/70 border border-white/[0.12] rounded-2xl p-8 w-[94%] max-w-6xl h-[720px] shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm flex flex-col">
+            <div className={`relative bg-black/70 border border-white/[0.12] rounded-2xl w-[94%] max-w-6xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm flex flex-col ${
+              isTelegramMiniApp ? 'p-4 h-[calc(100dvh-2.5rem)]' : 'p-8 h-[720px]'
+            }`}>
               <div className="flex items-center justify-between mb-4">
                 <div className="text-sm uppercase tracking-widest text-gray-400">Create Battle</div>
                 <button
@@ -1043,7 +1092,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
 
                   <div className="mt-6">
                     <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">
-                      Total Cost
+                      {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
           </div>
                     <div className="text-lg font-black text-white mb-4">
                       {format2(createTotalCost)} ₮
@@ -1101,7 +1150,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
     }, {} as Record<string, number>);
 
     return (
-      <div className="min-h-screen flex flex-col relative">
+      <div className={`flex flex-col relative ${isTelegramMiniApp ? 'min-h-0' : 'min-h-screen'}`}>
         {/* Countdown Overlay */}
         {countdown !== null && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -1111,16 +1160,34 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
           </div>
         )}
 
-        {/* Scoreboard */}
-        <div className="h-20 bg-black/20 border-b border-white/[0.06] flex shadow-lg z-20 backdrop-blur-sm">
-          <div className={`flex-1 flex items-center justify-center relative transition-colors duration-500 ${hasOpponent && isUserWinning ? 'bg-green-900/10' : ''}`}>
+        {isTelegramMiniApp && (
+          <div className="px-2 pt-2">
             <button
               onClick={playAgain}
-              className="absolute left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/20 border border-white/[0.12] hover:border-web3-accent/50 transition-all duration-300 text-gray-400 hover:text-white"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-black/25 border border-white/[0.12] hover:border-web3-accent/50 transition-all duration-300 text-gray-300 hover:text-white"
             >
-              <ArrowLeft size={18} />
-              <span className="font-bold">Back</span>
+              <ArrowLeft size={16} />
+              <span className="font-bold uppercase tracking-wider text-xs">Back</span>
             </button>
+          </div>
+        )}
+
+        {/* Scoreboard */}
+        <div
+          className={`bg-black/20 border-b border-white/[0.06] shadow-lg z-20 backdrop-blur-sm h-20 flex ${
+            isTelegramMiniApp ? 'px-2 mt-2' : ''
+          }`}
+        >
+          <div className={`flex-1 flex items-center justify-center relative transition-colors duration-500 ${hasOpponent && isUserWinning ? 'bg-green-900/10' : ''}`}>
+            {!isTelegramMiniApp && (
+              <button
+                onClick={playAgain}
+                className="absolute left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/20 border border-white/[0.12] hover:border-web3-accent/50 transition-all duration-300 text-gray-400 hover:text-white"
+              >
+                <ArrowLeft size={18} />
+                <span className="font-bold">Back</span>
+              </button>
+            )}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gray-800 rounded-full border border-web3-accent flex items-center justify-center">
                 {leftPlayerIsBot ? (
@@ -1135,7 +1202,7 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
             </div>
           </div>
           
-          <div className="w-20 bg-gray-900 flex flex-col items-center justify-center border-x border-gray-700 z-30">
+          <div className={`${isTelegramMiniApp ? 'w-16 bg-gray-900/75 border-x border-gray-700' : 'w-20 bg-gray-900 border-x border-gray-700'} flex flex-col items-center justify-center z-30`}>
             <div className="text-[10px] text-gray-500 font-bold uppercase">Round</div>
             <div className="text-lg font-bold text-white">{currentRound + 1}<span className="text-gray-600">/</span>{selectedCases.length}</div>
           </div>
@@ -1163,14 +1230,20 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
         </div>
 
         {/* Cases Strip */}
-        <div className="px-6 py-4 border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-visible">
+        <div className={`border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-visible ${
+          isTelegramMiniApp ? 'px-3 py-3' : 'px-6 py-4'
+        }`}>
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
-            Total Cost <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
+            {isTelegramMiniApp ? 'Cost' : 'Total Cost'} <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
           </div>
           <div className="absolute inset-y-0 left-0 right-0 flex items-center pointer-events-none">
             <div
-              className="flex items-center gap-2 transition-transform duration-700 ease-out"
-              style={{ transform: `translateX(calc(-${currentRound * 48}px - 20px))`, left: '50%', position: 'relative' }}
+              className={`flex items-center gap-2 transition-transform duration-700 ease-out ${isTelegramMiniApp ? 'justify-center w-full' : ''}`}
+              style={
+                isTelegramMiniApp
+                  ? { left: 0, position: 'relative' }
+                  : { transform: `translateX(calc(-${currentRound * 48}px - 20px))`, left: '50%', position: 'relative' }
+              }
             >
               {selectedCases.map((caseData, idx) => {
                 const isActive = idx === currentRound;
@@ -1195,19 +1268,19 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                 );
               })}
             </div>
-            <div className="absolute left-0 top-0 bottom-0 w-[220px] bg-black/20"></div>
+            {!isTelegramMiniApp && <div className="absolute left-0 top-0 bottom-0 w-[220px] bg-black/20"></div>}
           </div>
         </div>
 
         {/* Split Screen */}
-        <div className="flex-1 flex relative overflow-hidden">
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/[0.06] pointer-events-none"></div>
+        <div className={`flex-1 relative overflow-hidden ${isTelegramMiniApp ? 'flex gap-3 p-3' : 'flex'}`}>
+          {!isTelegramMiniApp && <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/[0.06] pointer-events-none"></div>}
           {/* Pre-start layout when joining a battle */}
           {!battleStarted && opponent.type && (
             <>
-          <div className="flex-1 border-r border-gray-800 relative flex flex-col items-center">
+          <div className={`flex-1 relative flex flex-col items-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : 'border-r border-gray-800'}`}>
                 <div className={`absolute top-0 inset-x-0 h-40 pointer-events-none bg-gradient-to-b ${leftIsUser ? 'from-web3-accent/5' : 'from-red-500/5'} to-transparent`}></div>
-                <div className="mt-20 w-full max-w-lg px-6 z-10 flex flex-col items-center">
+                <div className={`w-full max-w-lg z-10 flex flex-col items-center ${isTelegramMiniApp ? 'mt-10 px-3' : 'mt-20 px-6'}`}>
                   <div className={`w-32 h-32 rounded-full border-2 ${leftIsUser ? 'border-web3-accent/60' : 'border-web3-success/60'} bg-black/30 flex items-center justify-center shadow-[0_0_24px_rgba(16,185,129,0.35)]`}>
                     <Check size={32} className="text-web3-success" />
                   </div>
@@ -1215,9 +1288,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                 </div>
             </div>
 
-              <div className="flex-1 relative flex flex-col items-center">
+              <div className={`flex-1 relative flex flex-col items-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : ''}`}>
                 <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-red-500/5 to-transparent pointer-events-none"></div>
-              <div className="relative mt-20 flex flex-col items-center animate-fade-in">
+              <div className={`relative flex flex-col items-center animate-fade-in ${isTelegramMiniApp ? 'mt-10' : 'mt-20'}`}>
                 <button
                   onClick={handleStartBattle}
                   disabled={startConfirm || isWaitingForOwner}
@@ -1252,10 +1325,10 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
           {!(!battleStarted && opponent.type) && (
             <>
               {/* Left Side */}
-              <div className="flex-1 border-r border-gray-800 relative flex flex-col items-center">
+              <div className={`flex-1 relative flex flex-col items-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : 'border-r border-gray-800'}`}>
                 <div className={`absolute top-0 inset-x-0 h-40 pointer-events-none bg-gradient-to-b ${leftIsUser ? 'from-web3-accent/5' : 'from-red-500/5'} to-transparent`}></div>
                 
-                <div className="mt-6 w-full max-w-xl px-4 z-10">
+                <div className={`w-full max-w-xl px-4 z-10 ${isTelegramMiniApp ? 'mt-3' : 'mt-6'}`}>
                   {currentCase && (
                       <CaseRoulette
                         key={`left-roulette-${currentRound}`}
@@ -1264,27 +1337,28 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                         openMode="normal"
                         index={0}
                         skipReveal
+                        compactContent={isTelegramMiniApp}
                       />
                   )}
                 </div>
 
-                <div className="flex-1 w-full max-w-lg mt-8 px-4 overflow-y-auto custom-scrollbar pb-4">
+                <div className={`flex-1 w-full max-w-lg px-4 overflow-y-auto custom-scrollbar pb-4 ${isTelegramMiniApp ? 'mt-4' : 'mt-8'}`}>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {(leftIsUser ? userDrops : botDrops).map((item, i) => (
-                      <ItemCard key={`${item.id}-${i}`} item={item} size="sm" currencyPrefix="$" />
+                      <ItemCard key={`${item.id}-${i}`} item={item} size="sm" currencyPrefix="$" compactContent={isTelegramMiniApp} />
               ))}
                   </div>
             </div>
           </div>
 
               {/* Right Side */}
-          <div className="flex-1 relative flex flex-col items-center justify-center">
+          <div className={`flex-1 relative flex flex-col items-center justify-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : ''}`}>
             {hasOpponent ? (
               <>
                     <div className={`absolute top-0 inset-x-0 h-40 pointer-events-none bg-gradient-to-b ${leftIsUser ? 'from-red-500/5' : 'from-web3-accent/5'} to-transparent`}></div>
 
                 <div className="w-full h-full flex flex-col items-center justify-start">
-                      <div className="mt-6 w-full max-w-xl px-4 z-10">
+                      <div className={`w-full max-w-xl px-4 z-10 ${isTelegramMiniApp ? 'mt-3' : 'mt-6'}`}>
                         {currentCase && (
                           <CaseRoulette
                             key={`right-roulette-${currentRound}`}
@@ -1293,14 +1367,15 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                             openMode="normal"
                             index={0}
                             skipReveal
+                            compactContent={isTelegramMiniApp}
                           />
                         )}
                   </div>
 
-                      <div className="flex-1 w-full max-w-lg mt-8 px-4 overflow-y-auto custom-scrollbar pb-4">
+                      <div className={`flex-1 w-full max-w-lg px-4 overflow-y-auto custom-scrollbar pb-4 ${isTelegramMiniApp ? 'mt-4' : 'mt-8'}`}>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {(leftIsUser ? botDrops : userDrops).map((item, i) => (
-                            <ItemCard key={`${item.id}-${i}`} item={item} size="sm" currencyPrefix="$" />
+                            <ItemCard key={`${item.id}-${i}`} item={item} size="sm" currencyPrefix="$" compactContent={isTelegramMiniApp} />
                           ))}
                         </div>
                   </div>
@@ -1466,7 +1541,9 @@ export const BattleView: React.FC<BattleViewProps> = ({ cases, userName, userAva
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Total Cost</div>
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                    {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
+                  </div>
                   <div className="text-2xl font-mono font-bold text-red-500">{format2(totalCost)} ₮</div>
               </div>
             </div>

@@ -15,9 +15,17 @@ interface UpgradeViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
+  isTelegramMiniApp?: boolean;
 }
 
-export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const UpgradeView: React.FC<UpgradeViewProps> = ({
+  inventory,
+  onUpgrade,
+  isAuthenticated,
+  onOpenWalletConnect,
+  isAdmin,
+  isTelegramMiniApp = false,
+}) => {
   const UPGRADE_DIVISIONS = 24;
   const PRESET_STORAGE_KEY = 'casefun:upgradePresets:v1';
   const MIN_CHANCE_PERCENT = 0.1;
@@ -317,9 +325,13 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     let lastRawAngle: number | null = null;
     let totalAnglePassed = 0;
     let lastTickIndex = 0;
+    let lastClickAt = 0;
     const sectionSizeDeg = 360 / UPGRADE_DIVISIONS;
     const phaseLagDeg = sectionSizeDeg * 0.15;
     const clickVolume = fastUpgrade ? 0.08 : 0.12;
+    const spinStartedAt = performance.now();
+    const clickWarmupSilenceMs = fastUpgrade ? 60 : 110;
+    const clickRampMs = fastUpgrade ? 260 : 720;
 
     const readRotationDeg = () => {
       const transform = window.getComputedStyle(node).transform;
@@ -352,9 +364,20 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
         totalAnglePassed += Math.abs(delta);
         const effectiveAngle = Math.max(0, totalAnglePassed - phaseLagDeg);
         const tickIndex = Math.floor(effectiveAngle / sectionSizeDeg);
-        // Emit at most one click per frame to prevent burst loudness.
+        // Smooth start: short silence, then ramp frequency/volume to avoid noisy burst.
         if (tickIndex > lastTickIndex) {
-          playDullClick(clickVolume);
+          if (!isTelegramMiniApp) {
+            playDullClick(clickVolume);
+          } else {
+            const now = performance.now();
+            const elapsed = now - spinStartedAt;
+            const ramp = Math.max(0, Math.min(1, (elapsed - clickWarmupSilenceMs) / clickRampMs));
+            const minIntervalMs = fastUpgrade ? (28 - ramp * 10) : (56 - ramp * 30);
+            if (elapsed >= clickWarmupSilenceMs && now - lastClickAt >= minIntervalMs) {
+              playDullClick(clickVolume * (0.45 + ramp * 0.55));
+              lastClickAt = now;
+            }
+          }
           lastTickIndex = tickIndex;
         }
       }
@@ -365,7 +388,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     return () => {
       if (frameId) window.cancelAnimationFrame(frameId);
     };
-  }, [isSpinning, fastUpgrade, UPGRADE_DIVISIONS, spinDurationMs]);
+  }, [isSpinning, fastUpgrade, UPGRADE_DIVISIONS, spinDurationMs, isTelegramMiniApp]);
 
   const handleSelectItem = (item: Item, key: string) => {
     if (isSpinning) return;
@@ -430,15 +453,20 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
     : 'Very low chance';
 
   return (
-    <div className="flex flex-col min-h-screen text-white relative">
-
+    <div className={`flex flex-col text-white relative ${isTelegramMiniApp ? 'min-h-0' : 'min-h-screen'}`}>
       {/* Top Section: The Upgrade Machine */}
-      <div className="flex-1 min-h-[500px] flex flex-col items-center justify-center relative py-12 bg-black/20 backdrop-blur-2xl border-b border-white/[0.12]">
-        <div className="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-10 lg:gap-16 z-10 w-full max-w-6xl px-8">
+      <div className={`flex-1 flex flex-col items-center justify-center relative bg-black/20 backdrop-blur-2xl border-b border-white/[0.12] ${
+        isTelegramMiniApp ? 'min-h-[420px] py-5' : 'min-h-[500px] py-12'
+      }`}>
+        <div className={`flex flex-col lg:flex-row items-center lg:items-start justify-center z-10 w-full max-w-6xl ${
+          isTelegramMiniApp ? 'gap-6 lg:gap-8 px-3' : 'gap-10 lg:gap-16 px-8'
+        }`}>
           
           {/* Left: Selected Item */}
-          <div className="flex flex-col gap-6 w-full max-w-sm flex-1">
-            <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl h-[420px] flex flex-col">
+          <div className={`w-full max-w-sm flex-1 ${isTelegramMiniApp ? 'hidden' : 'flex flex-col gap-6'}`}>
+            <div className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl flex flex-col ${
+              isTelegramMiniApp ? 'p-3 h-auto min-h-[280px]' : 'p-6 h-[420px]'
+            }`}>
               <div className="flex justify-between items-center mb-4 border-b border-white/[0.06] pb-2">
                 <span className="text-gray-400 font-bold uppercase text-xs tracking-wider">
                   Selected Item
@@ -449,7 +477,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               </div>
               
               <div className="flex flex-col gap-3 flex-1 justify-start pt-1">
-                <div className="w-full grid grid-cols-3 gap-2">
+                    <div className={`w-full grid grid-cols-3 ${isTelegramMiniApp ? 'gap-1.5' : 'gap-2'}`}>
                   {Array.from({ length: 9 }).map((_, index) => {
                     const selected = selectedItems[index];
                     if (selected) {
@@ -458,8 +486,9 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                           key={`${selected.id}-selected-${index}`}
                           item={selected}
                           size="sm"
-                          className="w-full h-[107px]"
+                          className={`w-full ${isTelegramMiniApp ? 'h-[102px]' : 'h-[107px]'}`}
                           currencyPrefix="$"
+                          compactContent={isTelegramMiniApp}
                           onClick={() => removeSelectedItem(selected.id)}
                         />
                       );
@@ -467,7 +496,9 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     return (
                       <div
                         key={`empty-slot-${index}`}
-                        className="relative h-[107px] rounded-xl border-2 border-white/[0.06] bg-web3-card/50 backdrop-blur-sm p-2 flex flex-col items-center justify-center"
+                        className={`relative rounded-xl border-2 border-white/[0.06] bg-web3-card/50 backdrop-blur-sm p-2 flex flex-col items-center justify-center ${
+                          isTelegramMiniApp ? 'h-[102px]' : 'h-[107px]'
+                        }`}
                       >
                         <div className="w-12 h-12 aspect-square shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-web3-purple/20 to-web3-accent/20 border-2 border-dashed border-white/[0.12] flex items-center justify-center">
                           <span className="text-[10px] uppercase tracking-widest text-gray-500">Item</span>
@@ -488,8 +519,40 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
           </div>
 
           {/* Center: The Circle + Action */}
-          <div className="flex flex-col items-center justify-center gap-6 flex-shrink-0">
-            <div className="relative w-[220px] h-[220px] lg:w-[280px] lg:h-[280px] flex items-center justify-center mt-6 rounded-full overflow-hidden">
+          <div className="flex flex-col items-center justify-center gap-4 flex-shrink-0">
+            {isTelegramMiniApp && (
+              <div className="w-full max-w-[340px] grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-white/[0.12] bg-black/25 p-2.5">
+                  <div className="text-[9px] uppercase tracking-[0.14em] text-gray-500">Selected</div>
+                  <div className="mt-1 text-base font-black text-web3-accent">{selectedTotalValue.toFixed(2)} total</div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">{selectedItems.length}/9 selected</div>
+                </div>
+                <div className="rounded-xl border border-white/[0.12] bg-black/25 p-2.5">
+                  <div className="text-[9px] uppercase tracking-[0.14em] text-gray-500">Result</div>
+                  {lastResult ? (
+                    <>
+                      <div className={`mt-1 text-base font-black ${lastResult.success ? 'text-web3-success' : 'text-red-300'}`}>
+                        {Number(lastResult.value || 0).toFixed(2)}
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">{lastResult.success ? 'Win' : 'Lose'}</div>
+                    </>
+                  ) : displayItem ? (
+                    <>
+                      <div className="mt-1 text-base font-black text-web3-accent">{displayTargetValue.toFixed(2)}</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">Target</div>
+                    </>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-gray-500">No result yet</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div
+              className={`relative flex items-center justify-center rounded-full overflow-hidden ${
+                isTelegramMiniApp ? 'w-[190px] h-[190px] mt-2' : 'w-[220px] h-[220px] lg:w-[280px] lg:h-[280px] mt-6'
+              }`}
+            >
               <div className="absolute inset-6 rounded-full bg-gradient-to-br from-web3-accent/10 to-web3-purple/10 blur-xl opacity-80 pointer-events-none"></div>
               
               {/* SVG Rings */}
@@ -579,42 +642,50 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               >
                 {displayItem && upgradeResult === 'idle' ? (
                   <div className="flex flex-col items-center transition-all duration-300">
-                    <div className="text-3xl font-black tracking-tight text-white font-sans">
+                    <div className={`${isTelegramMiniApp ? 'text-2xl' : 'text-3xl'} font-black tracking-tight text-white font-sans`}>
                       {winChance.toFixed(2)}%
                     </div>
-                    <div className={`mt-2 text-xs font-bold uppercase tracking-[0.25em] ${winChance < 20 ? 'text-web3-danger' : 'text-web3-success'}`}>
+                    <div
+                      className={`mt-1 font-bold uppercase ${
+                        isTelegramMiniApp ? 'text-[10px] tracking-[0.14em]' : 'text-xs tracking-[0.25em]'
+                      } ${winChance < 20 ? 'text-web3-danger' : 'text-web3-success'}`}
+                    >
                       {chanceLabel}
-                  </div>
+                    </div>
                   </div>
                 ) : null}
                 
                 {/* Result Overlay */}
                 {upgradeResult !== 'idle' && (
                   <div className={`absolute inset-0 flex items-center justify-center backdrop-blur-sm bg-black/40 z-30 animate-fade-in`}>
-                    <div className="relative flex flex-col items-center gap-2">
+                    <div className={`relative flex flex-col items-center ${isTelegramMiniApp ? 'gap-1' : 'gap-2'}`}>
                       {upgradeResult === 'success' ? (
                         <>
-                          <div className="absolute -top-6 -left-6 text-web3-accent animate-ping">
-                            <Sparkles size={16} />
+                          <div className={`${isTelegramMiniApp ? '-top-5 -left-5' : '-top-6 -left-6'} absolute text-web3-accent animate-ping`}>
+                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
                           </div>
-                          <div className="absolute -top-6 -right-6 text-web3-success animate-ping" style={{ animationDelay: '0.3s' }}>
-                            <Sparkles size={16} />
+                          <div className={`${isTelegramMiniApp ? '-top-5 -right-5' : '-top-6 -right-6'} absolute text-web3-success animate-ping`} style={{ animationDelay: '0.3s' }}>
+                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
                           </div>
-                          <div className="absolute -bottom-6 -left-6 text-web3-purple animate-ping" style={{ animationDelay: '0.6s' }}>
-                            <Sparkles size={16} />
+                          <div className={`${isTelegramMiniApp ? '-bottom-5 -left-5' : '-bottom-6 -left-6'} absolute text-web3-purple animate-ping`} style={{ animationDelay: '0.6s' }}>
+                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
                           </div>
-                          <div className="text-2xl font-black uppercase tracking-[0.12em] text-white">
+                          <div
+                            className={`font-black uppercase text-white ${
+                              isTelegramMiniApp ? 'text-[15px] tracking-[0.06em]' : 'text-2xl tracking-[0.12em]'
+                            }`}
+                          >
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
                               CONGRATS!
                             </span>
                           </div>
-                          <div className="text-xs uppercase tracking-[0.25em] text-gray-300">
+                          <div className={`${isTelegramMiniApp ? 'text-[9px] tracking-[0.12em]' : 'text-xs tracking-[0.25em]'} uppercase text-gray-300`}>
                             Upgrade success
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="relative w-44 h-24 flex flex-col items-center justify-center">
+                          <div className={`relative flex flex-col items-center justify-center ${isTelegramMiniApp ? 'w-36 h-20' : 'w-44 h-24'}`}>
                             <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
                               {Array.from({ length: 8 }).map((_, idx) => (
                                 <span
@@ -628,10 +699,14 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                                 />
                               ))}
                             </div>
-                            <div className="text-2xl font-black uppercase tracking-[0.15em] text-web3-danger drop-shadow-[0_0_6px_rgba(239,68,68,0.35)]">
+                            <div
+                              className={`font-black uppercase text-web3-danger drop-shadow-[0_0_6px_rgba(239,68,68,0.35)] ${
+                                isTelegramMiniApp ? 'text-[15px] tracking-[0.07em]' : 'text-2xl tracking-[0.15em]'
+                              }`}
+                            >
                               Try again
                             </div>
-                            <div className="text-xs uppercase tracking-[0.25em] text-gray-300">
+                            <div className={`${isTelegramMiniApp ? 'text-[9px] tracking-[0.12em]' : 'text-xs tracking-[0.25em]'} uppercase text-gray-300`}>
                               Upgrade failed
                             </div>
                           </div>
@@ -643,7 +718,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               </div>
             </div>
 
-            <div className="w-full max-w-xs text-center">
+            <div className={`w-full text-center ${isTelegramMiniApp ? 'max-w-[380px]' : 'max-w-xs'}`}>
               <AdminActionButton
                 isAuthenticated={isAuthenticated}
                 isAdmin={isAdmin}
@@ -675,12 +750,80 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               >
                 {fastUpgrade ? 'Fast Mode On' : 'Fast Mode Off'}
               </button>
+
+              {isTelegramMiniApp && (
+                <div className="mt-3 w-full rounded-xl border border-white/[0.12] bg-black/25 text-left p-2.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Chance setup</div>
+                    <button
+                      onClick={openPresetSettings}
+                      disabled={isSpinning}
+                      className="w-7 h-7 rounded-md border border-white/[0.12] bg-black/30 text-gray-400 hover:text-white hover:border-web3-accent/40 transition flex items-center justify-center"
+                      title="Customize presets"
+                    >
+                      <Settings2 size={13} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-6 gap-1.5 mb-3">
+                    {percentPresets.map((preset, idx) => (
+                      <button
+                        key={`p-preset-${idx}`}
+                        onClick={() => {
+                          if (isSpinning) return;
+                          setChancePercent(Number(preset));
+                        }}
+                        className="h-8 rounded-md border border-white/[0.08] bg-white/[0.03] font-bold text-gray-300 hover:text-white hover:bg-white/[0.08] transition text-[10px]"
+                      >
+                        {preset}%
+                      </button>
+                    ))}
+                    {xPresets.map((preset, idx) => (
+                      <button
+                        key={`x-preset-${idx}`}
+                        onClick={() => {
+                          if (isSpinning) return;
+                          setMultiplier(Math.max(MIN_MULTIPLIER_FROM_MAX_CHANCE, Number(preset)));
+                        }}
+                        className="h-8 rounded-md border border-white/[0.08] bg-white/[0.03] font-bold text-gray-300 hover:text-white hover:bg-white/[0.08] transition text-[10px]"
+                      >
+                        {preset}x
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-white/[0.12]">
+                    <button
+                      onClick={() => setChancePercent(effectiveChance - 1)}
+                      disabled={isSpinning}
+                      className="w-8 h-8 rounded-md border border-white/[0.08] text-gray-300 hover:text-white hover:border-web3-accent/35 transition disabled:opacity-50"
+                    >
+                      -
+                    </button>
+                    <div className="flex-1 text-center font-mono font-black text-white text-[15px]">
+                      {effectiveChance.toFixed(2)}%
+                    </div>
+                    <button
+                      onClick={() => setChancePercent(effectiveChance + 1)}
+                      disabled={isSpinning}
+                      className="w-8 h-8 rounded-md border border-white/[0.08] text-gray-300 hover:text-white hover:border-web3-accent/35 transition disabled:opacity-50"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-gray-500">
+                    Multiplier {multiplier.toFixed(2)}x
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right: Result + Settings */}
-          <div className="w-full max-w-sm flex flex-col gap-6 flex-1">
-            <div className="bg-black/20 border border-white/[0.12] p-5 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl min-h-[420px] flex flex-col">
+          {/* Right: Result */}
+          <div className={`w-full max-w-sm flex-1 ${isTelegramMiniApp ? 'hidden' : 'flex flex-col gap-6'}`}>
+            <div className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl flex flex-col ${
+              isTelegramMiniApp ? 'p-3 min-h-[280px]' : 'p-5 min-h-[420px]'
+            }`}>
               <div className="text-xs text-gray-400 uppercase tracking-widest mb-3">Result</div>
               {lastResult ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
@@ -693,6 +836,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     className="w-full h-full max-h-[230px]"
                     status={lastResult.success ? 'normal' : 'burnt'}
                     currencyPrefix="$"
+                    compactContent={isTelegramMiniApp}
                   />
                   </div>
               ) : displayItem ? (
@@ -705,80 +849,99 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
                     size="lg"
                     className="w-full h-full max-h-[230px] opacity-80"
                     currencyPrefix="$"
+                    compactContent={isTelegramMiniApp}
                   />
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-gray-600">Select item to preview</div>
               )}
 
-              <div className="mt-4 border-t border-white/[0.06] pt-3">
-                <div className="flex justify-between items-center mb-3"></div>
+              {!isTelegramMiniApp && (
+                <div className="mt-4 border-t border-white/[0.06] pt-3">
+                  <div className="flex justify-between items-center mb-3"></div>
 
-                <div className="mb-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-gray-400 text-xs">Presets</div>
-                    <button
-                      onClick={openPresetSettings}
-                      disabled={isSpinning}
-                      className="w-8 h-8 rounded-md border border-white/[0.12] bg-black/30 text-gray-400 hover:text-white hover:border-web3-accent/40 transition flex items-center justify-center"
-                      title="Customize presets"
-                    >
-                      <Settings2 size={14} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {percentPresets.map((preset, idx) => (
-                        <button
-                          key={`p-preset-${idx}`}
-                          onClick={() => {
-                            if (isSpinning) return;
-                            setChancePercent(Number(preset));
-                          }}
-                          className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
-                        >
-                          {preset}%
-                        </button>
-                      ))}
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-gray-400 text-xs">Presets</div>
+                      <button
+                        onClick={openPresetSettings}
+                        disabled={isSpinning}
+                        className="w-8 h-8 rounded-md border border-white/[0.12] bg-black/30 text-gray-400 hover:text-white hover:border-web3-accent/40 transition flex items-center justify-center"
+                        title="Customize presets"
+                      >
+                        <Settings2 size={14} />
+                      </button>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
-                      {xPresets.map((preset, idx) => (
-                        <button
-                          key={`x-preset-${idx}`}
-                          onClick={() => {
-                            if (isSpinning) return;
-                            setMultiplier(Math.max(MIN_MULTIPLIER_FROM_MAX_CHANCE, Number(preset)));
-                          }}
-                          className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
-                        >
-                          {preset}x
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {percentPresets.map((preset, idx) => (
+                          <button
+                            key={`p-preset-desktop-${idx}`}
+                            onClick={() => {
+                              if (isSpinning) return;
+                              setChancePercent(Number(preset));
+                            }}
+                            className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
+                          >
+                            {preset}%
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {xPresets.map((preset, idx) => (
+                          <button
+                            key={`x-preset-desktop-${idx}`}
+                            onClick={() => {
+                              if (isSpinning) return;
+                              setMultiplier(Math.max(MIN_MULTIPLIER_FROM_MAX_CHANCE, Number(preset)));
+                            }}
+                            className="text-xs bg-white/[0.03] hover:bg-white/[0.08] px-2 py-1 rounded text-gray-300 transition border border-white/[0.06]"
+                          >
+                            {preset}x
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-gray-400 text-xs">Chance</div>
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500">
-                      Multiplier: {multiplier.toFixed(2)}x
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-gray-400 text-xs">Chance</div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">
+                        Multiplier: {multiplier.toFixed(2)}x
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-white/[0.12] backdrop-blur-xl">
-                    <button onClick={() => setChancePercent(effectiveChance - 1)} disabled={isSpinning} className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">-</button>
-                    <div className="flex-1 text-center font-mono text-lg font-bold text-white">
-                      {effectiveChance.toFixed(2)}%
+                    <div className="flex items-center gap-2 bg-black/30 p-1 rounded-lg border border-white/[0.12] backdrop-blur-xl">
+                      <button
+                        onClick={() => setChancePercent(effectiveChance - 1)}
+                        disabled={isSpinning}
+                        className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400"
+                      >
+                        -
+                      </button>
+                      <div className="flex-1 text-center font-mono text-lg font-bold text-white">
+                        {effectiveChance.toFixed(2)}%
+                      </div>
+                      <button
+                        onClick={() => setChancePercent(effectiveChance + 1)}
+                        disabled={isSpinning}
+                        className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400"
+                      >
+                        +
+                      </button>
                     </div>
-                    <button onClick={() => setChancePercent(effectiveChance + 1)} disabled={isSpinning} className="w-8 h-8 hover:bg-gray-700 rounded-md transition font-bold text-gray-400">+</button>
                   </div>
                 </div>
-              </div>
-              </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Bottom Section: Inventory Grid */}
-      <div className="h-[440px] lg:h-[520px] flex flex-col flex-shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.35)] bg-black/20 backdrop-blur-2xl border-t border-white/[0.12]">
-        <div className="px-6 py-3 border-b border-white/[0.12] flex justify-between items-center bg-black/20 backdrop-blur-2xl">
+      <div className={`flex flex-col flex-shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.35)] bg-black/20 backdrop-blur-2xl border-t border-white/[0.12] ${
+        isTelegramMiniApp ? 'h-[56dvh]' : 'h-[440px] lg:h-[520px]'
+      }`}>
+        <div className={`border-b border-white/[0.12] flex justify-between items-center bg-black/20 backdrop-blur-2xl ${
+          isTelegramMiniApp ? 'px-3 py-2 flex-col items-stretch gap-2' : 'px-6 py-3'
+        }`}>
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm uppercase tracking-wider text-gray-300">Your Inventory</span>
             <span className="bg-gray-700 text-xs px-2 py-0.5 rounded text-white ml-2">
@@ -797,17 +960,38 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({ inventory, onUpgrade, 
               value={searchFilter}
               onChange={handleSearchChange}
               placeholder="Search by name, token ($DOGE) or max price (500)"
-              className="w-[320px]"
+              className={isTelegramMiniApp ? 'w-full' : 'w-[320px]'}
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${isTelegramMiniApp ? 'p-3' : 'p-6'}`}>
           {visibleInventory.length === 0 ? (
             <EmptyState
               icon={<Package size={48} />}
               message={isFilterLocked ? 'No more cards for selected token/case.' : 'Your inventory is empty. Open some cases!'}
             />
+          ) : isTelegramMiniApp ? (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {pagedVisibleInventory.map((item) => {
+                if (!item || !item.id) return null;
+                const key = String(item.id);
+                return (
+                  <ItemCard
+                    key={key}
+                    item={item}
+                    size="sm"
+                    className="aspect-square !min-h-0"
+                    selected={selectedKeys.includes(key)}
+                    disabled={isSpinning}
+                    onClick={() => handleSelectItem(item, key)}
+                    showSelectedBadge={false}
+                    currencyPrefix="$"
+                    compactContent
+                  />
+                );
+              })}
+            </div>
           ) : (
             <ItemGrid>
               {pagedVisibleInventory.map((item) => {

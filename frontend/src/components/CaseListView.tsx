@@ -9,6 +9,7 @@ interface CaseListViewProps {
   userName: string;
   viewMode: 'active' | 'inactive';
   onViewModeChange: (mode: 'active' | 'inactive') => void;
+  isTelegramMiniApp?: boolean;
 }
 
 export const CaseListView: React.FC<CaseListViewProps> = ({
@@ -17,6 +18,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
   userName,
   viewMode,
   onViewModeChange,
+  isTelegramMiniApp = false,
 }) => {
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -34,7 +36,6 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
     return endAt <= Date.now();
   };
-
   const { ownCases, allCases } = useMemo(() => {
     const searchTrimmed = searchFilter.trim();
     const searchLower = searchTrimmed.toLowerCase();
@@ -75,16 +76,62 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     const logoValue = caseData.image || caseData.possibleDrops[0]?.image || '';
     const logoIsImage =
       logoValue.startsWith('http') || logoValue.startsWith('/') || logoValue.startsWith('data:');
+    const remainingTime = getRemainingTime(caseData);
+
+    if (isTelegramMiniApp) {
+      return (
+        <div
+          key={caseData.id}
+          onClick={() => onSelectCase(caseData, inactive ? 'stats' : 'open')}
+          className="group relative aspect-square min-h-0 overflow-hidden rounded-xl border border-white/[0.08] bg-web3-card/45 p-1 transition-all duration-200 hover:-translate-y-0.5 hover:border-web3-accent/50"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.03] to-web3-purple/[0.03] group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-200"></div>
+          <div className="relative z-10 grid h-full grid-rows-[auto_1fr_auto_auto] gap-1 p-0.5">
+            <div className="text-[7px] uppercase tracking-[0.08em] text-gray-500 text-center leading-none">
+              {remainingTime || (inactive ? 'closed' : 'open')}
+            </div>
+
+            <div className="flex flex-1 items-center justify-center min-h-0">
+              <div className="w-[52%] max-w-[44px] min-w-[22px] aspect-square rounded-lg border border-web3-accent/40 bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 flex items-center justify-center overflow-hidden">
+                {logoValue ? (
+                  logoIsImage ? (
+                    <ImageWithMeta
+                      src={logoValue}
+                      meta={caseData.imageMeta}
+                      className="w-full h-full"
+                      imgClassName="w-full h-full"
+                    />
+                  ) : (
+                    <span className="text-[14px] leading-none select-none">{logoValue}</span>
+                  )
+                ) : (
+                  <span className="text-[8px] uppercase tracking-widest text-gray-500">Logo</span>
+                )}
+              </div>
+            </div>
+
+            <div className="text-[9px] font-black text-white text-center leading-tight truncate">
+              {caseData.name}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-[8px] leading-none">
+              <span className="font-bold text-web3-accent">{caseData.price} ₮</span>
+              <span className="font-bold text-web3-success">{caseData.rtu}%</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
         key={caseData.id}
         onClick={() => onSelectCase(caseData, inactive ? 'stats' : 'open')}
-        className="group relative bg-web3-card/50 backdrop-blur-xl p-4 rounded-2xl border border-white/[0.05] hover:border-web3-accent/50 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square min-h-[220px] flex flex-col"
+        className="group relative bg-web3-card/50 backdrop-blur-xl rounded-2xl border border-white/[0.05] hover:border-web3-accent/50 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square flex flex-col p-4 min-h-[220px]"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.02] to-web3-purple/[0.02] group-hover:bg-gradient-to-br group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-300"></div>
 
-        <div className="relative z-10 grid h-full grid-rows-[auto_auto_1fr_auto] gap-1 px-2 py-2 min-h-0">
+        <div className="relative z-10 grid h-full min-h-0 grid-rows-[auto_auto_1fr_auto] gap-1 px-2 py-2">
           {caseData.openDurationHours && caseData.createdAt && (
             <div className="text-[9px] uppercase tracking-wider text-gray-500 text-center leading-none">
               {getRemainingTime(caseData)}
@@ -128,6 +175,75 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
       </div>
     );
   };
+
+  if (isTelegramMiniApp) {
+    const normalizedUserName = String(userName || '').trim().toLowerCase();
+    const isOwnCaseMini = (caseData: Case) => {
+      const creator = String(caseData.creatorName || '').trim().toLowerCase();
+      return creator.length > 0 && normalizedUserName.length > 0 && creator === normalizedUserName;
+    };
+    const ownCasesMini = allCases.filter((caseData) => isOwnCaseMini(caseData));
+    const communityCases = allCases.filter((caseData) => !isOwnCaseMini(caseData));
+    return (
+      <div className="w-full text-white px-1 py-1">
+        <div className="mb-3">
+          <SearchInput
+            value={searchFilter}
+            onChange={handleSearchChange}
+            placeholder="Search by name, token ($DOGE) or max price (500)"
+            className="w-full"
+          />
+        </div>
+
+        <div className="mb-3 flex items-center gap-1 rounded-xl border border-white/[0.1] bg-black/35 p-1">
+          <button
+            onClick={() => onViewModeChange('active')}
+            className={`flex-1 px-3 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
+              viewMode === 'active'
+                ? 'bg-web3-accent/20 border border-web3-accent/50 text-web3-accent'
+                : 'text-gray-400'
+            }`}
+          >
+            Available
+          </button>
+          <button
+            onClick={() => onViewModeChange('inactive')}
+            className={`flex-1 px-3 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
+              viewMode === 'inactive'
+                ? 'bg-web3-purple/20 border border-web3-purple/45 text-web3-purple'
+                : 'text-gray-400'
+            }`}
+          >
+            Unavailable
+          </button>
+        </div>
+
+        {ownCasesMini.length > 0 && viewMode === 'active' && (
+          <div className="mb-4">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">My cases</div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {ownCasesMini.map((caseData) => renderCaseCard(caseData, false))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">
+          {viewMode === 'inactive' ? 'Unavailable cases' : 'Community cases'}
+        </div>
+        {(viewMode === 'inactive' ? allCases : communityCases).length === 0 ? (
+          <div className="rounded-lg border border-white/[0.08] bg-black/25 px-3 py-4 text-center text-[10px] uppercase tracking-widest text-gray-500">
+            {viewMode === 'inactive' ? 'No unavailable cases' : 'No community cases'}
+          </div>
+        ) : (
+          <div className="grid grid-cols-5 gap-1.5">
+            {(viewMode === 'inactive' ? allCases : communityCases).map((caseData) =>
+              renderCaseCard(caseData, viewMode === 'inactive')
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-h-screen text-white px-6 py-12 relative">

@@ -1,6 +1,12 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { Button } from './Button';
+import metamaskIcon from '../assets/wallet-icons/metamask.svg';
+import trustWalletIcon from '../assets/wallet-icons/trustwallet.svg';
+import okxIcon from '../assets/wallet-icons/okx.svg';
+import coinbaseIcon from '../assets/wallet-icons/coinbase.svg';
+import walletConnectIcon from '../assets/wallet-icons/walletconnect.svg';
+import ledgerIcon from '../assets/wallet-icons/ledger.svg';
 
 interface WalletConnectModalProps {
   isOpen: boolean;
@@ -22,6 +28,33 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
   isAuthLoading = false,
 }) => {
   if (!isOpen) return null;
+
+  const walletOptions = [
+    {
+      label: 'MetaMask',
+      iconUrl: metamaskIcon,
+    },
+    {
+      label: 'Trust Wallet',
+      iconUrl: trustWalletIcon,
+    },
+    {
+      label: 'OKX Wallet',
+      iconUrl: okxIcon,
+    },
+    {
+      label: 'Coinbase Wallet',
+      iconUrl: coinbaseIcon,
+    },
+    {
+      label: 'WalletConnect',
+      iconUrl: walletConnectIcon,
+    },
+    {
+      label: 'Ledger',
+      iconUrl: ledgerIcon,
+    },
+  ];
 
   const handleConnect = async () => {
     const address = await connectWallet();
@@ -46,8 +79,32 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
         <h2 className="text-3xl font-black mb-6">Connect Wallet</h2>
         
         <p className="text-gray-400 mb-8">
-          Connect your MetaMask wallet to access all features of CaseFun.
+          Connect any EVM wallet to access all features of CaseFun.
         </p>
+
+        <div className="mb-7">
+          <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+            Popular options
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {walletOptions.map((wallet) => (
+              <div
+                key={wallet.label}
+                className="rounded-lg border border-white/[0.08] bg-black/25 px-2.5 py-2 flex items-center gap-2"
+              >
+                <span className="w-6 h-6 rounded-md border border-white/[0.14] bg-white/90 flex items-center justify-center overflow-hidden">
+                  <img
+                    src={wallet.iconUrl}
+                    alt={`${wallet.label} icon`}
+                    className="w-4 h-4 object-contain"
+                    loading="lazy"
+                  />
+                </span>
+                <span className="text-[10px] text-gray-300 font-semibold leading-tight">{wallet.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6">
@@ -60,11 +117,11 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({
           disabled={isConnecting || isAuthLoading}
           className="w-full py-4 text-lg"
         >
-          {isConnecting ? 'Connecting...' : isAuthLoading ? 'Signing...' : 'Connect MetaMask'}
+          {isConnecting ? 'Connecting...' : isAuthLoading ? 'Signing...' : 'Connect Wallet'}
         </Button>
         {isAuthLoading && (
           <div className="mt-3 text-[11px] uppercase tracking-widest text-gray-500 text-center">
-            Confirm signature in MetaMask
+            Confirm signature in your wallet
           </div>
         )}
 

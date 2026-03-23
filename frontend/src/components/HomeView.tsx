@@ -245,7 +245,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 Early Access
               </span>
             </button>
-
+            
             <button
               onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
               className="w-full sm:w-auto px-12 py-6 text-xl font-bold rounded-xl border-2 border-white/20 hover:border-web3-accent/50 hover:bg-white/5 transition-all duration-300 backdrop-blur-sm"
@@ -679,7 +679,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               {earlyAccessFormStatus && (
                 <div className={`text-xs ${earlyAccessFormStatus.toLowerCase().includes('sent') ? 'text-web3-success' : 'text-gray-300'}`}>
                   {earlyAccessFormStatus}
-                </div>
+            </div>
               )}
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -702,7 +702,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                         ? 'Request Locked'
                         : 'Submit Request'}
                 </button>
-              </div>
+            </div>
             </form>
           </div>
         </div>

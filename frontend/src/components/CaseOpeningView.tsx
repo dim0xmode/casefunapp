@@ -24,9 +24,21 @@ interface CaseOpeningViewProps {
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
   viewMode?: 'open' | 'stats';
+  isTelegramMiniApp?: boolean;
 }
 
-export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBack, onOpenCase, balance, onOpenTopUp, isAuthenticated, onOpenWalletConnect, isAdmin, viewMode = 'open' }) => {
+export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
+  caseData,
+  onBack,
+  onOpenCase,
+  balance,
+  onOpenTopUp,
+  isAuthenticated,
+  onOpenWalletConnect,
+  isAdmin,
+  viewMode = 'open',
+  isTelegramMiniApp = false,
+}) => {
   const formatAddress = (address?: string | null) => {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -105,22 +117,28 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
   };
 
   return (
-    <div className="w-full text-white px-6 py-12 relative">
+    <div className={`w-full text-white relative ${isTelegramMiniApp ? 'px-2 py-3' : 'px-6 py-12'}`}>
       {/* Back Button */}
-      <div className="max-w-7xl mx-auto mb-8">
+      <div className={`max-w-7xl mx-auto ${isTelegramMiniApp ? 'mb-4' : 'mb-8'}`}>
         <button
           onClick={onBack}
           disabled={isSpinning}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-web3-card/50 border border-gray-800 hover:border-web3-accent/50 transition-all duration-300 text-gray-400 hover:text-white ${isSpinning ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <ArrowLeft size={20} />
-          <span className="font-bold">Back to Cases</span>
+          <span className="font-bold">{isTelegramMiniApp ? 'Back' : 'Back to Cases'}</span>
         </button>
       </div>
 
       {/* Case Info Header */}
-      <div className="max-w-7xl mx-auto mb-8 text-center">
-        <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-web3-accent/10 to-web3-purple/10 border border-web3-accent/30 text-web3-accent text-xs font-bold uppercase tracking-widest backdrop-blur-sm animate-fade-in">
+      <div className={`max-w-7xl mx-auto text-center ${isTelegramMiniApp ? 'mb-5' : 'mb-8'}`}>
+        <div
+          className={`inline-flex items-center gap-2 rounded-full border text-web3-accent font-bold uppercase backdrop-blur-sm animate-fade-in ${
+            isTelegramMiniApp
+              ? 'px-3 py-1.5 text-[10px] tracking-[0.16em] bg-web3-accent/10 border-web3-accent/35'
+              : 'px-5 py-2.5 text-xs tracking-widest bg-gradient-to-r from-web3-accent/10 to-web3-purple/10 border-web3-accent/30'
+          }`}
+        >
           <Package size={14} />
           {caseData.name}
         </div>
@@ -132,7 +150,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
       </div>
 
       {isStatsView && (
-        <div className="max-w-5xl mx-auto mb-8">
+        <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mb-5' : 'mb-8'}`}>
           <div className="bg-web3-card/50 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-xl">
             <div className="text-xs uppercase tracking-widest text-gray-500 mb-4">Case Statistics</div>
             {caseData.stats ? (
@@ -212,7 +230,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
       )}
 
       {!isStatsView && (
-      <div className="max-w-5xl mx-auto mb-8">
+      <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mb-5' : 'mb-8'}`}>
         {Array.from({ length: rouletteCount }).map((_, idx) => (
             <CaseRoulette
               key={`roulette-${idx}`}
@@ -227,6 +245,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
               clickSoundEnabled={true}
               resultSoundEnabled={true}
               clickVolume={idx === 0 ? 0.15 : 0.08}
+              compactContent={isTelegramMiniApp}
             />
         ))}
       </div>
@@ -235,7 +254,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
       {!isStatsView && (
       <div className="max-w-7xl mx-auto">
         {/* Multi-Open Selector - по центру рулетки */}
-        <div className="flex justify-center mb-4">
+        <div className={`flex justify-center ${isTelegramMiniApp ? 'mb-3' : 'mb-4'}`}>
           <div className="flex items-center gap-1 bg-web3-card/50 p-1 rounded-lg border border-gray-700/50 backdrop-blur-sm h-[42px]">
             {[1, 2, 3, 4, 5].map((count) => (
               <button
@@ -255,9 +274,9 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
         </div>
 
         {/* Open Button and Side Controls */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 max-w-6xl mx-auto">
+        <div className={`${isTelegramMiniApp ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'} max-w-6xl mx-auto`}>
           {/* Left Side: Price and RTU */}
-          <div className="flex items-center justify-end gap-2">
+          <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
               <span className="text-xs font-bold text-gray-300">{cost} ₮</span>
             </div>
@@ -284,11 +303,11 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
             forceLabel={Boolean(isExpired || isSpinning)}
             disabled={isSpinning || isExpired}
             showPing={!isSpinning && canAfford && !isExpired}
-            className="group px-8 py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300"
+            className={`group ${isTelegramMiniApp ? 'px-6' : 'px-8'} py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300`}
           />
 
           {/* Right Side: Open Mode Toggle */}
-          <div className="flex items-center justify-start gap-1">
+          <div className={`flex items-center gap-1 ${isTelegramMiniApp ? 'justify-center' : 'justify-start'}`}>
             <button
               onClick={() => !isSpinning && setOpenMode('normal')}
               disabled={isSpinning}
@@ -328,15 +347,15 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({ caseData, onBa
       )}
 
       {/* Possible Items List */}
-      <div className="max-w-5xl mx-auto mt-10">
-        <div className="flex items-center justify-center gap-4 mb-6 text-gray-400 text-xs uppercase tracking-widest">
+      <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mt-6' : 'mt-10'}`}>
+        <div className={`flex items-center justify-center ${isTelegramMiniApp ? 'gap-2 mb-3 text-[10px]' : 'gap-4 mb-6 text-xs'} text-gray-400 uppercase tracking-widest`}>
           <div className="h-px w-12 bg-gray-700"></div>
           <span>Possible Items</span>
           <div className="h-px w-12 bg-gray-700"></div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${isTelegramMiniApp ? 'gap-2' : 'gap-4'}`}>
           {caseData.possibleDrops.map((item, idx) => (
-            <ItemCard key={`${item.id}-${idx}`} item={item} size="md" currencyPrefix="$" />
+            <ItemCard key={`${item.id}-${idx}`} item={item} size="md" currencyPrefix="$" compactContent={isTelegramMiniApp} />
           ))}
         </div>
       </div>

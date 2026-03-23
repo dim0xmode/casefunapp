@@ -22,6 +22,10 @@ export const config = {
   twitterClientId: process.env.TWITTER_CLIENT_ID || '',
   twitterClientSecret: process.env.TWITTER_CLIENT_SECRET || '',
   twitterRedirectUri: process.env.TWITTER_REDIRECT_URI || '',
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramAuthClientId: process.env.TELEGRAM_AUTH_CLIENT_ID || '',
+  telegramAuthClientSecret: process.env.TELEGRAM_AUTH_CLIENT_SECRET || '',
+  telegramAuthMaxAgeSeconds: parseInt(process.env.TELEGRAM_AUTH_MAX_AGE_SECONDS || '86400', 10),
 };
 
 // Validate required environment variables
@@ -39,6 +43,14 @@ if (!config.ethereumRpcUrl || !config.treasuryAddress || !config.tokenFactoryAdd
 
 if (config.twitterClientId && !config.twitterClientSecret) {
   console.warn('⚠️  WARNING: TWITTER_CLIENT_ID is set without TWITTER_CLIENT_SECRET.');
+}
+
+if (config.telegramBotToken && config.telegramBotToken.length < 20) {
+  console.warn('⚠️  WARNING: TELEGRAM_BOT_TOKEN looks invalid.');
+}
+
+if (config.telegramAuthClientId && !config.telegramAuthClientSecret) {
+  console.warn('⚠️  WARNING: TELEGRAM_AUTH_CLIENT_ID is set without TELEGRAM_AUTH_CLIENT_SECRET.');
 }
 
 export const isDevelopment = config.nodeEnv === 'development';

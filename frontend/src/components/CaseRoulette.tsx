@@ -40,6 +40,7 @@ interface CaseRouletteProps {
   clickSoundEnabled?: boolean;
   resultSoundEnabled?: boolean;
   clickVolume?: number;
+  compactContent?: boolean;
 }
 
 export const CaseRoulette: React.FC<CaseRouletteProps> = ({
@@ -54,6 +55,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
   clickSoundEnabled,
   resultSoundEnabled,
   clickVolume = 0.16,
+  compactContent = false,
 }) => {
   const BASE_STRIP_LENGTH = 80;
   const INITIAL_STRIP_LENGTH = 20;
@@ -340,6 +342,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
                   size="sm"
                   className="w-full h-full"
                   currencyPrefix="$"
+                  compactContent={compactContent}
                 />
               </div>
             ))}

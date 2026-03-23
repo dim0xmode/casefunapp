@@ -12,9 +12,20 @@ interface CaseViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
+  isTelegramMiniApp?: boolean;
 }
 
-export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, onOpenTopUp, userName, isAuthenticated, onOpenWalletConnect, isAdmin }) => {
+export const CaseView: React.FC<CaseViewProps> = ({
+  cases,
+  onOpenCase,
+  balance,
+  onOpenTopUp,
+  userName,
+  isAuthenticated,
+  onOpenWalletConnect,
+  isAdmin,
+  isTelegramMiniApp = false,
+}) => {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [selectedMode, setSelectedMode] = useState<'open' | 'stats'>('open');
   const [listViewMode, setListViewMode] = useState<'active' | 'inactive'>('active');
@@ -42,6 +53,7 @@ export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, 
           onOpenWalletConnect={onOpenWalletConnect}
           isAdmin={isAdmin}
           viewMode={selectedMode}
+          isTelegramMiniApp={isTelegramMiniApp}
         />
       ) : (
         <CaseListView
@@ -50,6 +62,7 @@ export const CaseView: React.FC<CaseViewProps> = ({ cases, onOpenCase, balance, 
           userName={userName}
           viewMode={listViewMode}
           onViewModeChange={setListViewMode}
+          isTelegramMiniApp={isTelegramMiniApp}
         />
       )}
     </>

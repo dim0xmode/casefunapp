@@ -1,7 +1,33 @@
 import express from 'express';
 import multer from 'multer';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { topUpBalance, upgradeItem, recordBattle, chargeBattle, updateProfile, uploadAvatar, updateAvatarMeta, checkUsernameAvailability, createFeedbackMessage, getEarlyAccessRequestStatus, createBattleLobby, listBattleLobbies, joinBattleLobby, startBattleLobby, resolveBattle, finishBattleLobby, getTwitterConnectUrl, linkTwitterAccount, unlinkTwitterAccount } from '../controllers/userController.js';
+import {
+  topUpBalance,
+  upgradeItem,
+  recordBattle,
+  chargeBattle,
+  updateProfile,
+  uploadAvatar,
+  updateAvatarMeta,
+  checkUsernameAvailability,
+  createFeedbackMessage,
+  getEarlyAccessRequestStatus,
+  createBattleLobby,
+  listBattleLobbies,
+  joinBattleLobby,
+  startBattleLobby,
+  resolveBattle,
+  finishBattleLobby,
+  linkTelegramAccount,
+  linkTelegramWebAccount,
+  startTelegramBotLink,
+  getTelegramBotLinkStatus,
+  getTelegramBotInfo,
+  unlinkTelegramAccount,
+  getTwitterConnectUrl,
+  linkTwitterAccount,
+  unlinkTwitterAccount,
+} from '../controllers/userController.js';
 
 const router = express.Router();
 const upload = multer({
@@ -25,6 +51,12 @@ router.patch('/profile', updateProfile);
 router.post('/avatar', upload.single('file'), uploadAvatar);
 router.patch('/avatar-meta', updateAvatarMeta);
 router.get('/username/check', checkUsernameAvailability);
+router.post('/telegram/link', linkTelegramAccount);
+router.post('/telegram/link-web', linkTelegramWebAccount);
+router.post('/telegram/link-bot/start', startTelegramBotLink);
+router.get('/telegram/link-bot/status', getTelegramBotLinkStatus);
+router.get('/telegram/bot-info', getTelegramBotInfo);
+router.delete('/telegram/link', unlinkTelegramAccount);
 router.get('/twitter/connect-url', getTwitterConnectUrl);
 router.post('/twitter/link', linkTwitterAccount);
 router.delete('/twitter/link', unlinkTwitterAccount);

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, Item, Case, ImageMeta } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Link2, Unlink2, Gift, Play, Pause } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Link2, Unlink2, Gift, Play, Pause, MessageCircle } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -53,8 +53,14 @@ interface ProfileViewProps {
   twitterBusy?: boolean;
   twitterNotice?: string | null;
   twitterError?: string | null;
+  onConnectTelegram?: () => Promise<void> | void;
+  onDisconnectTelegram?: () => Promise<void> | void;
+  onOpenTelegramMiniApp?: () => Promise<void> | void;
+  telegramBusy?: boolean;
+  telegramError?: string | null;
   isBackgroundAnimated?: boolean;
   onToggleBackgroundAnimation?: () => void;
+  isTelegramMiniApp?: boolean;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -76,8 +82,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onDisconnectTwitter,
   twitterBusy = false,
   twitterError = null,
+  onConnectTelegram,
+  onDisconnectTelegram,
+  onOpenTelegramMiniApp,
+  telegramBusy = false,
+  telegramError = null,
   isBackgroundAnimated = true,
   onToggleBackgroundAnimation,
+  isTelegramMiniApp = false,
 }) => {
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -227,6 +239,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const formatTwitterLinkedAt = (value?: string | number | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const formatTelegramLinkedAt = (value?: string | number | null) => {
     if (!value) return null;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
@@ -524,73 +547,86 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     });
     return sorted;
   }, [filteredPortfolioEntries, portfolioSort]);
+  const miniUpgradeIconCardClass = isTelegramMiniApp ? 'aspect-square !min-h-0' : '';
 
   if (!user) {
     return (
-      <div className="p-8 max-w-[1600px] mx-auto min-h-screen flex items-center justify-center">
+      <div className={`${isTelegramMiniApp ? 'p-3 min-h-0' : 'p-8 min-h-screen'} max-w-[1600px] mx-auto flex items-center justify-center`}>
         <div className="text-gray-500">Loading profile...</div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto min-h-screen">
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8">
-        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl flex flex-col h-[440px] backdrop-blur-2xl">
+    <div className={`${isTelegramMiniApp ? 'p-3 min-h-0' : 'p-8 min-h-screen'} max-w-[1600px] mx-auto`}>
+      <div className={`${isTelegramMiniApp ? 'grid grid-cols-1 gap-3 mb-4' : 'grid grid-cols-1 xl:grid-cols-12 gap-6 mb-8'}`}>
+        <div
+          className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl flex flex-col backdrop-blur-2xl ${
+            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
+          }`}
+        >
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">
               Asset Portfolio
             </h3>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPortfolioSort('name')}
-                className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                  portfolioSort === 'name'
-                    ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
-                    : 'text-gray-500 border-white/10 hover:text-white'
-                }`}
-              >
-                Name
-              </button>
-              <button
-                onClick={() => setPortfolioSort('amount')}
-                className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                  portfolioSort === 'amount'
-                    ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
-                    : 'text-gray-500 border-white/10 hover:text-white'
-                }`}
-              >
-                Amount
-              </button>
+            {!isTelegramMiniApp && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPortfolioSort('name')}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                    portfolioSort === 'name'
+                      ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
+                      : 'text-gray-500 border-white/10 hover:text-white'
+                  }`}
+                >
+                  Name
+                </button>
+                <button
+                  onClick={() => setPortfolioSort('amount')}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                    portfolioSort === 'amount'
+                      ? 'bg-web3-accent/20 text-web3-accent border-web3-accent/30'
+                      : 'text-gray-500 border-white/10 hover:text-white'
+                  }`}
+                >
+                  Amount
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!isTelegramMiniApp && (
+            <div className="mb-3">
+              <SearchInput
+                value={portfolioSearch}
+                onChange={setPortfolioSearch}
+                placeholder="Search token"
+                className="md:w-full"
+              />
             </div>
-          </div>
+          )}
 
-          <div className="mb-3">
-            <SearchInput
-              value={portfolioSearch}
-              onChange={setPortfolioSearch}
-              placeholder="Search token"
-              className="md:w-full"
-            />
-          </div>
-
-          <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0">
+          <div className={`${isTelegramMiniApp ? 'grid grid-cols-2 gap-2' : 'space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0'}`}>
             {portfolioEntries.length === 0 && (
               <div className="text-gray-600 text-sm italic py-4 text-center">No tokens found.</div>
             )}
-            {portfolioEntries.map(({ currency, total }) => (
-              <div key={currency} className="bg-black/25 backdrop-blur-xl px-4 py-3 rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors">
+            {(isTelegramMiniApp ? portfolioEntries.slice(0, 6) : portfolioEntries).map(({ currency, total }) => (
+              <div key={currency} className={`bg-black/25 backdrop-blur-xl rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors ${isTelegramMiniApp ? 'px-3 py-2' : 'px-4 py-3'}`}>
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${total > 0 ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}></div>
                   <span className="font-bold text-gray-300 text-sm">${currency}</span>
                 </div>
-                <span className="font-mono text-white font-bold">{total}</span>
+                <span className="font-mono text-white font-bold">{Number(total || 0).toFixed(2)}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl h-[440px] backdrop-blur-2xl relative overflow-hidden">
+        <div
+          className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl relative overflow-hidden ${
+            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
+          }`}
+        >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple bg-size-200 animate-gradient"></div>
           {isEditable && (
             <>
@@ -633,7 +669,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
-            <h2 className="text-2xl font-black text-white">{user?.username || 'User'}</h2>
+            <h2 className={`${isTelegramMiniApp ? 'text-xl' : 'text-2xl'} font-black text-white`}>{user?.username || 'User'}</h2>
 
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/30 border border-white/[0.12] backdrop-blur-xl mt-2 mb-2">
               <span className="font-mono text-sm font-bold text-white tabular-nums">
@@ -655,7 +691,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             <div className="w-full h-[1px] bg-white/5 mb-4"></div>
 
-            <div className="grid grid-cols-2 gap-3 w-full">
+            <div className={`grid grid-cols-2 gap-3 w-full ${isTelegramMiniApp ? 'mt-1' : ''}`}>
               <StatCard
                 label="Cases Opened"
                 value={user?.stats?.casesOpened || 0}
@@ -672,7 +708,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        <div className="xl:col-span-4 bg-black/20 border border-white/[0.12] p-6 rounded-2xl h-[440px] backdrop-blur-2xl flex flex-col">
+        <div
+          className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl flex flex-col ${
+            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
+          }`}
+        >
           <div className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">
             Social & Rewards
           </div>
@@ -731,24 +771,95 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4 mt-3 min-h-[106px]">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
-              <Gift size={12} />
-              Rewards
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Telegram</div>
+                {user?.telegramId ? (
+                  <>
+                    <div className="text-white font-bold text-sm mt-1">
+                      {user.telegramUsername ? `@${user.telegramUsername}` : user.telegramFirstName || 'linked'}
+                    </div>
+                    {formatTelegramLinkedAt(user?.telegramLinkedAt) && (
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">
+                        Linked {formatTelegramLinkedAt(user?.telegramLinkedAt)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[11px] text-gray-400 mt-1">Not linked</div>
+                )}
+              </div>
+              <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${user?.telegramId ? 'border-web3-success/40 text-web3-success' : 'border-white/15 text-gray-400'}`}>
+                <MessageCircle size={14} />
+              </div>
             </div>
-            <div className="mt-2 text-[11px] text-gray-300">
-              Connect social account to unlock future reward quests and community bonuses.
-            </div>
+
+            {isEditable ? (
+              <div className={`mt-4 grid gap-2 ${user?.telegramId && onOpenTelegramMiniApp ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (user?.telegramId) {
+                      onDisconnectTelegram?.();
+                    } else {
+                      onConnectTelegram?.();
+                    }
+                  }}
+                  disabled={telegramBusy || (!user?.telegramId && !onConnectTelegram) || (Boolean(user?.telegramId) && !onDisconnectTelegram)}
+                  className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                    user?.telegramId
+                      ? 'border-red-500/35 text-red-300 hover:border-red-400/60'
+                      : 'border-web3-accent/40 text-web3-accent hover:border-web3-accent/70'
+                  } ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  {telegramBusy ? 'Please wait...' : user?.telegramId ? 'Disconnect Telegram' : 'Connect Telegram'}
+                </button>
+                {user?.telegramId && onOpenTelegramMiniApp && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTelegramMiniApp?.()}
+                    disabled={telegramBusy}
+                    className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-web3-success/35 text-web3-success hover:border-web3-success/70 transition ${
+                      telegramBusy ? 'opacity-70 cursor-wait' : ''
+                    }`}
+                  >
+                    Open Mini App
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 text-[10px] uppercase tracking-widest text-gray-500">
+                Social links visible only
+              </div>
+            )}
           </div>
+
+          {!isTelegramMiniApp && (
+            <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4 mt-3 min-h-[106px]">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
+                <Gift size={12} />
+                Rewards
+              </div>
+              <div className="mt-2 text-[11px] text-gray-300">
+                Connect social account to unlock future reward quests and community bonuses.
+              </div>
+            </div>
+          )}
 
           {isEditable && twitterError && (
             <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">
               {twitterError}
             </div>
           )}
+          {isEditable && telegramError && (
+            <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">
+              {telegramError}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-6">
+      <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'mb-3 flex-wrap' : 'mb-6'}`}>
         <Tabs
           className="flex-1"
           tabs={[
@@ -773,7 +884,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         )}
       </div>
 
-      <div className="bg-black/20 border border-white/[0.12] rounded-2xl p-6 flex flex-col h-[810px] backdrop-blur-2xl">
+      <div
+        className={`bg-black/20 border border-white/[0.12] rounded-2xl flex flex-col backdrop-blur-2xl ${
+          isTelegramMiniApp ? 'p-3 h-[70dvh]' : 'p-6 h-[810px]'
+        }`}
+      >
             {/* Inventory Tab */}
             {tab === 'inventory' && (
               <div className="flex flex-col h-full min-h-0">
@@ -781,16 +896,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <EmptyState
                     icon={<Package size={48} />}
                     message="Inventory is empty"
-                    className="min-h-[810px] rounded-xl"
+                    className={isTelegramMiniApp ? 'min-h-[420px] rounded-xl' : 'min-h-[810px] rounded-xl'}
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <ItemGrid className="auto-rows-max gap-3">
-                      {pagedInventory.map((item, index) => {
-                        if (!item || !item.id) return null;
-                        return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" />;
-                      })}
-                    </ItemGrid>
+                    {isTelegramMiniApp ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {pagedInventory.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" compactContent className={miniUpgradeIconCardClass} />;
+                        })}
+                      </div>
+                    ) : (
+                      <ItemGrid className="auto-rows-max gap-3">
+                        {pagedInventory.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" />;
+                        })}
+                      </ItemGrid>
+                    )}
                     <Pagination
                       className="mt-2.5 pb-2.5 flex-shrink-0"
                       currentPage={inventoryPage}
@@ -808,7 +932,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <EmptyState
                     icon={<Package size={48} />}
                     message="No expired tokens"
-                    className="min-h-[810px] rounded-xl"
+                    className={isTelegramMiniApp ? 'min-h-[420px] rounded-xl' : 'min-h-[810px] rounded-xl'}
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
@@ -817,46 +941,74 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         {claimError}
                       </div>
                     )}
-                    <ItemGrid className="auto-rows-max gap-3">
-                      {pagedExpired.map((item, index) => {
-                        const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
-                        const tokenAddress = caseInfo?.tokenAddress || '';
-                        const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
-                        const isClaiming = claimingCaseId === item.caseId;
-                        return (
-                          <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-2">
-                            <ItemCard item={item} size="sm" currencyPrefix="$" />
-                            <div className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 px-2">
-                              <span className="truncate">Token {tokenAddress ? formatAddress(tokenAddress) : 'N/A'}</span>
+                    {isTelegramMiniApp ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {pagedExpired.map((item, index) => {
+                          const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+                          const tokenAddress = caseInfo?.tokenAddress || '';
+                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
+                          const isClaiming = claimingCaseId === item.caseId;
+                          return (
+                            <div key={`${item.id}-${index}`} className="flex flex-col gap-1">
+                              <ItemCard item={item} size="sm" currencyPrefix="$" compactContent className={miniUpgradeIconCardClass} />
                               <button
                                 type="button"
-                                onClick={() => handleCopyAddress(tokenAddress)}
-                                disabled={!tokenAddress}
-                                className={`px-2 py-1 rounded-md border transition ${
-                                  tokenAddress
-                                    ? 'border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40'
-                                    : 'border-white/[0.08] text-gray-600 cursor-not-allowed'
-                                }`}
+                                onClick={() => handleClaimToken(item.caseId)}
+                                disabled={!canClaim || isClaiming}
+                                className={`w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border transition ${
+                                  canClaim
+                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent'
+                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
                               >
-                                Copy
+                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
                               </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleClaimToken(item.caseId)}
-                              disabled={!canClaim || isClaiming}
-                              className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
-                                canClaim
-                                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
-                                  : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
-                              } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
-                            >
-                              {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </ItemGrid>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <ItemGrid className="auto-rows-max gap-3">
+                        {pagedExpired.map((item, index) => {
+                          const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+                          const tokenAddress = caseInfo?.tokenAddress || '';
+                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
+                          const isClaiming = claimingCaseId === item.caseId;
+                          return (
+                            <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-2">
+                              <ItemCard item={item} size="sm" currencyPrefix="$" />
+                              <div className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-gray-500 px-2">
+                                <span className="truncate">Token {tokenAddress ? formatAddress(tokenAddress) : 'N/A'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyAddress(tokenAddress)}
+                                  disabled={!tokenAddress}
+                                  className={`px-2 py-1 rounded-md border transition ${
+                                    tokenAddress
+                                      ? 'border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40'
+                                      : 'border-white/[0.08] text-gray-600 cursor-not-allowed'
+                                  }`}
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleClaimToken(item.caseId)}
+                                disabled={!canClaim || isClaiming}
+                                className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                                  canClaim
+                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
+                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                              >
+                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </ItemGrid>
+                    )}
                     <Pagination
                       className="mt-2.5 pb-2.5 flex-shrink-0"
                       currentPage={expiredPage}
@@ -874,16 +1026,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <EmptyState
                     icon={<Package size={48} />}
                     message="No claimed tokens"
-                    className="min-h-[810px] rounded-xl"
+                    className={isTelegramMiniApp ? 'min-h-[420px] rounded-xl' : 'min-h-[810px] rounded-xl'}
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <ItemGrid className="auto-rows-max gap-3">
-                      {pagedClaimed.map((item, index) => {
-                        if (!item || !item.id) return null;
-                        return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />;
-                      })}
-                    </ItemGrid>
+                    {isTelegramMiniApp ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {pagedClaimed.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" compactContent className={miniUpgradeIconCardClass} />;
+                        })}
+                      </div>
+                    ) : (
+                      <ItemGrid className="auto-rows-max gap-3">
+                        {pagedClaimed.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />;
+                        })}
+                      </ItemGrid>
+                    )}
                     <Pagination
                       className="mt-2.5 pb-2.5 flex-shrink-0"
                       currentPage={claimedPage}
@@ -902,16 +1063,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <EmptyState
                     icon={<Package size={48} />}
                     message="No burnt items"
-                    className="min-h-[810px] rounded-xl"
+                    className={isTelegramMiniApp ? 'min-h-[420px] rounded-xl' : 'min-h-[810px] rounded-xl'}
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <ItemGrid className="auto-rows-max gap-3">
-                      {pagedBurnt.map((item, index) => {
-                        if (!item || !item.id) return null;
-                        return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" status="burnt" />;
-                      })}
-                    </ItemGrid>
+                    {isTelegramMiniApp ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {pagedBurnt.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" status="burnt" compactContent className={miniUpgradeIconCardClass} />;
+                        })}
+                      </div>
+                    ) : (
+                      <ItemGrid className="auto-rows-max gap-3">
+                        {pagedBurnt.map((item, index) => {
+                          if (!item || !item.id) return null;
+                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" status="burnt" />;
+                        })}
+                      </ItemGrid>
+                    )}
                     <Pagination
                       className="mt-2.5 pb-2.5 flex-shrink-0"
                       currentPage={burntPage}
@@ -930,11 +1100,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <EmptyState
                     icon={<Swords size={48} />}
                     message="No combat history"
-                    className="min-h-[810px] rounded-xl"
+                    className={isTelegramMiniApp ? 'min-h-[420px] rounded-xl' : 'min-h-[810px] rounded-xl'}
                   />
                 ) : (
                   <div className="flex flex-col h-full justify-between">
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0 content-start">
+                    <div className={`grid gap-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0 content-start ${isTelegramMiniApp ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2'}`}>
                       {pagedBattleHistory.map((battle) => {
                         if (!battle || !battle.id) return null;
                         try {

@@ -33,9 +33,21 @@ interface CreateCaseViewProps {
   onOpenWalletConnect: () => void;
   isAdmin: boolean;
   cases: Case[];
+  isTelegramMiniApp?: boolean;
 }
 
-export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creatorName, balance, onOpenTopUp, onBalanceUpdate, isAuthenticated, onOpenWalletConnect, isAdmin, cases }) => {
+export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
+  onCreate,
+  creatorName,
+  balance,
+  onOpenTopUp,
+  onBalanceUpdate,
+  isAuthenticated,
+  onOpenWalletConnect,
+  isAdmin,
+  cases,
+  isTelegramMiniApp = false,
+}) => {
   const [name, setName] = useState('');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
@@ -435,22 +447,33 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
   };
 
   return (
-    <div className="w-full min-h-screen text-white px-6 py-12 relative">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className={`w-full text-white relative ${isTelegramMiniApp ? 'min-h-0 px-2 py-3' : 'min-h-screen px-6 py-12'}`}>
+      <div className={`max-w-6xl mx-auto ${isTelegramMiniApp ? 'space-y-4' : 'space-y-8'}`}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
-              MY
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                CUSTOMCASE
-              </span>
-            </h1>
+            {isTelegramMiniApp ? (
+              <>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Case Creator</div>
+                <h1 className="text-xl font-black tracking-tight text-white mt-1">Create Case</h1>
+              </>
+            ) : (
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+                MY
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                  CUSTOMCASE
+                </span>
+              </h1>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl lg:col-span-2 overflow-visible relative z-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={`grid ${isTelegramMiniApp ? 'grid-cols-1 gap-3' : 'grid-cols-1 lg:grid-cols-3 gap-6'}`}>
+          <div
+            className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl overflow-visible relative z-10 ${
+              isTelegramMiniApp ? 'p-4' : 'p-6 lg:col-span-2'
+            }`}
+          >
+            <div className={`grid grid-cols-1 ${isTelegramMiniApp ? 'gap-3' : 'md:grid-cols-2 gap-4'}`}>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Case Name</div>
                 <input
@@ -638,7 +661,11 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
             </div>
           </div>
 
-          <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
+          <div
+            className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${
+              isTelegramMiniApp ? 'p-4' : 'p-6'
+            }`}
+          >
             <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Preview</div>
             <div className="flex flex-col items-center gap-4">
               <div className="w-20 h-20 rounded-full border border-white/[0.12] bg-black/30 flex items-center justify-center backdrop-blur-xl overflow-hidden">
@@ -688,7 +715,11 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
           }}
         />
 
-        <div className="bg-black/20 border border-white/[0.12] p-6 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl relative z-0">
+        <div
+          className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl relative z-0 ${
+            isTelegramMiniApp ? 'p-4' : 'p-6'
+          }`}
+        >
           <div className="flex items-center justify-between mb-4">
             <div className="text-xs uppercase tracking-widest text-gray-500">Drops ({drops.length}/10)</div>
             <button
@@ -701,56 +732,108 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({ onCreate, creato
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 justify-items-start">
-            {drops.map((drop) => (
-              <div key={drop.id} className="bg-black/25 border border-white/[0.12] backdrop-blur-xl p-3 rounded-xl w-full max-w-[180px]">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-xs uppercase tracking-widest text-gray-500">Drop</div>
-                  <button onClick={() => removeDrop(drop.id)} className="text-gray-500 hover:text-web3-danger">
-                    <Trash2 size={16} />
-                  </button>
+          {isTelegramMiniApp ? (
+            <div className="space-y-2">
+              {drops.map((drop, index) => (
+                <div key={drop.id} className="rounded-xl border border-white/[0.12] bg-black/25 p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg border border-white/[0.12] bg-black/35 text-[10px] uppercase tracking-widest text-gray-400 flex items-center justify-center">
+                      {index + 1}
+                    </div>
+                    <input
+                      type="number"
+                      value={drop.value}
+                      onChange={(e) => updateDrop(drop.id, { value: e.target.value })}
+                      className="flex-1 px-3 py-2 rounded-lg bg-black/35 border border-white/[0.12] text-sm"
+                      placeholder="Drop value (token amount)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeDrop(drop.id)}
+                      className="w-9 h-9 rounded-lg border border-white/[0.12] text-gray-400 hover:text-web3-danger transition flex items-center justify-center"
+                      aria-label="Remove drop"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <input
-                    type="number"
-                    value={drop.value}
-                    onChange={(e) => updateDrop(drop.id, { value: e.target.value })}
-                    className="px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl"
-                    placeholder="e.g. 100"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6">
-            <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Drops Preview</div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {normalizedDrops.map((drop) => (
-                <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
               ))}
             </div>
-            {rtuHelper && (
-              <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${
-                rtuHelper.feasible
-                  ? 'bg-web3-success/10 border-web3-success/30 text-web3-success'
-                  : 'bg-red-500/10 border-red-500/30 text-red-300'
-              }`}>
-                <div>{rtuHelper.hint}</div>
-                <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                  Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 justify-items-start">
+              {drops.map((drop) => (
+                <div key={drop.id} className="bg-black/25 border border-white/[0.12] backdrop-blur-xl p-3 rounded-xl w-full max-w-[180px]">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs uppercase tracking-widest text-gray-500">Drop</div>
+                    <button onClick={() => removeDrop(drop.id)} className="text-gray-500 hover:text-web3-danger">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <input
+                      type="number"
+                      value={drop.value}
+                      onChange={(e) => updateDrop(drop.id, { value: e.target.value })}
+                      className="px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl"
+                      placeholder="e.g. 100"
+                    />
+                  </div>
                 </div>
-                <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                  Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
-                </div>
-              </div>
-            )}
-            {dropsError && (
-              <div className="mt-3 text-[11px] uppercase tracking-widest text-red-400">{dropsError}</div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
 
-          <div className="mt-6 flex flex-col items-center gap-3">
+          {isTelegramMiniApp ? (
+            <div className="mt-4">
+              {rtuHelper && (
+                <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${
+                  rtuHelper.feasible
+                    ? 'bg-web3-success/10 border-web3-success/30 text-web3-success'
+                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                }`}>
+                  <div>{rtuHelper.hint}</div>
+                  <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                    Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+                  </div>
+                  <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                    Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
+                  </div>
+                </div>
+              )}
+              {dropsError && (
+                <div className="mt-3 text-[11px] uppercase tracking-widest text-red-400">{dropsError}</div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-6">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Drops Preview</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {normalizedDrops.map((drop) => (
+                  <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
+                ))}
+              </div>
+              {rtuHelper && (
+                <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${
+                  rtuHelper.feasible
+                    ? 'bg-web3-success/10 border-web3-success/30 text-web3-success'
+                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                }`}>
+                  <div>{rtuHelper.hint}</div>
+                  <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                    Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+                  </div>
+                  <div className="mt-1 text-[10px] tracking-wide text-gray-300">
+                    Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
+                  </div>
+                </div>
+              )}
+              {dropsError && (
+                <div className="mt-3 text-[11px] uppercase tracking-widest text-red-400">{dropsError}</div>
+              )}
+            </div>
+          )}
+
+          <div className={`mt-6 flex flex-col items-center gap-3 ${isTelegramMiniApp ? 'sticky bottom-0 z-20 bg-[#0B1018]/95 backdrop-blur-xl rounded-xl p-3 border border-white/[0.08]' : ''}`}>
             {submitError && (
               <div className="text-[11px] uppercase tracking-widest text-red-400">{submitError}</div>
             )}

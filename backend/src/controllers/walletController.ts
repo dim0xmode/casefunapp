@@ -54,6 +54,9 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
     if (!user) {
       return next(new AppError('User not found', 404));
     }
+    if (!user.hasLinkedWallet) {
+      return next(new AppError('Link wallet first', 400));
+    }
     if (!tx) {
       return next(new AppError('Transaction not found', 404));
     }

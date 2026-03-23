@@ -74,6 +74,27 @@ class ApiClient {
     return response;
   }
 
+  async loginWithTelegram(initData: string) {
+    return this.request<{ user: any }>('/auth/telegram/login', {
+      method: 'POST',
+      body: JSON.stringify({ initData }),
+    });
+  }
+
+  async loginWithTelegramDev(payload: { telegramId: string; telegramUsername: string }) {
+    return this.request<{ user: any }>('/auth/telegram/dev-login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async linkWalletToCurrentAccount(walletAddress: string, signature: string, message: string) {
+    return this.request<{ user: any }>('/auth/wallet/link', {
+      method: 'POST',
+      body: JSON.stringify({ walletAddress, signature, message }),
+    });
+  }
+
   async getProfile() {
     return this.request<{ user: any }>('/auth/profile');
   }
@@ -235,6 +256,58 @@ class ApiClient {
     return this.request<{ user: any }>('/user/avatar-meta', {
       method: 'PATCH',
       body: JSON.stringify({ meta }),
+    });
+  }
+
+  async linkTelegram(initData: string) {
+    return this.request<{ user: any }>('/user/telegram/link', {
+      method: 'POST',
+      body: JSON.stringify({ initData }),
+    });
+  }
+
+  async linkTelegramWeb(
+    payload:
+      | { id_token: string }
+      | {
+          id: string | number;
+          first_name?: string;
+          last_name?: string;
+          username?: string;
+          photo_url?: string;
+          auth_date: string | number;
+          hash: string;
+        }
+  ) {
+    return this.request<{ user: any }>('/user/telegram/link-web', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async startTelegramBotLink() {
+    return this.request<{
+      url: string;
+      token: string;
+      botUsername: string;
+      expiresAt: string;
+    }>('/user/telegram/link-bot/start', {
+      method: 'POST',
+    });
+  }
+
+  async getTelegramBotLinkStatus(token: string) {
+    const encoded = encodeURIComponent(token);
+    return this.request<{ linked: boolean; user: any }>(`/user/telegram/link-bot/status?token=${encoded}`);
+  }
+
+  async getTelegramBotInfo() {
+    return this.request<{ botUsername: string; botUrl: string }>('/user/telegram/bot-info');
+  }
+
+  async unlinkTelegram() {
+    return this.request<{ user: any }>('/user/telegram/link', {
+      method: 'DELETE',
     });
   }
 

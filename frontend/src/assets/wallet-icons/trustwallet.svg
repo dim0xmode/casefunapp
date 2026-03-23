@@ -1,0 +1,14 @@
+<svg width="33" height="37" viewBox="0 0 33 37" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M0.246094 5.81376L16.2703 0.605469V36.6608C4.82429 31.853 0.246094 22.6389 0.246094 17.4317V5.81376Z" fill="#0500FF" />
+  <path d="M32.2938 5.81376L16.2695 0.605469V36.6608C27.7156 31.853 32.2938 22.6389 32.2938 17.4317V5.81376Z" fill="url(#paint0_linear_trustwallet)" />
+  <defs>
+    <linearGradient id="paint0_linear_trustwallet" x1="28.0373" y1="-1.91936" x2="15.9334" y2="36.1683" gradientUnits="userSpaceOnUse">
+      <stop offset="0.02" stop-color="#0000FF" />
+      <stop offset="0.08" stop-color="#0094FF" />
+      <stop offset="0.16" stop-color="#48FF91" />
+      <stop offset="0.42" stop-color="#0094FF" />
+      <stop offset="0.68" stop-color="#0038FF" />
+      <stop offset="0.9" stop-color="#0500FF" />
+    </linearGradient>
+  </defs>
+</svg>

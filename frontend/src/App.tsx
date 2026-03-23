@@ -8,6 +8,7 @@ import { BattleView } from './components/BattleView';
 import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
 import { LiveFeed } from './components/LiveFeed';
+import { TelegramMiniAppView } from './components/TelegramMiniAppView';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { TopUpModal } from './components/TopUpModal';
 import { FeedbackWidget } from './components/FeedbackWidget';
@@ -19,6 +20,7 @@ import { BrowserProvider } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
 import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
 import { playCaseCreatedCelebration, playDullClick } from './utils/audio';
+import type { TelegramWalletOption } from './utils/walletConnect';
 
 interface BattleRecord {
   id: string;
@@ -37,9 +39,15 @@ const TAB_PATHS: Record<string, string> = {
   casebattle: '/battles',
   profile: '/profile',
   admin: '/admin',
+  tg: '/tg',
 };
 const BACKGROUND_ANIMATION_STORAGE_KEY = 'casefun:bgAnimationEnabled';
 const EARLY_ACCESS_NOTICE_STORAGE_KEY_PREFIX = 'casefun:earlyAccessDecisionSeen:';
+const TELEGRAM_DEV_ID_STORAGE_KEY = 'casefun:tgDevIdentity';
+const TELEGRAM_DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_TG_DEV_LOGIN === '1';
+const TELEGRAM_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '';
+const TELEGRAM_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || '11155111');
+const TELEGRAM_RPC_URL = import.meta.env.VITE_RPC_URL || '';
 
 type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -117,6 +125,12 @@ const App = () => {
   const [twitterBusy, setTwitterBusy] = useState(false);
   const [twitterNotice, setTwitterNotice] = useState<string | null>(null);
   const [twitterError, setTwitterError] = useState<string | null>(null);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
+  const [telegramAuthBusy, setTelegramAuthBusy] = useState(false);
+  const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+  const [telegramDevAuthBusy, setTelegramDevAuthBusy] = useState(false);
+  const [telegramWalletLinking, setTelegramWalletLinking] = useState(false);
   const [earlyAccessStatus, setEarlyAccessStatus] = useState<EarlyAccessStatusPayload | null>(null);
   const [earlyAccessSubmitting, setEarlyAccessSubmitting] = useState(false);
   const [earlyAccessDecisionNotice, setEarlyAccessDecisionNotice] = useState<string | null>(null);
@@ -142,6 +156,7 @@ const App = () => {
   const isAdmin = user.role === 'ADMIN';
   const isEarlyAccess = user.role === 'MODERATOR';
   const canUseActivities = isAdmin || isEarlyAccess;
+  const isTelegramDevLoginAvailable = import.meta.env.DEV && TELEGRAM_DEV_LOGIN_ENABLED;
 
   const handleBalanceUpdate = (nextBalance: number) => {
     if (typeof nextBalance === 'number') {
@@ -225,6 +240,12 @@ const App = () => {
     setEarlyAccessStatus(null);
     setEarlyAccessSubmitting(false);
     setEarlyAccessDecisionNotice(null);
+    setTelegramBusy(false);
+    setTelegramError(null);
+    setTelegramAuthBusy(false);
+    setTelegramAuthError(null);
+    setTelegramDevAuthBusy(false);
+    setTelegramWalletLinking(false);
     setActiveTab('home');
   };
 
@@ -286,8 +307,8 @@ const App = () => {
     try {
       const response = await api.getProfile();
       if (response.data?.user) {
-        setUser(prev => ({
-          ...prev,
+      setUser(prev => ({
+        ...prev,
           ...response.data?.user,
           walletAddress: response.data?.user?.walletAddress || fallbackAddress || prev.walletAddress,
         }));
@@ -338,6 +359,307 @@ const App = () => {
     }
   };
 
+  const getTelegramWebAppInitData = () => {
+    try {
+      const raw = (window as any)?.Telegram?.WebApp?.initData;
+      return typeof raw === 'string' ? raw.trim() : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const handleTelegramLogin = async () => {
+    const initData = getTelegramWebAppInitData();
+    if (!initData) {
+      setTelegramAuthError('Open /tg from Telegram mini app and try again.');
+      return;
+    }
+    setTelegramAuthBusy(true);
+    setTelegramAuthError(null);
+    try {
+      const response = await api.loginWithTelegram(initData);
+      const nextUser = response.data?.user;
+      if (!nextUser) {
+        throw new Error('Telegram login failed.');
+      }
+      setUser((prev) => ({
+        ...prev,
+        ...nextUser,
+        walletAddress: nextUser.walletAddress || prev.walletAddress,
+      }));
+      if (typeof nextUser.balance === 'number') {
+        setBalance(nextUser.balance);
+      }
+      if (nextUser.walletAddress) {
+        setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
+      }
+      await loadProfile(nextUser.walletAddress);
+      setTelegramError(null);
+    } catch (error: any) {
+      setTelegramAuthError(error?.message || 'Failed to authorize with Telegram.');
+    } finally {
+      setTelegramAuthBusy(false);
+    }
+  };
+
+  const getOrCreateTelegramDevIdentity = () => {
+    try {
+      const existing = localStorage.getItem(TELEGRAM_DEV_ID_STORAGE_KEY);
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        if (parsed?.telegramId && parsed?.telegramUsername) {
+          return {
+            telegramId: String(parsed.telegramId),
+            telegramUsername: String(parsed.telegramUsername),
+          };
+        }
+      }
+    } catch {
+      // ignore storage issues
+    }
+
+    const seed = Math.random().toString(36).slice(2, 10);
+    const identity = {
+      telegramId: `dev_${seed}`,
+      telegramUsername: `dev_${seed}`,
+    };
+    try {
+      localStorage.setItem(TELEGRAM_DEV_ID_STORAGE_KEY, JSON.stringify(identity));
+    } catch {
+      // ignore storage issues
+    }
+    return identity;
+  };
+
+  const handleTelegramDevLogin = async () => {
+    if (!isTelegramDevLoginAvailable) {
+      setTelegramAuthError('Dev login is available only in local development.');
+      return;
+    }
+    const identity = getOrCreateTelegramDevIdentity();
+    setTelegramDevAuthBusy(true);
+    setTelegramAuthError(null);
+    try {
+      const response = await api.loginWithTelegramDev(identity);
+      const nextUser = response.data?.user;
+      if (!nextUser) {
+        throw new Error('Dev Telegram login failed.');
+      }
+      setUser((prev) => ({
+        ...prev,
+        ...nextUser,
+        walletAddress: nextUser.walletAddress || prev.walletAddress,
+      }));
+      if (typeof nextUser.balance === 'number') {
+        setBalance(nextUser.balance);
+      }
+      if (nextUser.walletAddress) {
+        setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
+      }
+      await loadProfile(nextUser.walletAddress);
+      setTelegramError(null);
+    } catch (error: any) {
+      setTelegramAuthError(error?.message || 'Dev Telegram login failed.');
+    } finally {
+      setTelegramDevAuthBusy(false);
+    }
+  };
+
+  const handleConnectTelegram = async () => {
+    if (!lastAuthAddress) {
+      setIsWalletConnectOpen(true);
+      return;
+    }
+    const initData = getTelegramWebAppInitData();
+    setTelegramBusy(true);
+    setTelegramError(null);
+    try {
+      const response = initData
+        ? await api.linkTelegram(initData)
+        : await (async () => {
+            // Open a blank tab synchronously on click to avoid popup blockers.
+            const popup = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
+            const start = await api.startTelegramBotLink();
+            const url = String(start.data?.url || '').trim();
+            const token = String(start.data?.token || '').trim();
+            if (!url || !token) {
+              if (popup && !popup.closed) {
+                popup.close();
+              }
+              throw new Error('Failed to start Telegram linking.');
+            }
+
+            if (popup && !popup.closed) {
+              popup.location.href = url;
+            } else {
+              // Fallback for strict browsers: open in current tab.
+              window.location.href = url;
+              throw new Error('Telegram link started. Return to casefun after pressing Start in bot.');
+            }
+
+            const timeoutMs = 90_000;
+            const pollIntervalMs = 2_000;
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < timeoutMs) {
+              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+              const status = await api.getTelegramBotLinkStatus(token);
+              if (status.data?.linked && status.data?.user?.telegramId) {
+                if (popup && !popup.closed) {
+                  popup.close();
+                }
+                return { status: 'success' as const, data: { user: status.data.user } };
+              }
+            }
+
+            throw new Error(
+              'Telegram link is pending. Open the bot from the new tab, press Start, then click Connect Telegram again.'
+            );
+          })();
+      if (!response.data?.user) {
+        throw new Error('Failed to link Telegram account.');
+      }
+      setUser((prev) => ({ ...prev, ...response.data?.user }));
+      setProfileView((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          user: { ...prev.user, ...response.data?.user },
+        };
+      });
+      await loadProfile();
+      setTelegramError(null);
+    } catch (error: any) {
+      setTelegramError(error?.message || 'Failed to link Telegram account.');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleOpenTelegramMiniApp = async () => {
+    if (!lastAuthAddress) {
+      setIsWalletConnectOpen(true);
+      return;
+    }
+    setTelegramBusy(true);
+    setTelegramError(null);
+    try {
+      const info = await api.getTelegramBotInfo();
+      const url = String(info.data?.botUrl || '').trim();
+      if (!url) {
+        throw new Error('Telegram bot URL is unavailable.');
+      }
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        window.location.href = url;
+      }
+    } catch (error: any) {
+      setTelegramError(error?.message || 'Failed to open Telegram Mini App.');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleDisconnectTelegram = async () => {
+    setTelegramBusy(true);
+    setTelegramError(null);
+    try {
+      const response = await api.unlinkTelegram();
+      if (response.data?.user) {
+        setUser((prev) => ({ ...prev, ...response.data?.user }));
+        setProfileView((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            user: { ...prev.user, ...response.data.user },
+          };
+        });
+      }
+    } catch (error: any) {
+      setTelegramError(error?.message || 'Failed to unlink Telegram account.');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleLinkWalletForTelegram = async (walletOption: TelegramWalletOption) => {
+    if (!lastAuthAddress) {
+      setTelegramAuthError('Authorize with Telegram first.');
+      return;
+    }
+    setTelegramWalletLinking(true);
+    setTelegramAuthError(null);
+    let wcDisconnect: (() => Promise<void>) | null = null;
+    try {
+      let linkedAddress = walletAddress || '';
+      let signerProvider: BrowserProvider | null = null;
+
+      if (typeof window !== 'undefined' && window.ethereum) {
+        if (!linkedAddress) {
+          linkedAddress = (await connectWallet()) || '';
+        }
+        if (!linkedAddress || !window.ethereum) {
+          throw new Error('Connect an EVM wallet first and approve access.');
+        }
+        signerProvider = new BrowserProvider(window.ethereum);
+      } else {
+        const { connectWalletWithDeeplink } = await import('./utils/walletConnect');
+        const session = await connectWalletWithDeeplink({
+          wallet: walletOption,
+          projectId: TELEGRAM_WALLETCONNECT_PROJECT_ID,
+          chainId: TELEGRAM_CHAIN_ID,
+          rpcUrl: TELEGRAM_RPC_URL || undefined,
+          onDeeplink: () => {
+            setTelegramAuthError('Open wallet app, approve WalletConnect, then return to Telegram.');
+          },
+        });
+        wcDisconnect = session.disconnect;
+        linkedAddress = session.address;
+        signerProvider = new BrowserProvider(session.provider as any);
+        setTelegramAuthError('Wallet connected. Confirm signature in wallet to finish linking.');
+      }
+
+      if (!signerProvider) {
+        throw new Error('Wallet provider is unavailable.');
+      }
+
+      const normalizedAddress = String(linkedAddress).toLowerCase();
+      const nonceResponse = await api.getNonce(normalizedAddress);
+      const message = nonceResponse.data?.message;
+      if (!message) {
+        throw new Error('Failed to get nonce for wallet linking.');
+      }
+
+      const signer = await signerProvider.getSigner();
+      const signature = await signer.signMessage(message);
+      const response = await api.linkWalletToCurrentAccount(normalizedAddress, signature, message);
+      const nextUser = response.data?.user;
+      if (!nextUser) {
+        throw new Error('Wallet link failed.');
+      }
+
+      setUser((prev) => ({
+        ...prev,
+        ...nextUser,
+        walletAddress: nextUser.walletAddress || normalizedAddress || prev.walletAddress,
+      }));
+      if (typeof nextUser.balance === 'number') {
+        setBalance(nextUser.balance);
+      }
+      if (nextUser.walletAddress) {
+        setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
+      }
+      await loadProfile(nextUser.walletAddress || normalizedAddress || undefined);
+      setTelegramAuthError(null);
+    } catch (error: any) {
+      setTelegramAuthError(error?.message || 'Failed to link wallet.');
+    } finally {
+      if (wcDisconnect) {
+        await wcDisconnect().catch(() => {});
+      }
+      setTelegramWalletLinking(false);
+    }
+  };
+
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);
     if (!response.data) {
@@ -369,8 +691,8 @@ const App = () => {
         setUser(prev => ({
           ...prev,
           ...loginResponse.data?.user,
-          walletAddress: address,
-        }));
+        walletAddress: address,
+      }));
         if (typeof loginResponse.data?.user?.balance === 'number') {
           setBalance(loginResponse.data.user.balance);
         }
@@ -401,15 +723,18 @@ const App = () => {
     if (!walletAddress) {
       return;
     }
+    if (user.hasLinkedWallet === false) {
+      return;
+    }
     if (lastAuthAddress && walletAddress.toLowerCase() !== lastAuthAddress) {
       handleLogout();
       return;
     }
-    setUser(prev => ({
-      ...prev,
-      walletAddress: walletAddress,
-    }));
-  }, [walletAddress, lastAuthAddress]);
+      setUser(prev => ({
+        ...prev,
+        walletAddress: walletAddress,
+      }));
+  }, [walletAddress, lastAuthAddress, user.hasLinkedWallet]);
 
   useEffect(() => {
     loadProfile();
@@ -645,9 +970,10 @@ const App = () => {
     const normalized = walletAddress?.toLowerCase() || null;
     if (!isConnected || !normalized) return;
     if (!lastAuthAddress) return;
+    if (user.hasLinkedWallet === false) return;
     if (normalized === lastAuthAddress) return;
     handleLogout();
-  }, [walletAddress, isConnected, lastAuthAddress]);
+  }, [walletAddress, isConnected, lastAuthAddress, user.hasLinkedWallet]);
 
   useEffect(() => {
     const loadCases = async () => {
@@ -806,10 +1132,10 @@ const App = () => {
     }
     if (winners.length) {
       setInventory(prev => [...winners, ...prev]);
-      setUser(prev => ({
-        ...prev,
-        stats: {
-          ...prev.stats,
+    setUser(prev => ({
+      ...prev,
+      stats: {
+        ...prev.stats,
           casesOpened: prev.stats.casesOpened + winners.length,
         },
       }));
@@ -1204,27 +1530,29 @@ const App = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden relative">
+        {activeTab !== 'tg' && (
         <Header 
           user={user} 
           activeTab={activeTab} 
           setActiveTab={handleTabChange} 
           onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-          balance={balance}
-          onOpenTopUp={handleOpenTopUp}
-          onLogout={handleLogout}
-          onDisconnectWallet={disconnectWallet}
-          walletAddress={walletAddress}
-          isConnected={isConnected}
-          formatAddress={formatAddress}
-          isAuthLoading={isAuthLoading}
-          isAuthenticated={Boolean(lastAuthAddress)}
-          isAdmin={isAdmin}
-        />
+            balance={balance}
+            onOpenTopUp={handleOpenTopUp}
+            onLogout={handleLogout}
+            onDisconnectWallet={disconnectWallet}
+            walletAddress={walletAddress}
+            isConnected={isConnected}
+            formatAddress={formatAddress}
+            isAuthLoading={isAuthLoading}
+            isAuthenticated={Boolean(lastAuthAddress)}
+            isAdmin={isAdmin}
+          />
+        )}
 
         {/* Live Feed Sidebar - Left side, hidden on home */}
-        {activeTab !== 'home' && <LiveFeed cases={cases} onSelectUser={handleSelectUser} />}
+        {activeTab !== 'home' && activeTab !== 'tg' && <LiveFeed cases={cases} onSelectUser={handleSelectUser} />}
 
-        <main className="flex-1 overflow-y-auto custom-scrollbar relative pt-20">
+        <main className={`flex-1 overflow-y-auto custom-scrollbar relative ${activeTab === 'tg' ? 'pt-0' : 'pt-20'}`}>
           <div className="relative min-h-full">
             {activeTab === 'home' && (
               <HomeView
@@ -1235,6 +1563,61 @@ const App = () => {
                 earlyAccessSubmitting={earlyAccessSubmitting}
                 earlyAccessStatus={earlyAccessStatus}
               />
+            )}
+
+            {activeTab === 'tg' && (
+              <div className="animate-fade-in">
+                <TelegramMiniAppView
+                  user={user}
+                  isAuthenticated={Boolean(lastAuthAddress)}
+                  isAuthenticating={telegramAuthBusy}
+                  isDevAuthenticating={telegramDevAuthBusy}
+                  showDevLogin={isTelegramDevLoginAvailable}
+                  authError={telegramAuthError}
+                  isLinkingWallet={telegramWalletLinking}
+                  cases={cases}
+                  inventory={inventory}
+                  burntItems={burntItems}
+                  claimedItems={claimedItems}
+                  battleHistory={battleHistory}
+                  balance={balance}
+                  isActivitiesEnabled={canUseActivities}
+                  onOpenCase={handleOpenCase}
+                  onUpgrade={handleUpgrade}
+                  onBattleFinish={handleBattleFinish}
+                  onChargeBattle={handleChargeBattle}
+                  onOpenTopUp={handleOpenTopUp}
+                  onBalanceUpdate={setBalance}
+                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  onClaimToken={handleClaimToken}
+                  onSelectUser={handleSelectUser}
+                  getUserAvatarByName={getUserAvatarByName}
+                  onUpdateUsername={handleUpdateUsername}
+                  onUploadAvatar={handleUploadAvatar}
+                  onUpdateAvatarMeta={handleUpdateAvatarMeta}
+                  onConnectTwitter={handleConnectTwitter}
+                  onDisconnectTwitter={handleDisconnectTwitter}
+                  twitterBusy={twitterBusy}
+                  twitterNotice={twitterNotice}
+                  twitterError={twitterError}
+                  onConnectTelegram={handleConnectTelegram}
+                  onDisconnectTelegram={handleDisconnectTelegram}
+                  onOpenTelegramMiniApp={handleOpenTelegramMiniApp}
+                  telegramBusy={telegramBusy}
+                  telegramError={telegramError}
+                  isBackgroundAnimated={isBackgroundAnimated}
+                  onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
+                  onSubmitEarlyAccess={handleSubmitEarlyAccess}
+                  earlyAccessSubmitting={earlyAccessSubmitting}
+                  earlyAccessStatus={earlyAccessStatus}
+                  onAuthenticate={handleTelegramLogin}
+                  onDevAuthenticate={handleTelegramDevLogin}
+                  onOpenTelegramBot={handleOpenTelegramMiniApp}
+                  onLinkWallet={handleLinkWalletForTelegram}
+                  onOpenHome={() => handleTabChange('home')}
+                  onCreateCase={handleCaseCreated}
+                />
+              </div>
             )}
 
             {activeTab === 'createcase' && (
@@ -1320,6 +1703,11 @@ const App = () => {
                   twitterBusy={twitterBusy}
                   twitterNotice={twitterNotice}
                   twitterError={twitterError}
+                  onConnectTelegram={handleConnectTelegram}
+                  onDisconnectTelegram={handleDisconnectTelegram}
+                  onOpenTelegramMiniApp={handleOpenTelegramMiniApp}
+                  telegramBusy={telegramBusy}
+                  telegramError={telegramError}
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                 />

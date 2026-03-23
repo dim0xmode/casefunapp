@@ -21,6 +21,9 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
     if (!user) {
       return next(new AppError('User not found', 404));
     }
+    if (!user.hasLinkedWallet) {
+      return next(new AppError('Link wallet first', 400));
+    }
     if (!caseInfo) {
       return next(new AppError('Case not found', 404));
     }
