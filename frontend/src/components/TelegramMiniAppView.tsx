@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Boxes,
@@ -204,9 +204,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   onOpenHome,
 }) => {
   const [activeTab, setActiveTab] = useState<MiniTab>('cases');
+  const [autoAuthTried, setAutoAuthTried] = useState(false);
   const [earlyContact, setEarlyContact] = useState('');
   const [earlyMessage, setEarlyMessage] = useState('');
   const [earlyNotice, setEarlyNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isAuthenticated || isAuthenticating || autoAuthTried) return;
+    const initData = (window as any)?.Telegram?.WebApp?.initData;
+    if (typeof initData !== 'string' || !initData.trim()) return;
+    setAutoAuthTried(true);
+    void Promise.resolve(onAuthenticate()).catch(() => {});
+  }, [isAuthenticated, isAuthenticating, autoAuthTried, onAuthenticate]);
 
   const hasWallet = Boolean(user.hasLinkedWallet && user.walletAddress);
   const caseMap = useMemo(() => new Map(cases.map((entry) => [entry.id, entry])), [cases]);

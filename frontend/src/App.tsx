@@ -361,7 +361,15 @@ const App = () => {
 
   const getTelegramWebAppInitData = () => {
     try {
-      const raw = (window as any)?.Telegram?.WebApp?.initData;
+      const webApp = (window as any)?.Telegram?.WebApp;
+      if (!webApp) return '';
+      if (typeof webApp.ready === 'function') {
+        webApp.ready();
+      }
+      if (typeof webApp.expand === 'function') {
+        webApp.expand();
+      }
+      const raw = webApp.initData;
       return typeof raw === 'string' ? raw.trim() : '';
     } catch {
       return '';
@@ -471,6 +479,8 @@ const App = () => {
       return;
     }
     const initData = getTelegramWebAppInitData();
+    let botLinkPopup: Window | null = null;
+    let botLinkPopupNavigated = false;
     setTelegramBusy(true);
     setTelegramError(null);
     try {
@@ -478,19 +488,20 @@ const App = () => {
         ? await api.linkTelegram(initData)
         : await (async () => {
             // Open a blank tab synchronously on click to avoid popup blockers.
-            const popup = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
+            botLinkPopup = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
             const start = await api.startTelegramBotLink();
             const url = String(start.data?.url || '').trim();
             const token = String(start.data?.token || '').trim();
             if (!url || !token) {
-              if (popup && !popup.closed) {
-                popup.close();
+              if (botLinkPopup && !botLinkPopup.closed) {
+                botLinkPopup.close();
               }
               throw new Error('Failed to start Telegram linking.');
             }
 
-            if (popup && !popup.closed) {
-              popup.location.href = url;
+            if (botLinkPopup && !botLinkPopup.closed) {
+              botLinkPopup.location.href = url;
+              botLinkPopupNavigated = true;
             } else {
               // Fallback for strict browsers: open in current tab.
               window.location.href = url;
@@ -504,8 +515,8 @@ const App = () => {
               await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
               const status = await api.getTelegramBotLinkStatus(token);
               if (status.data?.linked && status.data?.user?.telegramId) {
-                if (popup && !popup.closed) {
-                  popup.close();
+                if (botLinkPopup && !botLinkPopup.closed) {
+                  botLinkPopup.close();
                 }
                 return { status: 'success' as const, data: { user: status.data.user } };
               }
@@ -529,6 +540,14 @@ const App = () => {
       await loadProfile();
       setTelegramError(null);
     } catch (error: any) {
+      // Prevent leaving an orphaned about:blank tab if link start fails early.
+      if (botLinkPopup && !botLinkPopup.closed && !botLinkPopupNavigated) {
+        try {
+          botLinkPopup.close();
+        } catch {
+          // ignore popup close failures
+        }
+      }
       setTelegramError(error?.message || 'Failed to link Telegram account.');
     } finally {
       setTelegramBusy(false);
