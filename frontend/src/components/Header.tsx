@@ -175,7 +175,7 @@ export const Header: React.FC<HeaderProps> = ({
             href="https://t.me/CaseFun_Chat"
             target="_blank"
             rel="noreferrer"
-            className="h-10 px-3 rounded-xl border border-white/[0.12] bg-black/30 hover:bg-black/40 text-gray-300 hover:text-[#29B6F6] transition-all flex items-center gap-2"
+            className="h-10 px-3 rounded-xl border border-white/[0.12] bg-black/30 hover:bg-black/40 text-gray-300 hover:text-white transition-all flex items-center gap-2"
             title="Casefun on Telegram"
             aria-label="Casefun on Telegram"
           >
