@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, Item, Case, ImageMeta } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Link2, Unlink2, Gift, Play, Pause, MessageCircle } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -119,6 +119,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const casesById = useMemo(() => {
     return new Map((cases || []).map((caseData) => [caseData.id, caseData]));
   }, [cases]);
+
+  const profileDisplayName = useMemo(() => {
+    if (!isTelegramMiniApp) {
+      return user?.username || 'User';
+    }
+    const tgUsername = String(user?.telegramUsername || '').trim().replace(/^@+/, '');
+    if (tgUsername) {
+      return `@${tgUsername}`;
+    }
+    const tgFirstName = String(user?.telegramFirstName || '').trim();
+    if (tgFirstName) {
+      return tgFirstName;
+    }
+    return user?.username || 'User';
+  }, [isTelegramMiniApp, user?.telegramUsername, user?.telegramFirstName, user?.username]);
 
   const isCaseExpired = (caseId?: string) => {
     if (!caseId) return false;
@@ -508,11 +523,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const platformCurrencies = useMemo(() => {
     try {
       if (!inventory || !Array.isArray(inventory)) return [];
-      const currencies = new Set<string>();
+    const currencies = new Set<string>();
       inventory.forEach(i => {
         if (i && i.currency) currencies.add(i.currency);
       });
-      return Array.from(currencies);
+    return Array.from(currencies);
     } catch (error) {
       console.error('Error getting currencies:', error);
       return [];
@@ -668,8 +683,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
             </div>
-
-            <h2 className={`${isTelegramMiniApp ? 'text-xl' : 'text-2xl'} font-black text-white`}>{user?.username || 'User'}</h2>
+            
+            <h2 className={`${isTelegramMiniApp ? 'text-xl' : 'text-2xl'} font-black text-white`}>{profileDisplayName}</h2>
 
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/30 border border-white/[0.12] backdrop-blur-xl mt-2 mb-2">
               <span className="font-mono text-sm font-bold text-white tabular-nums">
@@ -677,15 +692,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </span>
             </div>
 
-            {user?.walletAddress && (
+            {user?.hasLinkedWallet && user?.walletAddress && (
               <div
                 className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mb-4 hover:border-web3-accent/50 transition-colors cursor-pointer group/wallet"
-                onClick={() => navigator.clipboard.writeText(user.walletAddress)}
-                title={`Click to copy: ${user.walletAddress}`}
-              >
-                <div className="w-2 h-2 rounded-full bg-web3-success shadow-[0_0_5px_#10B981] animate-pulse"></div>
+              onClick={() => navigator.clipboard.writeText(user.walletAddress)}
+              title={`Click to copy: ${user.walletAddress}`}
+            >
+              <div className="w-2 h-2 rounded-full bg-web3-success shadow-[0_0_5px_#10B981] animate-pulse"></div>
                 <span className="font-mono text-web3-accent text-xs font-bold tracking-wide">{formatWalletAddress(user.walletAddress)}</span>
-                <Copy size={12} className="text-gray-500 group-hover/wallet:text-web3-accent transition-colors ml-1" />
+              <Copy size={12} className="text-gray-500 group-hover/wallet:text-web3-accent transition-colors ml-1" />
               </div>
             )}
 
@@ -706,183 +721,143 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               />
             </div>
           </div>
-        </div>
+            </div>
 
         <div
           className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl flex flex-col ${
             isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
           }`}
         >
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mb-3">
             Social & Rewards
           </div>
 
-          <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500">Twitter / X</div>
+          <div className="space-y-2">
+            {/* Twitter / X row */}
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+              <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${user?.twitterId ? 'border-web3-success/40' : 'border-white/10'}`}>
+                <svg viewBox="0 0 1200 1227" className={`w-3 h-3 fill-current ${user?.twitterId ? 'text-web3-success' : 'text-gray-500'}`}>
+                  <path d="M714.163 519.284L1160.89 0H1055.14L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.748L515.454 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.06 687.828L521.627 619.936L144.011 79.6944H306.615L611.333 515.664L658.766 583.556L1055.19 1150.69H892.586L569.06 687.854V687.828Z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">X / Twitter</div>
                 {user?.twitterId ? (
-                  <>
-                    <div className="text-white font-bold text-sm mt-1">
+                  <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                    <span className="text-sm font-bold text-white truncate">
                       @{user.twitterUsername || 'connected'}
-                    </div>
-                    {user?.twitterName && (
-                      <div className="text-[11px] text-gray-400 mt-0.5">{user.twitterName}</div>
-                    )}
+                    </span>
                     {formatTwitterLinkedAt(user?.twitterLinkedAt) && (
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">
-                        Linked {formatTwitterLinkedAt(user?.twitterLinkedAt)}
-                      </div>
+                      <span className="text-[10px] text-gray-600 shrink-0">
+                        {formatTwitterLinkedAt(user?.twitterLinkedAt)}
+                      </span>
                     )}
-                  </>
+                  </div>
                 ) : (
-                  <div className="text-[11px] text-gray-400 mt-1">Not linked</div>
+                  <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                 )}
               </div>
-              <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${user?.twitterId ? 'border-web3-success/40 text-web3-success' : 'border-white/15 text-gray-400'}`}>
-                {user?.twitterId ? <Unlink2 size={14} /> : <Link2 size={14} />}
-              </div>
-            </div>
-
-            {isEditable ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (user?.twitterId) {
-                    onDisconnectTwitter?.();
-                  } else {
-                    onConnectTwitter?.();
-                  }
-                }}
-                disabled={twitterBusy || (!user?.twitterId && !onConnectTwitter) || (Boolean(user?.twitterId) && !onDisconnectTwitter)}
-                className={`mt-4 w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
-                  user?.twitterId
-                    ? 'border-red-500/35 text-red-300 hover:border-red-400/60'
-                    : 'border-web3-accent/40 text-web3-accent hover:border-web3-accent/70'
-                } ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}
-              >
-                {twitterBusy ? 'Please wait...' : user?.twitterId ? 'Disconnect Twitter' : 'Connect Twitter'}
-              </button>
-            ) : (
-              <div className="mt-4 text-[10px] uppercase tracking-widest text-gray-500">
-                Social links visible only
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4 mt-3 min-h-[106px]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-gray-500">Telegram</div>
-                {user?.telegramId ? (
-                  <>
-                    <div className="text-white font-bold text-sm mt-1">
-                      {user.telegramUsername ? `@${user.telegramUsername}` : user.telegramFirstName || 'linked'}
-                    </div>
-                    {formatTelegramLinkedAt(user?.telegramLinkedAt) && (
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500 mt-2">
-                        Linked {formatTelegramLinkedAt(user?.telegramLinkedAt)}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-[11px] text-gray-400 mt-1">Not linked</div>
-                )}
-              </div>
-              <div className={`w-8 h-8 rounded-full border flex items-center justify-center ${user?.telegramId ? 'border-web3-success/40 text-web3-success' : 'border-white/15 text-gray-400'}`}>
-                <MessageCircle size={14} />
-              </div>
-            </div>
-
-            {isEditable ? (
-              <div className={`mt-4 grid gap-2 ${user?.telegramId && onOpenTelegramMiniApp ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {isEditable && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (user?.telegramId) {
-                      onDisconnectTelegram?.();
-                    } else {
-                      onConnectTelegram?.();
-                    }
-                  }}
-                  disabled={telegramBusy || (!user?.telegramId && !onConnectTelegram) || (Boolean(user?.telegramId) && !onDisconnectTelegram)}
-                  className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
-                    user?.telegramId
-                      ? 'border-red-500/35 text-red-300 hover:border-red-400/60'
-                      : 'border-web3-accent/40 text-web3-accent hover:border-web3-accent/70'
-                  } ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}
+                  onClick={() => user?.twitterId ? onDisconnectTwitter?.() : onConnectTwitter?.()}
+                  disabled={twitterBusy || (!user?.twitterId && !onConnectTwitter) || (Boolean(user?.twitterId) && !onDisconnectTwitter)}
+                  className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${
+                    user?.twitterId
+                      ? 'border-red-500/25 text-red-400 hover:border-red-500/50'
+                      : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'
+                  } ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                  {telegramBusy ? 'Please wait...' : user?.telegramId ? 'Disconnect Telegram' : 'Connect Telegram'}
+                  {twitterBusy ? '…' : user?.twitterId ? 'Disconnect' : 'Connect'}
                 </button>
-                {user?.telegramId && onOpenTelegramMiniApp && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenTelegramMiniApp?.()}
-                    disabled={telegramBusy}
-                    className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-web3-success/35 text-web3-success hover:border-web3-success/70 transition ${
-                      telegramBusy ? 'opacity-70 cursor-wait' : ''
-                    }`}
-                  >
-                    Open Mini App
-                  </button>
+              )}
+            </div>
+
+            {/* Telegram row */}
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+              <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${user?.telegramId ? 'border-web3-success/40' : 'border-white/10'}`}>
+                <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 fill-current ${user?.telegramId ? 'text-web3-success' : 'text-gray-500'}`}>
+                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.820 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.800-.840-.547-.297-1.174.157-1.557.112-.098 3.018-2.885 3.076-3.13.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Telegram</div>
+                {user?.telegramId ? (
+                  <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                    <span className="text-sm font-bold text-white truncate">
+                      {user.telegramUsername ? `@${user.telegramUsername}` : user.telegramFirstName || 'linked'}
+                    </span>
+                    {formatTelegramLinkedAt(user?.telegramLinkedAt) && (
+                      <span className="text-[10px] text-gray-600 shrink-0">
+                        {formatTelegramLinkedAt(user?.telegramLinkedAt)}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                 )}
               </div>
-            ) : (
-              <div className="mt-4 text-[10px] uppercase tracking-widest text-gray-500">
-                Social links visible only
-              </div>
-            )}
+              {isEditable && (
+                <button
+                  type="button"
+                  onClick={() => user?.telegramId ? onDisconnectTelegram?.() : onConnectTelegram?.()}
+                  disabled={telegramBusy || (!user?.telegramId && !onConnectTelegram) || (Boolean(user?.telegramId) && !onDisconnectTelegram)}
+                  className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${
+                    user?.telegramId
+                      ? 'border-red-500/25 text-red-400 hover:border-red-500/50'
+                      : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'
+                  } ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  {telegramBusy ? '…' : user?.telegramId ? 'Disconnect' : 'Connect'}
+                </button>
+              )}
+            </div>
           </div>
 
           {!isTelegramMiniApp && (
-            <div className="rounded-xl border border-white/[0.12] bg-black/25 p-4 mt-3 min-h-[106px]">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
-                <Gift size={12} />
+            <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-1">
+                <Gift size={11} />
                 Rewards
               </div>
-              <div className="mt-2 text-[11px] text-gray-300">
-                Connect social account to unlock future reward quests and community bonuses.
+              <div className="text-[11px] text-gray-500">
+                Connect social accounts to unlock future reward quests and community bonuses.
               </div>
             </div>
           )}
 
           {isEditable && twitterError && (
-            <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">
-              {twitterError}
-            </div>
+            <div className="mt-2 text-[10px] text-red-400">{twitterError}</div>
           )}
           {isEditable && telegramError && (
-            <div className="mt-2 text-[10px] uppercase tracking-widest text-red-400">
-              {telegramError}
-            </div>
+            <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>
           )}
         </div>
-      </div>
 
       <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'mb-3 flex-wrap' : 'mb-6'}`}>
         <Tabs
           className="flex-1"
           tabs={[
-            { id: 'inventory', label: 'Items' },
+              { id: 'inventory', label: 'Items' },
             { id: 'expired', label: 'Expired' },
             { id: 'claimed', label: 'Claimed' },
-            { id: 'burnt', label: 'Burnt' },
-            { id: 'battles', label: 'Battles' },
+              { id: 'burnt', label: 'Burnt' },
+              { id: 'battles', label: 'Battles' },
           ]}
           activeId={tab}
           onChange={(id) => setTab(id as any)}
         />
-        {tab === 'inventory' && (
-          <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-            Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-          </button>
-        )}
+            {tab === 'inventory' && (
+              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+                Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+              </button>
+            )}
         {tab === 'expired' && (
           <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
             Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
           </button>
         )}
-      </div>
+          </div>
 
       <div
         className={`bg-black/20 border border-white/[0.12] rounded-2xl flex flex-col backdrop-blur-2xl ${
@@ -1015,9 +990,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       totalPages={expiredTotalPages}
                       onPageChange={setExpiredPage}
                     />
-                  </div>
+                        </div>
                 )}
-              </div>
+                        </div>
             )}
 
             {tab === 'claimed' && (
@@ -1108,7 +1083,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       {pagedBattleHistory.map((battle) => {
                         if (!battle || !battle.id) return null;
                         try {
-                          const winningsByCategory = (battle.wonItems || []).reduce((acc, item) => {
+                    const winningsByCategory = (battle.wonItems || []).reduce((acc, item) => {
                             if (!item || !item.currency) return acc;
                             const value = Number(item.value) || 0;
                             acc[item.currency] = (acc[item.currency] || 0) + value;
@@ -1119,10 +1094,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                             if (!item || !item.currency) return acc;
                             const value = Number(item.value) || 0;
                             acc[item.currency] = (acc[item.currency] || 0) + value;
-                            return acc;
-                          }, {} as Record<string, number>);
-
-                          const hasWinnings = Object.keys(winningsByCategory).length > 0;
+                      return acc;
+                    }, {} as Record<string, number>);
+                    
+                    const hasWinnings = Object.keys(winningsByCategory).length > 0;
                           const hasOpponentWinnings = Object.keys(opponentByCategory).length > 0;
                           const cost = Number(battle.cost) || 0;
                           const modeLabel = String(battle.mode || '').toUpperCase() === 'PVP' ? 'PVP' : 'BOT';
@@ -1137,7 +1112,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               opponentName.toLowerCase() !== 'unknown'
                           );
 
-                          return (
+                    return (
                             <div
                               key={battle.id}
                               className={`bg-black/15 backdrop-blur-2xl p-4 rounded-xl border transition-colors ${
@@ -1147,7 +1122,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3">
                                   {canOpenOpponentProfile ? (
                                     <button
                                       type="button"
@@ -1178,9 +1153,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                       ) : (
                                         <UserIcon size={16} className="text-gray-300" />
                                       )}
-                                    </div>
+                          </div>
                                   )}
-                                  <div>
+                          <div>
                                     <div className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
                                       {modeLabel} • {roundsLabel} rounds
                                     </div>
@@ -1190,9 +1165,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                     <div className="text-[11px] text-gray-500 mt-0.5">
                                       {formatBattleTime(battle.timestamp)}
                                     </div>
-                                  </div>
-                                </div>
-
+                          </div>
+                        </div>
+                        
                                 <div className={`text-xs font-black px-2 py-1 rounded-md border ${
                                   battle.result === 'WIN'
                                     ? 'text-web3-success border-web3-success/30 bg-web3-success/10'
@@ -1219,10 +1194,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                           <div key={currency} className="flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-web3-success/20">
                                             <span className="text-xs font-mono font-bold text-white">{Number(amount).toFixed(2)}</span>
                                             <span className="text-[10px] font-bold text-web3-accent">${currency}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
                                       <div className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
                                         Win without token details
                                       </div>
@@ -1250,8 +1225,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                     ) : (
                                       <div className="text-[11px] text-gray-400">
                                         You did not receive tokens in this battle.
-                                      </div>
-                                    )}
+                            </div>
+                          )}
                                   </>
                                 )}
                               </div>
@@ -1271,14 +1246,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                       {extraWonItems > 0 && (
                                         <div className="text-[10px] px-2 py-1 rounded-md bg-black/35 border border-white/[0.08] text-gray-400">
                                           +{extraWonItems} more
-                                        </div>
-                                      )}
-                                    </div>
+                            </div>
+                          )}
+                        </div>
                                   </>
                                 </div>
                               )}
-                            </div>
-                          );
+                      </div>
+                    );
                         } catch (error) {
                           console.error('Error rendering battle:', error, battle);
                           return null;

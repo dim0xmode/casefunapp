@@ -680,6 +680,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div className="min-w-0">
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Username</div>
                       <div className="text-sm font-bold truncate">{user.username}</div>
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {user.twitterUsername && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 border border-white/[0.08] text-[9px] text-gray-400">
+                            <svg viewBox="0 0 1200 1227" className="w-2 h-2 fill-current shrink-0"><path d="M714.163 519.284L1160.89 0H1055.14L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.748L515.454 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.06 687.828L521.627 619.936L144.011 79.6944H306.615L611.333 515.664L658.766 583.556L1055.19 1150.69H892.586L569.06 687.854V687.828Z" /></svg>
+                            @{user.twitterUsername}
+                          </span>
+                        )}
+                        {user.telegramUsername && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 border border-white/[0.08] text-[9px] text-gray-400">
+                            <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 fill-current shrink-0"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.820 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.800-.840-.547-.297-1.174.157-1.557.112-.098 3.018-2.885 3.076-3.13.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                            @{user.telegramUsername}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="min-w-0 md:col-span-2">
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Wallet</div>
