@@ -25,6 +25,8 @@ services:
 
   caddy:
     image: caddy:2
+    mem_limit: 512m
+    pids_limit: 256
     ports:
       - "80:80"
       - "443:443"

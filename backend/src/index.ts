@@ -17,6 +17,8 @@ import { syncTelegramMiniAppMenuButton } from './services/telegramLinkBotService
 const app = express();
 
 // Middleware
+app.set('trust proxy', 1);
+
 const allowedOrigins = new Set([config.frontendUrl, 'http://localhost:5174']);
 app.use(cors({
   origin: (origin, callback) => {
@@ -29,8 +31,32 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: true, limit: '256kb' }));
+
+const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const ALLOWED_CONTENT_TYPES = new Set([
+  'application/json',
+  'application/x-www-form-urlencoded',
+  'multipart/form-data',
+  'text/plain',
+]);
+
+app.use((req, res, next) => {
+  const method = String(req.method || '').toUpperCase();
+  if (!BODY_METHODS.has(method)) return next();
+
+  const rawContentType = String(req.headers['content-type'] || '').trim().toLowerCase();
+  if (!rawContentType) return next();
+
+  const normalized = rawContentType.split(';')[0]?.trim();
+  if (!normalized || ALLOWED_CONTENT_TYPES.has(normalized)) return next();
+
+  return res.status(415).json({
+    status: 'error',
+    message: 'Unsupported content type',
+  });
+});
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
