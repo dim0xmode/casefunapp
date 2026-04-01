@@ -32,8 +32,22 @@ export const listUsers = async (req: Request, res: Response, next: NextFunction)
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: {
+            referrals: true,
+          },
+        },
+      },
     });
-    res.json({ status: 'success', data: { users } });
+    const payload = users.map((row) => {
+      const { _count, ...user } = row;
+      return {
+        ...user,
+        invitedUserCount: _count.referrals,
+      };
+    });
+    res.json({ status: 'success', data: { users: payload } });
   } catch (error) {
     next(error);
   }
@@ -50,19 +64,24 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
       include: {
         inventory: {
           orderBy: { createdAt: 'desc' },
-          take: 200,
+          take: 400,
         },
         openings: {
           orderBy: { timestamp: 'desc' },
-          take: 200,
+          take: 250,
+          include: {
+            case: {
+              select: { id: true, name: true, currency: true, tokenTicker: true, price: true },
+            },
+          },
         },
         transactions: {
           orderBy: { timestamp: 'desc' },
-          take: 200,
+          take: 400,
         },
         battles: {
           orderBy: { timestamp: 'desc' },
-          take: 200,
+          take: 250,
         },
       },
     });
@@ -71,11 +90,62 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
       return next(new AppError('User not found', 404));
     }
 
-    const burntItems = await prisma.inventoryItem.findMany({
-      where: { userId: id, status: 'BURNT' },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+    const [
+      burntItems,
+      deposits,
+      claims,
+      feedbacks,
+      referredByUser,
+      invitedCount,
+      invitedConfirmedCount,
+      createdCases,
+    ] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: { userId: id, status: 'BURNT' },
+        orderBy: { createdAt: 'desc' },
+        take: 400,
+      }),
+      prisma.deposit.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 150,
+      }),
+      prisma.claim.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          case: { select: { id: true, name: true, currency: true, tokenTicker: true } },
+        },
+      }),
+      prisma.feedbackMessage.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      user.referredById
+        ? prisma.user.findUnique({
+            where: { id: user.referredById },
+            select: { id: true, username: true, walletAddress: true, referralCode: true },
+          })
+        : Promise.resolve(null),
+      prisma.user.count({ where: { referredById: id } }),
+      prisma.user.count({ where: { referredById: id, referralConfirmedAt: { not: null } } }),
+      prisma.case.findMany({
+        where: { createdById: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          name: true,
+          currency: true,
+          tokenTicker: true,
+          price: true,
+          isActive: true,
+          createdAt: true,
+        },
+      }),
+    ]);
 
     const totals = user.transactions.reduce(
       (acc, tx) => {
@@ -88,15 +158,30 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
       { deposits: 0, spent: 0 }
     );
 
+    const depositOnChainTotal = deposits.reduce((s, d) => s + Number(d.amountUsdt || 0), 0);
+
     res.json({
       status: 'success',
       data: {
         user,
         burntItems,
+        deposits,
+        claims,
+        feedbacks,
+        createdCases,
+        referralInsight: {
+          referralCode: user.referralCode,
+          referralConfirmedCount: user.referralConfirmedCount,
+          referralConfirmedAt: user.referralConfirmedAt,
+          referredBy: referredByUser,
+          invitedUserCount: invitedCount,
+          invitedConfirmedCount: invitedConfirmedCount,
+        },
         summary: {
           deposits: totals.deposits,
           spent: totals.spent,
           net: totals.deposits - totals.spent,
+          onChainDepositUsdtTotal: depositOnChainTotal,
         },
       },
     });
@@ -210,6 +295,60 @@ export const updateUserBalance = async (req: Request, res: Response, next: NextF
     await logAdminAction(adminId, 'USER_BALANCE_UPDATE', { balance: nextBalance }, 'User', id);
 
     res.json({ status: 'success', data: { user } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteUser = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const adminId = (req as any).userId;
+    const id = normalizeParam(req.params.id);
+    if (!id) {
+      return next(new AppError('User id is required', 400));
+    }
+
+    const immutableWallet = String(process.env.BOOTSTRAP_ADMIN_WALLET || '').trim();
+    if (!immutableWallet) {
+      return next(new AppError('Bootstrap admin wallet is not configured', 403));
+    }
+
+    const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
+    if (!adminUser || adminUser.walletAddress.toLowerCase() !== immutableWallet.toLowerCase()) {
+      return next(new AppError('Only the main admin wallet can delete users', 403));
+    }
+
+    if (id === adminId) {
+      return next(new AppError('Cannot delete your own account', 400));
+    }
+
+    const target = await prisma.user.findUnique({ where: { id } });
+    if (!target) {
+      return next(new AppError('User not found', 404));
+    }
+    if (target.walletAddress.toLowerCase() === immutableWallet.toLowerCase()) {
+      return next(new AppError('Cannot delete bootstrap admin account', 403));
+    }
+
+    const bootstrapUser = await prisma.user.findUnique({
+      where: { walletAddress: immutableWallet.toLowerCase() },
+      select: { id: true },
+    });
+    if (!bootstrapUser) {
+      return next(new AppError('Bootstrap admin user record not found', 500));
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.case.updateMany({
+        where: { createdById: id },
+        data: { createdById: bootstrapUser.id },
+      });
+      await tx.user.delete({ where: { id } });
+    });
+
+    await logAdminAction(adminId, 'USER_DELETE', { deletedUsername: target.username }, 'User', id);
+
+    res.json({ status: 'success', data: { ok: true } });
   } catch (error) {
     next(error);
   }

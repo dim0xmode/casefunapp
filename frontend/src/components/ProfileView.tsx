@@ -117,6 +117,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [referralInvited, setReferralInvited] = useState<number>(user?.referralConfirmedCount ?? 0);
   const [referralLoading, setReferralLoading] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
+  const canShowReferralLink = user.role === 'ADMIN' || user.role === 'MODERATOR';
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;
@@ -450,7 +451,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   }, [user?.referralConfirmedCount]);
 
   useEffect(() => {
-    if (!isEditable || !user?.id) return;
+    if (!isEditable || !user?.id || !canShowReferralLink) {
+      setReferralUrl(null);
+      setReferralError(null);
+      setReferralLoading(false);
+      return;
+    }
     let cancelled = false;
     setReferralLoading(true);
     setReferralError(null);
@@ -472,7 +478,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isEditable, user?.id]);
+  }, [isEditable, user?.id, canShowReferralLink]);
 
   const handleSaveName = async () => {
     if (!onUpdateUsername) return;
@@ -847,7 +853,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
 
-            {isEditable && (
+            {isEditable && canShowReferralLink && (
               <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">Referrals</div>
                 {referralLoading ? (

@@ -43,6 +43,7 @@ const TELEGRAM_LINK_TOKEN_TTL_MS = 10 * 60 * 1000;
 const TELEGRAM_POLL_INTERVAL_MS = 2500;
 const TELEGRAM_BOT_USERNAME_CACHE_MS = 5 * 60 * 1000;
 const TELEGRAM_LINK_TOKEN_BYTES = 24;
+const TELEGRAM_MINI_APP_MENU_TEXT = 'Open Casefun';
 
 let botUsernameCache: string | null = null;
 let botUsernameCacheAt = 0;
@@ -98,6 +99,10 @@ const buildBotApiUrl = (method: string, query?: URLSearchParams) => {
   return search ? `${base}?${search}` : base;
 };
 
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const buildTelegramMiniAppUrl = () => `${trimTrailingSlash(config.frontendUrl)}/tg`;
+
 const sendBotMessage = async (chatId: number, text: string) => {
   const query = new URLSearchParams({
     chat_id: String(chatId),
@@ -141,6 +146,26 @@ export const getTelegramBotPublicInfo = async () => {
     botUsername,
     botUrl: `https://t.me/${botUsername}`,
   };
+};
+
+export const syncTelegramMiniAppMenuButton = async () => {
+  ensureTelegramBotConfigured();
+  const menuButton = {
+    type: 'web_app',
+    text: TELEGRAM_MINI_APP_MENU_TEXT,
+    web_app: {
+      url: buildTelegramMiniAppUrl(),
+    },
+  };
+  const query = new URLSearchParams({
+    menu_button: JSON.stringify(menuButton),
+  });
+  const response = await fetch(buildBotApiUrl('setChatMenuButton', query));
+  const payload = (await response.json().catch(() => null)) as TelegramBotApiResponse<boolean> | null;
+  if (!response.ok || !payload?.ok) {
+    const reason = payload?.description || `HTTP ${response.status}`;
+    throw new Error(`setChatMenuButton failed: ${reason}`);
+  }
 };
 
 const parseStartLinkToken = (text: string) => {

@@ -17,10 +17,17 @@ export const getReferralCode = async (
 
     let user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { referralCode: true, referralConfirmedCount: true },
+      select: { referralCode: true, referralConfirmedCount: true, role: true },
     });
     if (!user) {
       return next(new AppError('User not found', 404));
+    }
+
+    const role = String(user.role || '').toUpperCase();
+    if (role !== 'ADMIN' && role !== 'MODERATOR') {
+      return next(
+        new AppError('Referral link is available for early access members and staff only.', 403)
+      );
     }
 
     if (!user.referralCode) {
@@ -28,7 +35,7 @@ export const getReferralCode = async (
       user = await prisma.user.update({
         where: { id: userId },
         data: { referralCode: code },
-        select: { referralCode: true, referralConfirmedCount: true },
+        select: { referralCode: true, referralConfirmedCount: true, role: true },
       });
     }
 

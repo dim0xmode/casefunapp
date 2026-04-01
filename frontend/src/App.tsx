@@ -67,6 +67,7 @@ const TAB_PATHS: Record<string, string> = {
 };
 const BACKGROUND_ANIMATION_STORAGE_KEY = 'casefun:bgAnimationEnabled';
 const EARLY_ACCESS_NOTICE_STORAGE_KEY_PREFIX = 'casefun:earlyAccessDecisionSeen:';
+const REFERRAL_EARLY_ACCESS_NOTICE_KEY_PREFIX = 'casefun:referralEarlyAccessUnlocked:';
 const TELEGRAM_DEV_ID_STORAGE_KEY = 'casefun:tgDevIdentity';
 const TELEGRAM_DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_TG_DEV_LOGIN === '1';
 
@@ -80,6 +81,7 @@ interface EarlyAccessStatusPayload {
     | 'ALREADY_EARLY_ACCESS'
     | 'ADMIN_ACCOUNT'
     | 'SUPPORT_ACCOUNT'
+    | 'REFERRAL_SIGNUP'
     | null;
   request: {
     id: string;
@@ -249,6 +251,32 @@ const App = () => {
       // ignore polling errors for this lightweight status
     }
   }, [lastAuthAddress]);
+
+  useEffect(() => {
+    if (!lastAuthAddress || !user?.id) return;
+    if (user.role !== 'MODERATOR') return;
+    if (!user.referredById || !user.referralConfirmedAt) return;
+    if (earlyAccessStatus === null) return;
+
+    const req = earlyAccessStatus.request;
+    if (req?.status === 'APPROVED') return;
+
+    const key = `${REFERRAL_EARLY_ACCESS_NOTICE_KEY_PREFIX}${lastAuthAddress.toLowerCase()}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      setEarlyAccessDecisionNotice(buildEarlyAccessDecisionMessage('APPROVED'));
+      localStorage.setItem(key, '1');
+    } catch {
+      // ignore storage errors
+    }
+  }, [
+    lastAuthAddress,
+    user?.id,
+    user.role,
+    user.referredById,
+    user.referralConfirmedAt,
+    earlyAccessStatus,
+  ]);
 
   const handleSubmitEarlyAccess = useCallback(async (payload: { contact: string; message: string }) => {
     if (!lastAuthAddress) {
@@ -1134,6 +1162,8 @@ const App = () => {
             if (typeof response.data?.balance === 'number') {
               setBalance(response.data.balance);
               removePendingDepositHash(targetWallet, hash);
+              void loadProfile(targetWallet).catch(() => {});
+              void fetchEarlyAccessStatus();
             } else if (!response.data?.pending) {
               // Unknown non-pending response; keep hash for next sync.
             }
@@ -2100,11 +2130,14 @@ const App = () => {
         isOpen={isTopUpOpen}
         onClose={handleCloseTopUp}
         onBalanceUpdate={handleBalanceUpdate}
-        onTopUpConfirmed={
-          topUpBridgeMode === 'bridge'
-            ? () => handleReturnToTelegramFromBridge('topup')
-            : undefined
-        }
+        onTopUpConfirmed={async () => {
+          const addr = (user.walletAddress || walletAddress || '').trim();
+          if (addr) await loadProfile(addr).catch(() => {});
+          await fetchEarlyAccessStatus();
+          if (topUpBridgeMode === 'bridge') {
+            await handleReturnToTelegramFromBridge('topup');
+          }
+        }}
         isAuthenticated={Boolean(lastAuthAddress)}
         onConnectWallet={() => setIsWalletConnectOpen(true)}
         initialUsdtAmount={topUpInitialUsdt}
@@ -2252,6 +2285,7 @@ const App = () => {
         <FeedbackWidget
           isAuthenticated={Boolean(lastAuthAddress)}
           onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+          hideEarlyAccessTopic={Boolean(user.referredById && user.role === 'USER')}
         />
         </>
       )}

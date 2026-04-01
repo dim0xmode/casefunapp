@@ -77,7 +77,10 @@ const recordConfirmedDeposit = async (params: {
       if (totalUsdt >= 5) {
         await txDb.user.update({
           where: { id: userId },
-          data: { referralConfirmedAt: new Date() },
+          data: {
+            referralConfirmedAt: new Date(),
+            ...(String(updatedUser.role || '').toUpperCase() === 'USER' ? { role: 'MODERATOR' as const } : {}),
+          },
         });
         await txDb.user.update({
           where: { id: updatedUser.referredById },

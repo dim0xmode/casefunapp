@@ -276,6 +276,7 @@ class ApiClient {
         | 'ALREADY_EARLY_ACCESS'
         | 'ADMIN_ACCOUNT'
         | 'SUPPORT_ACCOUNT'
+        | 'REFERRAL_SIGNUP'
         | null;
       request: {
         id: string;
@@ -459,6 +460,11 @@ class ApiClient {
     });
   }
 
+  async deleteAdminUser(userId: string) {
+    return this.request<{ ok: boolean }>(`/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
 
   async getAdminCases() {
     return this.request<{ cases: any[] }>('/admin/cases');

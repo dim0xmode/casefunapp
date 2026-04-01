@@ -74,6 +74,12 @@ const toPublicUser = (user: any) => ({
   twitterLinkedAt: user.twitterLinkedAt,
   referralCode: user.referralCode ?? null,
   referralConfirmedCount: user.referralConfirmedCount ?? 0,
+  referredById: user.referredById ?? null,
+  referralConfirmedAt: user.referralConfirmedAt
+    ? (user.referralConfirmedAt instanceof Date
+        ? user.referralConfirmedAt.toISOString()
+        : user.referralConfirmedAt)
+    : null,
 });
 
 const getCookieValue = (cookieHeader: string, key: string) => {
@@ -1067,6 +1073,8 @@ export const getProfile = async (
         twitterLinkedAt: true,
         referralCode: true,
         referralConfirmedCount: true,
+        referredById: true,
+        referralConfirmedAt: true,
         createdAt: true,
         inventory: {
           where: { status: 'ACTIVE', claimedAt: null },
@@ -1084,6 +1092,14 @@ export const getProfile = async (
 
     if (!user) {
       return next(new AppError('User not found', 404));
+    }
+
+    if (user.referredById && user.referralConfirmedAt && user.role === 'USER') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { role: 'MODERATOR' },
+      });
+      (user as { role: string }).role = 'MODERATOR';
     }
 
     const [burntItems, claimedItems] = await Promise.all([

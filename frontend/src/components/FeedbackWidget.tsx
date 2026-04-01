@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, X } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -7,6 +7,8 @@ type FeedbackTopic = 'BUG_REPORT' | 'EARLY_ACCESS' | 'PARTNERSHIP';
 interface FeedbackWidgetProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  /** Hide early-access topic (e.g. referral signups use deposit path instead). */
+  hideEarlyAccessTopic?: boolean;
 }
 
 const TOPIC_OPTIONS: Array<{ id: FeedbackTopic; label: string }> = [
@@ -18,7 +20,12 @@ const TOPIC_OPTIONS: Array<{ id: FeedbackTopic; label: string }> = [
 export const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({
   isAuthenticated,
   onOpenWalletConnect,
+  hideEarlyAccessTopic = false,
 }) => {
+  const topicOptions = useMemo(
+    () => TOPIC_OPTIONS.filter((item) => !(hideEarlyAccessTopic && item.id === 'EARLY_ACCESS')),
+    [hideEarlyAccessTopic]
+  );
   const [open, setOpen] = useState(false);
   const [topic, setTopic] = useState<FeedbackTopic>('BUG_REPORT');
   const [contact, setContact] = useState('');
@@ -33,6 +40,12 @@ export const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({
     setContact('');
     setMessage('');
   };
+
+  useEffect(() => {
+    if (hideEarlyAccessTopic && topic === 'EARLY_ACCESS') {
+      setTopic('BUG_REPORT');
+    }
+  }, [hideEarlyAccessTopic, topic]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +100,7 @@ export const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({
                 onChange={(e) => setTopic(e.target.value as FeedbackTopic)}
                 className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.1] text-sm"
               >
-                {TOPIC_OPTIONS.map((item) => (
+                {topicOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
                   </option>

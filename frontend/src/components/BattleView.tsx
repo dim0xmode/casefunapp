@@ -319,7 +319,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
       setRightPlayerAvatar(isBotOpponent ? null : (battle.joinerAvatar || null));
       setRightPlayerAvatarMeta(isBotOpponent ? undefined : (battle.joinerAvatarMeta || undefined));
       setRightPlayerIsBot(isBotOpponent);
-    } else {
+      } else {
       setLeftPlayerAvatar(battle.hostAvatar || null);
       setLeftPlayerAvatarMeta(battle.hostAvatarMeta || undefined);
       setLeftPlayerIsBot(false);
@@ -581,10 +581,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
         userItem: { ...userResolved[index], caseId: caseItem.id },
         botItem: { ...opponentResolved[index], caseId: caseItem.id },
       }));
-      setBattleOutcomes(outcomes);
-      setUserDrops([]);
-      setBotDrops([]);
-      setCurrentRound(0);
+    setBattleOutcomes(outcomes);
+    setUserDrops([]);
+    setBotDrops([]);
+    setCurrentRound(0);
     } catch {
       const outcomes = selectedCases.map((caseItem) => {
         const sorted = [...caseItem.possibleDrops].sort((a, b) => Number(a.value || 0) - Number(b.value || 0));
@@ -742,7 +742,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   </span>
                 </>
               )}
-            </h2>
+          </h2>
             <AdminActionButton
               isAuthenticated={isAuthenticated}
               isAdmin={isAdmin}
@@ -795,12 +795,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
                               meta={caseData.imageMeta}
                               className="rounded-full"
                             />
-                          </div>
-                        ))}
+              </div>
+            ))}
                         {battle.cases.length > 4 && (
                           <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>
                         )}
-                      </div>
+          </div>
 
                       <div className="flex items-center justify-between mb-4">
                         <div>
@@ -812,7 +812,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                         {!isTelegramMiniApp && (
                           <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                         )}
-                      </div>
+        </div>
 
                       {battle.status && battle.status !== 'OPEN' ? (
                         <button
@@ -839,10 +839,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
                           className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                         />
                       )}
-                    </div>
+          </div>
                   );
                 })}
-              </div>
+                </div>
             </div>
           )}
 
@@ -881,13 +881,13 @@ export const BattleView: React.FC<BattleViewProps> = ({
                     {battle.cases.length > 4 && (
                       <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>
                     )}
-                  </div>
+          </div>
 
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-xs uppercase tracking-widest text-gray-500">
                         {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
-                      </div>
+            </div>
                       <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                     </div>
                     {!isTelegramMiniApp && (
@@ -901,7 +901,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                       className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 bg-web3-accent/20 border border-web3-accent/40 text-web3-accent"
                     >
                       View <ChevronRight size={16} />
-                    </button>
+            </button>
                   ) : (
                     <AdminActionButton
                       isAuthenticated={isAuthenticated}
@@ -920,10 +920,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
                       className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                     />
                   )}
-                </div>
+          </div>
               );
             })}
-          </div>
+        </div>
         </div>
 
         {createBattleOpen && (
@@ -1197,7 +1197,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 ) : (
                   <UserIcon className="text-web3-accent" size={20}/>
                 )}
-              </div>
+            </div>
               <div className="font-bold text-white">{leftName}</div>
             </div>
           </div>
@@ -1211,7 +1211,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
             {!battleStarted && opponent.type ? (
               <div className="text-gray-500 font-bold uppercase tracking-wider animate-pulse">
                 Waiting for you...
-              </div>
+                </div>
             ) : (
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gray-800 rounded-full border border-red-500 flex items-center justify-center">
@@ -1270,7 +1270,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
             </div>
             {!isTelegramMiniApp && <div className="absolute left-0 top-0 bottom-0 w-[220px] bg-black/20"></div>}
           </div>
-        </div>
+            </div>
 
         {/* Split Screen */}
         <div className={`flex-1 relative overflow-hidden ${isTelegramMiniApp ? 'flex gap-3 p-3' : 'flex'}`}>
@@ -1283,10 +1283,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div className={`w-full max-w-lg z-10 flex flex-col items-center ${isTelegramMiniApp ? 'mt-10 px-3' : 'mt-20 px-6'}`}>
                   <div className={`w-32 h-32 rounded-full border-2 ${leftIsUser ? 'border-web3-accent/60' : 'border-web3-success/60'} bg-black/30 flex items-center justify-center shadow-[0_0_24px_rgba(16,185,129,0.35)]`}>
                     <Check size={32} className="text-web3-success" />
-                  </div>
+                    </div>
                   <div className="mt-4 text-xs uppercase tracking-widest text-gray-400">{leftIsUser ? 'You ready' : 'Creator ready'}</div>
+                  </div>
                 </div>
-            </div>
 
               <div className={`flex-1 relative flex flex-col items-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : ''}`}>
                 <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-red-500/5 to-transparent pointer-events-none"></div>
@@ -1317,8 +1317,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
                             : 'Join'}
                   </span>
                 </button>
-              </div>
-              </div>
+            </div>
+          </div>
             </>
           )}
 
@@ -1340,16 +1340,16 @@ export const BattleView: React.FC<BattleViewProps> = ({
                         compactContent={isTelegramMiniApp}
                       />
                   )}
-                </div>
+                  </div>
 
                 <div className={`flex-1 w-full max-w-lg px-4 overflow-y-auto custom-scrollbar pb-4 ${isTelegramMiniApp ? 'mt-4' : 'mt-8'}`}>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {(leftIsUser ? userDrops : botDrops).map((item, i) => (
                       <ItemCard key={`${item.id}-${i}`} item={item} size="sm" currencyPrefix="$" compactContent={isTelegramMiniApp} />
               ))}
-                  </div>
-            </div>
-          </div>
+                          </div>
+                        </div>
+                      </div>
 
               {/* Right Side */}
           <div className={`flex-1 relative flex flex-col items-center justify-center ${isTelegramMiniApp ? 'rounded-xl border border-white/[0.08] bg-black/20' : ''}`}>

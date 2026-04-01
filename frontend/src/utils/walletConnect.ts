@@ -2,85 +2,255 @@ import EthereumProvider from '@walletconnect/ethereum-provider';
 
 export type TelegramWalletOption = 'metamask' | 'trust' | 'okx' | 'coinbase';
 
-interface StartWalletConnectParams {
-  wallet: TelegramWalletOption;
-  projectId: string;
-  chainId: number;
-  rpcUrl?: string;
-  onDeeplink?: (url: string) => void;
-}
-
 interface WalletConnectSession {
   provider: any;
   address: string;
   disconnect: () => Promise<void>;
 }
 
-const getDeeplinkForWallet = (wallet: TelegramWalletOption, wcUri: string) => {
-  const encoded = encodeURIComponent(wcUri);
-  switch (wallet) {
-    case 'metamask':
-      return `https://metamask.app.link/wc?uri=${encoded}`;
-    case 'trust':
-      return `https://link.trustwallet.com/wc?uri=${encoded}`;
-    case 'okx':
-      return `okx://walletconnect?uri=${encoded}`;
-    case 'coinbase':
-      return `https://go.cb-w.com/wc?uri=${encoded}`;
-    default:
-      return wcUri;
-  }
+interface ConnectParams {
+  projectId: string;
+  chainId: number;
+  rpcUrl?: string;
+  onStatus?: (message: string) => void;
+}
+
+const HTTP_RE = /^https?:\/\//i;
+
+const getConnectedAddress = async (provider: any): Promise<string> => {
+  try {
+    const accounts = (await provider.request({ method: 'eth_accounts' })) as string[];
+    return Array.isArray(accounts) && accounts[0] ? String(accounts[0]).toLowerCase() : '';
+  } catch { return ''; }
 };
 
-const openExternalLink = (url: string) => {
+/**
+ * Purge stale WalletConnect data from localStorage.
+ * Forces a fresh pairing so display_uri always fires.
+ */
+const clearStaleWcStorage = () => {
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('wc@') || k.startsWith('walletconnect') || k.startsWith('-walletlink'))) {
+        toRemove.push(k);
+      }
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k));
+  } catch { /* ok */ }
+};
+
+/**
+ * Patch window.open so the WC Modal's deep links go through tg.openLink().
+ * Returns a restore function.
+ */
+export const patchWindowOpenForTelegram = (): (() => void) | null => {
   const tg = (window as any)?.Telegram?.WebApp;
-  if (tg?.openLink) {
-    tg.openLink(url);
-    return;
-  }
-  window.location.href = url;
+  if (!tg?.openLink || typeof tg.openLink !== 'function') return null;
+
+  const orig = window.open.bind(window);
+  window.open = function patched(url?: string | URL, target?: string, features?: string) {
+    const s = String(url ?? '');
+    if (s && HTTP_RE.test(s)) {
+      try { tg.openLink(s, { try_instant_view: false }); } catch {
+        try { tg.openLink(s); } catch { return orig(s, target, features); }
+      }
+      return null;
+    }
+    return orig(url as string, target, features);
+  };
+  return () => { window.open = orig; };
 };
 
-export const connectWalletWithDeeplink = async ({
-  wallet,
+/**
+ * Standard WalletConnect connection via the official WC Modal.
+ *
+ * The modal handles: wallet selection UI, deep linking, reconnection, session detection.
+ * We only add two things:
+ *   1. window.open patch so deep links work in Telegram WebView
+ *   2. On visibilitychange, nudge the subscriber to re-subscribe (non-disruptive)
+ */
+export const connectWallet = async ({
   projectId,
   chainId,
   rpcUrl,
-  onDeeplink,
-}: StartWalletConnectParams): Promise<WalletConnectSession> => {
-  if (!projectId) {
-    throw new Error('WalletConnect is not configured. Add VITE_WALLETCONNECT_PROJECT_ID.');
-  }
+  onStatus,
+}: ConnectParams): Promise<WalletConnectSession> => {
+  if (!projectId) throw new Error('WalletConnect not configured. Set VITE_WALLETCONNECT_PROJECT_ID.');
 
-  const provider = await EthereumProvider.init({
-    projectId,
-    chains: [chainId],
-    optionalChains: [chainId],
-    showQrModal: false,
-    methods: ['eth_requestAccounts', 'eth_accounts', 'personal_sign', 'eth_signTypedData', 'eth_signTypedData_v4'],
-    optionalMethods: ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'eth_sendTransaction'],
-    rpcMap: rpcUrl ? { [chainId]: rpcUrl } : undefined,
-  });
+  onStatus?.('Cleaning up…');
+  clearStaleWcStorage();
 
-  provider.on('display_uri', (wcUri: string) => {
-    const deeplink = getDeeplinkForWallet(wallet, wcUri);
-    onDeeplink?.(deeplink);
-    openExternalLink(deeplink);
-  });
+  onStatus?.('Initializing WalletConnect…');
+  const restoreWindowOpen = patchWindowOpenForTelegram();
 
-  await provider.connect();
-  const accounts = (await provider.request({ method: 'eth_accounts' })) as string[] | undefined;
-  const address = Array.isArray(accounts) && accounts[0] ? String(accounts[0]).toLowerCase() : '';
-  if (!address) {
-    await provider.disconnect().catch(() => {});
-    throw new Error('WalletConnect connected but no wallet address returned.');
-  }
+  let visHandler: (() => void) | null = null;
 
-  return {
-    provider,
-    address,
-    disconnect: async () => {
+  try {
+    const provider = await EthereumProvider.init({
+      projectId,
+      chains: [1],
+      optionalChains: [1, chainId],
+      showQrModal: true,
+      metadata: {
+        name: 'Casefun',
+        description: 'Casefun – open cases, upgrade items, battle',
+        url: 'https://casefun.net',
+        icons: ['https://casefun.net/favicon.ico'],
+      },
+      methods: ['eth_requestAccounts', 'eth_accounts', 'personal_sign', 'eth_signTypedData_v4'],
+      optionalMethods: ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'eth_sendTransaction'],
+      rpcMap: { 1: 'https://cloudflare-eth.com', ...(rpcUrl ? { [chainId]: rpcUrl } : {}) },
+      qrModalOptions: {
+        themeMode: 'dark' as const,
+        themeVariables: { '--wcm-z-index': '99999' },
+      },
+    });
+
+    if (provider.session) {
+      onStatus?.('Clearing old session…');
+      try { await provider.disconnect(); } catch { /* ok */ }
+    }
+
+    // Non-disruptive: when user returns from wallet app, re-subscribe to topics.
+    // This does NOT close/reopen the WebSocket — just refreshes subscriptions
+    // so the relay delivers any pending session approval.
+    visHandler = () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const sub = provider?.signer?.client?.core?.relayer?.subscriber;
+        if (sub && typeof sub.restart === 'function') sub.restart();
+      } catch { /* ok */ }
+    };
+    document.addEventListener('visibilitychange', visHandler);
+
+    onStatus?.('Choose your wallet…');
+    await provider.connect();
+    onStatus?.('Connected! Getting address…');
+
+    const address = await getConnectedAddress(provider);
+    if (!address) {
       await provider.disconnect().catch(() => {});
-    },
+      throw new Error('Connected but no address returned.');
+    }
+
+    return {
+      provider,
+      address,
+      disconnect: async () => { await provider.disconnect().catch(() => {}); },
+    };
+  } finally {
+    restoreWindowOpen?.();
+    if (visHandler) document.removeEventListener('visibilitychange', visHandler);
+  }
+};
+
+export const hasInjectedProvider = (): boolean =>
+  typeof window !== 'undefined' && Boolean((window as any).ethereum);
+
+/**
+ * Try to restore an existing WalletConnect session from localStorage
+ * without showing any UI. Returns a usable provider or null.
+ */
+export const reconnectProvider = async (params: {
+  projectId: string;
+  chainId: number;
+  rpcUrl?: string;
+}): Promise<WalletConnectSession | null> => {
+  if (!params.projectId) return null;
+  try {
+    const provider = await EthereumProvider.init({
+      projectId: params.projectId,
+      chains: [1],
+      optionalChains: [1, params.chainId],
+      showQrModal: false,
+      metadata: {
+        name: 'Casefun',
+        description: 'Casefun – open cases, upgrade items, battle',
+        url: 'https://casefun.net',
+        icons: ['https://casefun.net/favicon.ico'],
+      },
+      methods: ['eth_requestAccounts', 'eth_accounts', 'personal_sign', 'eth_signTypedData_v4'],
+      optionalMethods: ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'eth_sendTransaction'],
+      rpcMap: { 1: 'https://cloudflare-eth.com', ...(params.rpcUrl ? { [params.chainId]: params.rpcUrl } : {}) },
+    });
+
+    if (!provider.session) return null;
+
+    const address = await getConnectedAddress(provider);
+    if (!address) return null;
+
+    return {
+      provider,
+      address,
+      disconnect: async () => { await provider.disconnect().catch(() => {}); },
+    };
+  } catch {
+    return null;
+  }
+};
+
+const WALLET_REDIRECT_MAP: Record<string, string> = {
+  metamask: 'https://metamask.app.link/wc',
+  trust: 'https://link.trustwallet.com/wc',
+  rainbow: 'https://rnbwapp.com/wc',
+  coinbase: 'https://go.cb-w.com/wc',
+  okx: 'https://www.okx.com/download?appendQuery=true',
+};
+
+/**
+ * Open the connected wallet app in Telegram WebView.
+ * Detects the wallet from WC session peer metadata and uses the
+ * appropriate universal deep link so MetaMask/Trust/etc. opens for
+ * pending approval requests.
+ */
+export const redirectToWallet = (provider: any, delayMs = 600): void => {
+  const tg = (window as any)?.Telegram?.WebApp;
+  if (!tg?.openLink) return;
+
+  const peerName = (provider?.session?.peer?.metadata?.name || '').toLowerCase();
+  let url = '';
+  for (const [key, link] of Object.entries(WALLET_REDIRECT_MAP)) {
+    if (peerName.includes(key)) { url = link; break; }
+  }
+  if (!url) {
+    const redirect = provider?.session?.peer?.metadata?.redirect;
+    url = redirect?.universal || redirect?.native || '';
+  }
+  if (!url || !HTTP_RE.test(url)) return;
+
+  setTimeout(() => {
+    try { tg.openLink(url, { try_instant_view: false }); } catch {
+      try { tg.openLink(url); } catch { /* ok */ }
+    }
+  }, delayMs);
+};
+
+/**
+ * Ensure the relay subscriber is fresh before sending a request.
+ */
+export const nudgeRelay = (provider: any): void => {
+  try {
+    const sub = provider?.signer?.client?.core?.relayer?.subscriber;
+    if (sub && typeof sub.restart === 'function') sub.restart();
+  } catch { /* ok */ }
+};
+
+/**
+ * Wrap an async operation (e.g. sendTransaction) with relay subscriber nudge.
+ * When the user returns from the wallet app, subscriber.restart() ensures the
+ * relay delivers any pending JSON-RPC responses (tx hash, etc.).
+ */
+export const withRelayNudge = async <T>(provider: any, fn: () => Promise<T>): Promise<T> => {
+  const handler = () => {
+    if (document.visibilityState !== 'visible') return;
+    nudgeRelay(provider);
   };
+  document.addEventListener('visibilitychange', handler);
+  try {
+    return await fn();
+  } finally {
+    document.removeEventListener('visibilitychange', handler);
+  }
 };

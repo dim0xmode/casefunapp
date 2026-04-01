@@ -8,20 +8,24 @@ interface TopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   onBalanceUpdate: (nextBalance: number) => void;
+  onTopUpConfirmed?: () => void | Promise<void>;
   isAuthenticated: boolean;
   onConnectWallet: () => void;
   initialUsdtAmount?: number | null;
   walletAddress?: string | null;
+  externalProvider?: any;
 }
 
 export const TopUpModal: React.FC<TopUpModalProps> = ({
   isOpen,
   onClose,
   onBalanceUpdate,
+  onTopUpConfirmed,
   isAuthenticated,
   onConnectWallet,
   initialUsdtAmount,
   walletAddress,
+  externalProvider,
 }) => {
   const [usdtAmount, setUsdtAmount] = useState('');
   const [ethAmount, setEthAmount] = useState('');
@@ -94,14 +98,22 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   }, [isOpen, activeWalletAddress]);
 
   const hasEthereum = typeof window !== 'undefined' && Boolean(window.ethereum?.request);
+  const hasProvider = hasEthereum || Boolean(externalProvider);
+
+  const resolveProvider = (): any => {
+    if (hasEthereum && window.ethereum) return window.ethereum;
+    if (externalProvider) return externalProvider;
+    return null;
+  };
 
   const ensureChain = async () => {
-    if (!hasEthereum || !window.ethereum) return false;
+    const provider = resolveProvider();
+    if (!provider) return false;
     const targetHex = `0x${chainId.toString(16)}`;
     try {
-      const current = await window.ethereum.request({ method: 'eth_chainId' });
-      if (current === targetHex) return true;
-      await window.ethereum.request({
+      const current = await provider.request({ method: 'eth_chainId' });
+      if (current === targetHex || Number(current) === chainId) return true;
+      await provider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: targetHex }],
       });
@@ -109,7 +121,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     } catch (error: any) {
       if (error?.code !== 4902) return false;
       try {
-        await window.ethereum.request({
+        await provider.request({
           method: 'wallet_addEthereumChain',
           params: [
             {
@@ -169,6 +181,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         setUsdtAmount('');
         setEthAmount('');
         removePendingDepositHash(activeWalletAddress, txHash);
+        if (onTopUpConfirmed) {
+          void Promise.resolve(onTopUpConfirmed()).catch(() => {});
+        }
       }
     } catch (error: any) {
       setStatusMessage(error?.message || 'Confirmation failed');
@@ -181,8 +196,16 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       onConnectWallet();
       return;
     }
-    if (!hasEthereum) {
-      setStatusMessage('MetaMask not found');
+    const rawEth = ethAmount.replace(/,/g, '.').trim();
+    if (!rawEth) return;
+    const activeProvider = resolveProvider();
+    if (!activeProvider) {
+      const inTelegramMiniApp = Boolean((window as any)?.Telegram?.WebApp);
+      setStatusMessage(
+        inTelegramMiniApp
+          ? 'Connect wallet in Mini App first, then retry top up.'
+          : 'MetaMask not found'
+      );
       return;
     }
     if (!treasuryAddress) {
@@ -190,9 +213,6 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       return;
     }
     if (!Number.isFinite(parsedEth) || parsedEth <= 0) return;
-    const rawEth = ethAmount.replace(/,/g, '.').trim();
-    if (!rawEth) return;
-
     setIsSubmitting(true);
     setStatusMessage(null);
     try {
@@ -201,9 +221,19 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         setStatusMessage('Switch to Sepolia to continue');
         return;
       }
-      const provider = new BrowserProvider(window.ethereum as any);
+      const provider = new BrowserProvider(activeProvider);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
+      const signerAddress = String(await signer.getAddress()).toLowerCase();
+      if (
+        activeWalletAddress &&
+        activeWalletAddress.startsWith('0x') &&
+        signerAddress &&
+        signerAddress !== activeWalletAddress
+      ) {
+        setStatusMessage('Connected wallet does not match linked wallet. Switch wallet and retry.');
+        return;
+      }
       const tx = await signer.sendTransaction({
         to: treasuryAddress,
         value: parseEther(rawEth),
@@ -221,7 +251,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   if (!isOpen) return null;
 
-  const canSubmit = isAuthenticated && Number.isFinite(parsedEth) && parsedEth > 0 && !isSubmitting;
+  const canSubmit = isAuthenticated && hasProvider && Number.isFinite(parsedEth) && parsedEth > 0 && !isSubmitting;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 animate-fade-in" onMouseDown={onClose}>

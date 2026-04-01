@@ -12,6 +12,7 @@ import walletRoutes from './routes/walletRoutes.js';
 import tokenRoutes from './routes/tokenRoutes.js';
 import prisma from './config/database.js';
 import { startCaseExpiryWorker } from './workers/caseExpiryWorker.js';
+import { syncTelegramMiniAppMenuButton } from './services/telegramLinkBotService.js';
 
 const app = express();
 
@@ -71,6 +72,17 @@ app.listen(config.port, async () => {
   } catch (error) {
     console.error(`❌ Database connection failed:`, error);
     console.error(`⚠️  Make sure PostgreSQL is running and DATABASE_URL is correct`);
+  }
+
+  if (config.nodeEnv === 'production' && config.telegramBotToken) {
+    void syncTelegramMiniAppMenuButton()
+      .then(() => {
+        console.log('✅ Telegram Mini App menu synced');
+      })
+      .catch((error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️  Telegram Mini App menu sync skipped: ${reason}`);
+      });
   }
 
   startCaseExpiryWorker();

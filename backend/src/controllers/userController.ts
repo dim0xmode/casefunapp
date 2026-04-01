@@ -27,6 +27,8 @@ const EARLY_ACCESS_BLOCK_REASONS = {
   ALREADY_EARLY_ACCESS: 'ALREADY_EARLY_ACCESS',
   ADMIN_ACCOUNT: 'ADMIN_ACCOUNT',
   SUPPORT_ACCOUNT: 'SUPPORT_ACCOUNT',
+  /** Signed up via a referral link; early access is granted after qualifying deposit, not via application. */
+  REFERRAL_SIGNUP: 'REFERRAL_SIGNUP',
 } as const;
 const TWITTER_AUTHORIZE_URL = 'https://twitter.com/i/oauth2/authorize';
 const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
@@ -1311,7 +1313,7 @@ export const createFeedbackMessage = async (req: Request, res: Response, next: N
     const isEarlyAccess = topic === 'EARLY_ACCESS';
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true },
+      select: { id: true, role: true, referredById: true },
     });
 
     if (!user) {
@@ -1339,6 +1341,14 @@ export const createFeedbackMessage = async (req: Request, res: Response, next: N
       }
       if (normalizedRole === 'SUPPORT') {
         return next(new AppError('Support accounts cannot submit early access requests.', 403));
+      }
+      if (user.referredById) {
+        return next(
+          new AppError(
+            'Referral signups unlock early access automatically after a qualifying wallet deposit (5 ₮+). Applications are not used for this path.',
+            403
+          )
+        );
       }
 
       const latestEarlyAccessRequest = await prisma.feedbackMessage.findFirst({
@@ -1382,7 +1392,7 @@ export const getEarlyAccessRequestStatus = async (req: Request, res: Response, n
     const [user, latestRequest] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, role: true },
+        select: { id: true, role: true, referredById: true },
       }),
       prisma.feedbackMessage.findFirst({
         where: {
@@ -1435,6 +1445,18 @@ export const getEarlyAccessRequestStatus = async (req: Request, res: Response, n
         data: {
           canSubmit: false,
           blockReason: EARLY_ACCESS_BLOCK_REASONS.SUPPORT_ACCOUNT,
+          request: latestRequest || null,
+        },
+      });
+      return;
+    }
+
+    if (user.referredById) {
+      res.json({
+        status: 'success',
+        data: {
+          canSubmit: false,
+          blockReason: EARLY_ACCESS_BLOCK_REASONS.REFERRAL_SIGNUP,
           request: latestRequest || null,
         },
       });

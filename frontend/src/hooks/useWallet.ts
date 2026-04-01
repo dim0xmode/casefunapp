@@ -17,7 +17,11 @@ export const useWallet = () => {
   });
 
   const checkMetaMask = (): boolean => {
-    return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.ethereum !== 'undefined' &&
+      typeof window.ethereum?.request === 'function'
+    );
   };
 
   const connectWallet = async () => {
@@ -175,11 +179,13 @@ export const useWallet = () => {
         window.location.reload();
       };
 
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
+      if (typeof window.ethereum.on === 'function') {
+        window.ethereum.on('accountsChanged', handleAccountsChanged);
+        window.ethereum.on('chainChanged', handleChainChanged);
+      }
 
       return () => {
-        if (window.ethereum && window.ethereum.removeListener) {
+        if (window.ethereum && typeof window.ethereum.removeListener === 'function') {
           window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
           window.ethereum.removeListener('chainChanged', handleChainChanged);
         }
@@ -203,8 +209,8 @@ declare global {
   interface Window {
     ethereum?: {
       request: (args: { method: string; params?: any[] }) => Promise<any>;
-      on: (event: string, callback: (args: any) => void) => void;
-      removeListener: (event: string, callback: (args: any) => void) => void;
+      on?: (event: string, callback: (args: any) => void) => void;
+      removeListener?: (event: string, callback: (args: any) => void) => void;
       isMetaMask?: boolean;
     };
   }

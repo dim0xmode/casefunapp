@@ -5,6 +5,7 @@ import {
   updateUserRole,
   updateUserBan,
   updateUserBalance,
+  deleteUser,
   listCases,
   getCaseDetail,
   updateCase,
@@ -35,6 +36,7 @@ router.get('/users/:id', getUserDetail);
 router.patch('/users/:id/role', updateUserRole);
 router.patch('/users/:id/ban', updateUserBan);
 router.patch('/users/:id/balance', updateUserBalance);
+router.delete('/users/:id', deleteUser);
 
 router.get('/cases', listCases);
 router.get('/cases/:id', getCaseDetail);

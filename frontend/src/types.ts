@@ -101,6 +101,10 @@ export interface User {
   twitterLinkedAt?: string | number | null;
   referralCode?: string | null;
   referralConfirmedCount?: number;
+  /** Set at signup when the user registered via ?ref= */
+  referredById?: string | null;
+  /** When referral qualification was met (e.g. 5 ₮+ on-chain deposits) */
+  referralConfirmedAt?: string | null;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {

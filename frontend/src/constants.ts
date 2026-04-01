@@ -104,6 +104,10 @@ export const INITIAL_USER: User = {
   twitterUsername: null,
   twitterName: null,
   twitterLinkedAt: null,
+  referralCode: null,
+  referralConfirmedCount: 0,
+  referredById: null,
+  referralConfirmedAt: null,
   transactions: [],
   battleHistory: [],
   stats: {

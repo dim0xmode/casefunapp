@@ -399,6 +399,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   <option value="createdAt:asc">Oldest</option>
                   <option value="balance:desc">Balance ↓</option>
                   <option value="balance:asc">Balance ↑</option>
+                  <option value="invitedUserCount:desc">Invited ↓</option>
+                  <option value="invitedUserCount:asc">Invited ↑</option>
                   <option value="username:asc">Username A–Z</option>
                 </select>
               )}
@@ -673,7 +675,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           )}
 
           {!loading && !error && activeTab === 'users' && (
-            <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-4 min-w-0">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,640px)] gap-4 min-w-0">
               <div className="space-y-3">
                 {paginate(applyUserFilters, 'users').map((user: any) => (
                   <div key={user.id} className="grid grid-cols-1 md:grid-cols-8 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 min-w-0">
@@ -699,7 +701,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Wallet</div>
                       <div className="text-xs text-gray-500 truncate">{user.walletAddress}</div>
                     </div>
-                    <div className="text-xs text-gray-400">{user.balance} ₮</div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Balance</div>
+                      <div className="text-xs text-gray-400">{user.balance} ₮</div>
+                      <div className="text-[10px] text-gray-500 mt-1">
+                        Invited: <span className="text-gray-300">{user.invitedUserCount ?? 0}</span>
+                      </div>
+                    </div>
                     <div className="text-[10px] text-gray-500">{formatDate(user.createdAt)}</div>
                     <div>
                       <select
@@ -751,12 +759,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   onPageChange={(next) => setPages((prev) => ({ ...prev, users: next }))}
                 />
               </div>
-              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3 min-h-[200px] min-w-0 overflow-hidden">
-                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">User Detail</div>
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3 min-h-[240px] min-w-0 max-h-[calc(100vh-9rem)] overflow-y-auto overflow-x-hidden">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">User detail</div>
                 {selectedUserId ? (
-                  <UserDetail userId={selectedUserId} />
+                  <UserDetail
+                    userId={selectedUserId}
+                    isBootstrapAdmin={canEditRoles}
+                    onUserDeleted={() => {
+                      setSelectedUserId(null);
+                      void load();
+                    }}
+                  />
                 ) : (
-                  <div className="text-xs text-gray-500">Select a user to see details.</div>
+                  <div className="text-xs text-gray-500">Select a user to see full account activity.</div>
                 )}
               </div>
             </div>
@@ -1381,24 +1396,43 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   );
 };
 
-const UserDetail: React.FC<{ userId: string }> = ({ userId }) => {
+type UserDetailTab =
+  | 'inventory'
+  | 'burnt'
+  | 'deposits'
+  | 'claims'
+  | 'openings'
+  | 'transactions'
+  | 'battles'
+  | 'feedback';
+
+const UserDetail: React.FC<{
+  userId: string;
+  isBootstrapAdmin: boolean;
+  onUserDeleted: () => void;
+}> = ({ userId, isBootstrapAdmin, onUserDeleted }) => {
   const [detail, setDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<'inventory' | 'burnt' | 'transactions' | 'battles'>('inventory');
+  const [tab, setTab] = useState<UserDetailTab>('inventory');
   const [balanceEdit, setBalanceEdit] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const reload = async () => {
+    const refreshed = await api.getAdminUserDetail(userId);
+    setDetail(refreshed.data);
+    if (refreshed.data?.user?.balance !== undefined) {
+      setBalanceEdit(String(refreshed.data.user.balance));
+    }
+  };
 
   useEffect(() => {
     const loadDetail = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await api.getAdminUserDetail(userId);
-        setDetail(response.data);
-        if (response.data?.user?.balance !== undefined) {
-          setBalanceEdit(String(response.data.user.balance));
-        }
+        await reload();
       } catch (err: any) {
         setError(err?.message || 'Failed to load');
       } finally {
@@ -1412,32 +1446,160 @@ const UserDetail: React.FC<{ userId: string }> = ({ userId }) => {
   if (error) return <div className="text-xs text-red-400">{error}</div>;
   if (!detail?.user) return <div className="text-xs text-gray-500">No data</div>;
 
+  const u = detail.user;
+  const refIn = detail.referralInsight;
+  const sum = detail.summary;
+
+  const tabButtons: { key: UserDetailTab; label: string }[] = [
+    { key: 'inventory', label: `Items (${u.inventory?.length ?? 0})` },
+    { key: 'burnt', label: `Burnt (${detail.burntItems?.length ?? 0})` },
+    { key: 'deposits', label: `Deposits (${detail.deposits?.length ?? 0})` },
+    { key: 'claims', label: `Claims (${detail.claims?.length ?? 0})` },
+    { key: 'openings', label: `Opens (${u.openings?.length ?? 0})` },
+    { key: 'transactions', label: `Ledger (${u.transactions?.length ?? 0})` },
+    { key: 'battles', label: `Battles (${u.battles?.length ?? 0})` },
+    { key: 'feedback', label: `Feedback (${detail.feedbacks?.length ?? 0})` },
+  ];
+
   return (
-    <div className="space-y-4 text-xs text-gray-400">
-      <div>
-        <div className="text-gray-500 uppercase tracking-widest text-[10px]">User</div>
-        <div className="truncate">{detail.user.username}</div>
-        <div className="text-[10px] text-gray-500 truncate">{detail.user.walletAddress}</div>
-        {detail.user.isBanned && (
-          <div className="text-[10px] text-red-400">Banned: {detail.user.banReason || '—'}</div>
+    <div className="space-y-3 text-xs text-gray-400">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-gray-500 uppercase tracking-widest text-[10px]">Account</div>
+          <div className="font-bold text-white truncate">{u.username}</div>
+          <div className="text-[10px] text-gray-500 font-mono break-all">{u.id}</div>
+          <div className="text-[10px] text-gray-500 break-all mt-0.5">{u.walletAddress}</div>
+          <div className="text-[10px] mt-1">
+            Role <span className="text-gray-300">{u.role}</span> · Created {formatDate(u.createdAt)}
+          </div>
+          <div className="text-[10px]">
+            Wallet linked: {u.hasLinkedWallet ? 'yes' : 'no'}
+            {u.walletLinkedAt ? ` · ${formatDate(u.walletLinkedAt)}` : ''}
+          </div>
+          <div className="text-[10px]">Balance {u.balance} ₮</div>
+          {u.isBanned && <div className="text-[10px] text-red-400">Banned: {u.banReason || '—'}</div>}
+        </div>
+        {isBootstrapAdmin && (
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  `Permanently delete user "${u.username}"? Cases they created will be reassigned to the main admin. This cannot be undone.`
+                )
+              ) {
+                return;
+              }
+              setDeleting(true);
+              try {
+                await api.deleteAdminUser(userId);
+                onUserDeleted();
+              } catch (err: any) {
+                window.alert(err?.message || 'Delete failed');
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] uppercase tracking-widest bg-red-500/15 text-red-300 border border-red-500/40 hover:bg-red-500/25 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete user'}
+          </button>
         )}
       </div>
-      {detail.summary && (
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Deposits</div>
-            <div className="text-xs">{detail.summary.deposits}</div>
+
+      <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2 space-y-1.5">
+        <div className="text-[10px] uppercase tracking-widest text-gray-500">Linked accounts</div>
+        <div className="text-[11px]">
+          <span className="text-gray-500">X / Twitter:</span>{' '}
+          {u.twitterUsername ? (
+            <span className="text-gray-200">
+              @{u.twitterUsername}
+              {u.twitterName ? ` (${u.twitterName})` : ''}
+              {u.twitterLinkedAt ? ` · linked ${formatDate(u.twitterLinkedAt)}` : ''}
+            </span>
+          ) : (
+            <span className="text-gray-600">—</span>
+          )}
+        </div>
+        <div className="text-[11px]">
+          <span className="text-gray-500">Telegram:</span>{' '}
+          {u.telegramId ? (
+            <span className="text-gray-200">
+              {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramFirstName || u.telegramId}
+              {u.telegramLinkedAt ? ` · linked ${formatDate(u.telegramLinkedAt)}` : ''}
+            </span>
+          ) : (
+            <span className="text-gray-600">—</span>
+          )}
+        </div>
+      </div>
+
+      {refIn && (
+        <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-gray-500">Referrals</div>
+          <div className="text-[11px]">
+            Their code: <span className="font-mono text-web3-accent">{refIn.referralCode || '—'}</span>
           </div>
-          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Spent</div>
-            <div className="text-xs">{detail.summary.spent}</div>
+          <div className="text-[11px]">
+            Confirmed invites (5+ ₮ deposited):{' '}
+            <span className="text-white font-bold">{refIn.referralConfirmedCount ?? 0}</span>
           </div>
-          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
-            <div className="text-[10px] uppercase tracking-widest text-gray-500">Net</div>
-            <div className="text-xs">{detail.summary.net}</div>
+          <div className="text-[11px]">
+            Signups with this link: <span className="text-gray-200">{refIn.invitedUserCount ?? 0}</span> total,{' '}
+            <span className="text-gray-200">{refIn.invitedConfirmedCount ?? 0}</span> funded (5+ ₮)
+          </div>
+          <div className="text-[11px]">
+            Referred by:{' '}
+            {refIn.referredBy ? (
+              <span className="text-gray-200">
+                {refIn.referredBy.username} <span className="text-gray-500 font-mono text-[10px]">{refIn.referredBy.id}</span>
+              </span>
+            ) : (
+              <span className="text-gray-600">—</span>
+            )}
+            {u.referralConfirmedAt ? ` · confirmed ${formatDate(u.referralConfirmedAt)}` : ''}
           </div>
         </div>
       )}
+
+      {detail.createdCases?.length > 0 && (
+        <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2">
+          <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">
+            Cases created ({detail.createdCases.length})
+          </div>
+          <div className="space-y-1 max-h-28 overflow-y-auto">
+            {detail.createdCases.map((c: any) => (
+              <div key={c.id} className="text-[10px] flex justify-between gap-2 border-b border-white/[0.06] pb-1">
+                <span className="truncate text-gray-300">{c.name}</span>
+                <span className="text-gray-500 shrink-0">{c.isActive ? 'active' : 'off'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sum && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Tx deposits</div>
+            <div className="text-xs text-white">{Number(sum.deposits).toFixed(2)} ₮</div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">On-chain (sum)</div>
+            <div className="text-xs text-white">{Number(sum.onChainDepositUsdtTotal ?? 0).toFixed(2)} ₮</div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Spent (ledger)</div>
+            <div className="text-xs">{Number(sum.spent).toFixed(2)} ₮</div>
+          </div>
+          <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
+            <div className="text-[10px] uppercase tracking-widest text-gray-500">Net</div>
+            <div className="text-xs">{Number(sum.net).toFixed(2)} ₮</div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-2 items-center">
         <input
           value={balanceEdit}
@@ -1447,28 +1609,26 @@ const UserDetail: React.FC<{ userId: string }> = ({ userId }) => {
         <button
           onClick={async () => {
             setSaving(true);
-            await api.updateAdminUserBalance(userId, Number(balanceEdit));
-            const refreshed = await api.getAdminUserDetail(userId);
-            setDetail(refreshed.data);
-            setSaving(false);
+            try {
+              await api.updateAdminUserBalance(userId, Number(balanceEdit));
+              await reload();
+            } finally {
+              setSaving(false);
+            }
           }}
           className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-widest bg-web3-accent/20 text-web3-accent border border-web3-accent/40"
         >
-          {saving ? 'Saving...' : 'Set Balance'}
+          {saving ? 'Saving...' : 'Set balance'}
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {([
-          { key: 'inventory', label: `Inventory (${detail.user.inventory?.length ?? 0})` },
-          { key: 'burnt', label: `Burnt (${detail.burntItems?.length ?? 0})` },
-          { key: 'transactions', label: `Transactions (${detail.user.transactions?.length ?? 0})` },
-          { key: 'battles', label: `Battles (${detail.user.battles?.length ?? 0})` },
-        ] as const).map((item) => (
+      <div className="flex flex-wrap gap-1.5">
+        {tabButtons.map((item) => (
           <button
             key={item.key}
+            type="button"
             onClick={() => setTab(item.key)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+            className={`px-2 py-1 rounded-md text-[9px] uppercase tracking-wider border leading-tight ${
               tab === item.key
                 ? 'bg-web3-card/60 border-web3-accent/40 text-white'
                 : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
@@ -1480,56 +1640,135 @@ const UserDetail: React.FC<{ userId: string }> = ({ userId }) => {
       </div>
 
       {tab === 'inventory' && (
-        <div className="space-y-2">
-          {(detail.user.inventory ?? []).map((item: any) => (
-            <div key={item.id} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-lg p-2">
-              <div className="truncate">{item.name}</div>
-              <div>{item.value} {item.currency}</div>
-              <div>{item.rarity}</div>
-              <div className="text-gray-500">{item.status}</div>
-              <div className="text-gray-500">{new Date(item.createdAt).toLocaleString()}</div>
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(u.inventory ?? []).map((item: any) => (
+            <div
+              key={item.id}
+              className="grid grid-cols-1 gap-0.5 bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]"
+            >
+              <div className="truncate text-gray-200">{item.name}</div>
+              <div className="flex flex-wrap gap-x-2 text-gray-500">
+                <span>
+                  {item.value} {item.currency}
+                </span>
+                <span>{item.rarity}</span>
+                <span>{item.status}</span>
+                {item.caseId && <span className="font-mono truncate">case {item.caseId}</span>}
+              </div>
+              <div className="text-gray-600">{new Date(item.createdAt).toLocaleString()}</div>
             </div>
           ))}
+          {!u.inventory?.length && <div className="text-gray-600 text-[10px]">No items.</div>}
         </div>
       )}
 
       {tab === 'burnt' && (
-        <div className="space-y-2">
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
           {(detail.burntItems ?? []).map((item: any) => (
-            <div key={item.id} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-lg p-2">
-              <div className="truncate">{item.name}</div>
-              <div>{item.value} {item.currency}</div>
-              <div>{item.rarity}</div>
-              <div className="text-gray-500">BURNT</div>
-              <div className="text-gray-500">{new Date(item.createdAt).toLocaleString()}</div>
+            <div key={item.id} className="grid grid-cols-1 gap-0.5 bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="truncate text-gray-200">{item.name}</div>
+              <div>
+                {item.value} {item.currency} · {item.rarity}
+              </div>
+              <div className="text-gray-600">{new Date(item.createdAt).toLocaleString()}</div>
             </div>
           ))}
+          {!detail.burntItems?.length && <div className="text-gray-600 text-[10px]">None.</div>}
+        </div>
+      )}
+
+      {tab === 'deposits' && (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(detail.deposits ?? []).map((d: any) => (
+            <div key={d.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px] space-y-0.5">
+              <div className="font-mono text-gray-300 break-all">{d.txHash}</div>
+              <div>
+                {Number(d.amountUsdt).toFixed(2)} ₮ · {Number(d.amountEth).toFixed(6)} ETH · ch {d.chainId}
+              </div>
+              <div className="text-gray-600">{formatDate(d.createdAt)}</div>
+            </div>
+          ))}
+          {!detail.deposits?.length && <div className="text-gray-600 text-[10px]">No on-chain deposits.</div>}
+        </div>
+      )}
+
+      {tab === 'claims' && (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(detail.claims ?? []).map((cl: any) => (
+            <div key={cl.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="text-gray-200">{cl.case?.name || cl.caseId}</div>
+              <div>
+                {cl.amount} · {cl.status}
+                {cl.txHash && <span className="block font-mono text-gray-500 break-all">{cl.txHash}</span>}
+              </div>
+              <div className="text-gray-600">{formatDate(cl.createdAt)}</div>
+            </div>
+          ))}
+          {!detail.claims?.length && <div className="text-gray-600 text-[10px]">No claims.</div>}
+        </div>
+      )}
+
+      {tab === 'openings' && (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(u.openings ?? []).map((op: any) => (
+            <div key={op.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="text-gray-200">{op.case?.name || op.caseId}</div>
+              <div>
+                Won {op.wonValue} · drop {op.wonDropId}
+              </div>
+              <div className="text-gray-600">{formatDate(op.timestamp)}</div>
+            </div>
+          ))}
+          {!u.openings?.length && <div className="text-gray-600 text-[10px]">No case openings.</div>}
         </div>
       )}
 
       {tab === 'transactions' && (
-        <div className="space-y-2">
-          {(detail.user.transactions ?? []).map((tx: any) => (
-            <div key={tx.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-black/30 border border-white/[0.08] rounded-lg p-2">
-              <div className="truncate">{tx.type}</div>
-              <div>{tx.amount} {tx.currency}</div>
-              <div className="text-gray-500">{tx.status}</div>
-              <div className="text-gray-500">{new Date(tx.timestamp).toLocaleString()}</div>
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(u.transactions ?? []).map((tx: any) => (
+            <div key={tx.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="flex flex-wrap justify-between gap-1">
+                <span className="text-gray-200">{tx.type}</span>
+                <span>
+                  {tx.amount} {tx.currency}
+                </span>
+              </div>
+              <div className="text-gray-600">{tx.status}</div>
+              <div className="text-gray-600">{formatDate(tx.timestamp)}</div>
             </div>
           ))}
+          {!u.transactions?.length && <div className="text-gray-600 text-[10px]">No transactions.</div>}
         </div>
       )}
 
       {tab === 'battles' && (
-        <div className="space-y-2">
-          {(detail.user.battles ?? []).map((battle: any) => (
-            <div key={battle.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-black/30 border border-white/[0.08] rounded-lg p-2">
-              <div className="truncate">{battle.result}</div>
-              <div>{battle.cost} ₮</div>
-              <div>{battle.wonValue}</div>
-              <div className="text-gray-500">{new Date(battle.timestamp).toLocaleString()}</div>
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(u.battles ?? []).map((battle: any) => (
+            <div key={battle.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="text-gray-200">{battle.result}</div>
+              <div>
+                Cost {battle.cost} ₮ · won value {battle.wonValue}
+                {battle.opponentId && <span className="block text-gray-500">Opponent id {battle.opponentId}</span>}
+              </div>
+              <div className="text-gray-600">{formatDate(battle.timestamp)}</div>
             </div>
           ))}
+          {!u.battles?.length && <div className="text-gray-600 text-[10px]">No battles.</div>}
+        </div>
+      )}
+
+      {tab === 'feedback' && (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          {(detail.feedbacks ?? []).map((fb: any) => (
+            <div key={fb.id} className="bg-black/30 border border-white/[0.08] rounded-lg p-2 text-[10px]">
+              <div className="text-gray-200">
+                {fb.topic} · {fb.status}
+              </div>
+              <div className="text-gray-500 break-words">{fb.message}</div>
+              <div className="text-gray-600">{formatDate(fb.createdAt)}</div>
+            </div>
+          ))}
+          {!detail.feedbacks?.length && <div className="text-gray-600 text-[10px]">No feedback.</div>}
         </div>
       )}
     </div>
