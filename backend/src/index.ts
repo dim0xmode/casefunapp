@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config/env.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { apiRateLimit } from './middleware/rateLimit.js';
 import authRoutes from './routes/authRoutes.js';
 import caseRoutes from './routes/caseRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
@@ -31,6 +32,9 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+app.use(apiRateLimit);
+
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 

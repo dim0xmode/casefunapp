@@ -1282,7 +1282,7 @@ const App = () => {
   useEffect(() => {
     const loadCases = async () => {
       try {
-        const response = await api.getCases(true);
+        const response = await api.getCases();
         if (response.data?.cases) {
           setCases(response.data.cases.map(mapCaseFromApi));
         }

@@ -16,6 +16,46 @@ const normalizeParam = (value: string | string[] | undefined): string => {
   return value ?? '';
 };
 
+const getCookieValue = (cookieHeader: string, key: string) => {
+  return cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${key}=`))
+    ?.split('=')[1];
+};
+
+const PUBLIC_CASES_CACHE_TTL_MS = 15_000;
+let publicCasesCache:
+  | {
+      expiresAt: number;
+      cases: any[];
+    }
+  | null = null;
+
+const invalidatePublicCasesCache = () => {
+  publicCasesCache = null;
+};
+
+const canRequestCaseStats = async (req: Request) => {
+  const cookieHeader = String(req.headers.cookie || '');
+  const sessionToken = getCookieValue(cookieHeader, 'session');
+  if (!sessionToken) return false;
+
+  const session = await prisma.session.findUnique({
+    where: { token: sessionToken },
+    select: {
+      expiresAt: true,
+      user: {
+        select: { role: true, isBanned: true },
+      },
+    },
+  });
+
+  if (!session || session.expiresAt <= new Date()) return false;
+  if (session.user.isBanned) return false;
+  return session.user.role === 'ADMIN';
+};
+
 const pickByStoredProbabilities = (drops: CaseDrop[]) => {
   const totalProbability = drops.reduce((sum, drop) => sum + Number(drop.probability || 0), 0);
   if (!Number.isFinite(totalProbability) || totalProbability <= 0) {
@@ -96,7 +136,16 @@ export const getAllCases = async (
   next: NextFunction
 ) => {
   try {
-    const includeStats = normalizeParam(req.query.includeStats as any) === '1';
+    const includeStatsRequested = normalizeParam(req.query.includeStats as any) === '1';
+    const includeStats = includeStatsRequested ? await canRequestCaseStats(req) : false;
+
+    if (!includeStats && publicCasesCache && publicCasesCache.expiresAt > Date.now()) {
+      return res.json({
+        status: 'success',
+        data: { cases: publicCasesCache.cases },
+      });
+    }
+
     const cases = await prisma.case.findMany({
       where: { isActive: true },
       include: {
@@ -184,6 +233,13 @@ export const getAllCases = async (
           })
         )
       : cases;
+
+    if (!includeStats) {
+      publicCasesCache = {
+        expiresAt: Date.now() + PUBLIC_CASES_CACHE_TTL_MS,
+        cases: casesWithStats,
+      };
+    }
 
     res.json({
       status: 'success',
@@ -384,6 +440,7 @@ export const createCase = async (
     });
 
     const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
+    invalidatePublicCasesCache();
 
     res.status(201).json({
       status: 'success',

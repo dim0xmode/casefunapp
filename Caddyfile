@@ -1,6 +1,13 @@
 {
   servers {
     protocols h1 h2
+    max_header_size 16kb
+    timeouts {
+      read_header 10s
+      read_body 15s
+      write 20s
+      idle 2m
+    }
   }
 }
 
@@ -19,7 +26,29 @@ casefun.net {
   }
   respond @api_abuse_pattern 403
 
-  reverse_proxy /api/* backend:3001
+  # Session-protected API groups should never be hit without a real session cookie.
+  @api_auth_required_no_session {
+    path /api/user/* /api/admin/* /api/token/* /api/wallet/deposit/*
+    not header_regexp has_session Cookie (?i)(^|;\s*)session=
+  }
+  respond @api_auth_required_no_session 401
+
+  # Case write endpoints are auth-only; reject anonymous writes early.
+  @api_case_write_no_session {
+    method POST
+    path /api/cases /api/cases/upload /api/cases/*/open
+    not header_regexp has_session Cookie (?i)(^|;\s*)session=
+  }
+  respond @api_case_write_no_session 401
+
+  reverse_proxy /api/* backend:3001 {
+    transport http {
+      dial_timeout 2s
+      response_header_timeout 15s
+      read_timeout 15s
+      write_timeout 15s
+    }
+  }
   reverse_proxy /uploads/* backend:3001
   reverse_proxy frontend:80
 }
