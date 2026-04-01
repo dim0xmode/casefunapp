@@ -69,24 +69,17 @@ const recordConfirmedDeposit = async (params: {
     });
 
     if (updatedUser.referredById && !updatedUser.referralConfirmedAt) {
-      const depositSum = await txDb.deposit.aggregate({
-        where: { userId, status: 'confirmed' },
-        _sum: { amountUsdt: true },
+      await txDb.user.update({
+        where: { id: userId },
+        data: {
+          referralConfirmedAt: new Date(),
+          ...(String(updatedUser.role || '').toUpperCase() === 'USER' ? { role: 'MODERATOR' as const } : {}),
+        },
       });
-      const totalUsdt = depositSum._sum.amountUsdt ?? 0;
-      if (totalUsdt >= 5) {
-        await txDb.user.update({
-          where: { id: userId },
-          data: {
-            referralConfirmedAt: new Date(),
-            ...(String(updatedUser.role || '').toUpperCase() === 'USER' ? { role: 'MODERATOR' as const } : {}),
-          },
-        });
-        await txDb.user.update({
-          where: { id: updatedUser.referredById },
-          data: { referralConfirmedCount: { increment: 1 } },
-        });
-      }
+      await txDb.user.update({
+        where: { id: updatedUser.referredById },
+        data: { referralConfirmedCount: { increment: 1 } },
+      });
     }
 
     return { updatedUser, deposit };

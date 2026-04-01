@@ -138,7 +138,7 @@ const getEarlyBlockMessage = (reason: EarlyAccessStatusPayload['blockReason']) =
     case 'ADMIN_ACCOUNT': return 'Administrators cannot submit early access requests.';
     case 'SUPPORT_ACCOUNT': return 'Support accounts cannot submit early access requests.';
     case 'REFERRAL_SIGNUP':
-      return 'Referral signups get early access automatically after 5 ₮+ in confirmed on-chain deposits. No application is required.';
+      return 'Referral signups get early access automatically after the first confirmed on-chain deposit. No application is required.';
     default: return 'Early access request is currently unavailable.';
   }
 };

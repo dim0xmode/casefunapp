@@ -1345,7 +1345,7 @@ export const createFeedbackMessage = async (req: Request, res: Response, next: N
       if (user.referredById) {
         return next(
           new AppError(
-            'Referral signups unlock early access automatically after a qualifying wallet deposit (5 ₮+). Applications are not used for this path.',
+            'Referral signups unlock early access automatically after the first confirmed wallet deposit. Applications are not used for this path.',
             403
           )
         );

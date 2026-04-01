@@ -35,6 +35,19 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const IMMUTABLE_ADMIN_WALLET = '0xc459241D1AC02250dE56b8B7165ebEDF59236524';
 
+const formatDate = (value?: string | number | Date | null) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
+};
+
+const shortWallet = (value?: string) => {
+  if (!value) return '-';
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+};
+
 type AdminViewProps = {
   currentUser?: { walletAddress?: string | null };
 };
@@ -95,19 +108,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
   const PAGE_SIZE = 12;
   const explorerBase = (import.meta as any).env?.VITE_EXPLORER_URL || 'https://sepolia.etherscan.io';
-
-  const formatDate = (value?: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleString();
-  };
-
-  const shortWallet = (value?: string) => {
-    if (!value) return '-';
-    if (value.length <= 12) return value;
-    return `${value.slice(0, 6)}…${value.slice(-4)}`;
-  };
 
   const sortList = (items: any[], key: string, dir: 'asc' | 'desc') => {
     const sorted = [...items].sort((a, b) => {
@@ -1542,12 +1542,12 @@ const UserDetail: React.FC<{
             Their code: <span className="font-mono text-web3-accent">{refIn.referralCode || '—'}</span>
           </div>
           <div className="text-[11px]">
-            Confirmed invites (5+ ₮ deposited):{' '}
+            Confirmed invites (first deposit confirmed):{' '}
             <span className="text-white font-bold">{refIn.referralConfirmedCount ?? 0}</span>
           </div>
           <div className="text-[11px]">
             Signups with this link: <span className="text-gray-200">{refIn.invitedUserCount ?? 0}</span> total,{' '}
-            <span className="text-gray-200">{refIn.invitedConfirmedCount ?? 0}</span> funded (5+ ₮)
+            <span className="text-gray-200">{refIn.invitedConfirmedCount ?? 0}</span> funded (first deposit)
           </div>
           <div className="text-[11px]">
             Referred by:{' '}

@@ -103,7 +103,7 @@ export interface User {
   referralConfirmedCount?: number;
   /** Set at signup when the user registered via ?ref= */
   referredById?: string | null;
-  /** When referral qualification was met (e.g. 5 ₮+ on-chain deposits) */
+  /** When referral qualification was met (first confirmed on-chain deposit) */
   referralConfirmedAt?: string | null;
   transactions: Transaction[];
   battleHistory: BattleRecord[];

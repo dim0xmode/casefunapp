@@ -866,7 +866,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       Confirmed invites:{' '}
                       <span className="text-white font-bold tabular-nums">{referralInvited}</span>
                       <span className="block mt-1 text-[10px] text-gray-600">
-                        Counted after your invitee deposits 5 ₮ or more (on-chain wallet deposit).
+                        Counted after your invitee makes the first confirmed on-chain wallet deposit.
                       </span>
                     </div>
                     {referralUrl && (
