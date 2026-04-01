@@ -463,7 +463,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         setReferralInvited(r.data.invitedCount ?? 0);
       } catch (e: any) {
         if (!cancelled) {
-          setReferralError(e?.message || 'Не удалось загрузить реферальную ссылку');
+          setReferralError(e?.message || 'Failed to load referral link');
         }
       } finally {
         if (!cancelled) setReferralLoading(false);
@@ -849,18 +849,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             {isEditable && (
               <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
-                <div className="text-[10px] uppercase tracking-widest text-gray-500">Рефералы</div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Referrals</div>
                 {referralLoading ? (
-                  <div className="text-xs text-gray-600">Загрузка…</div>
+                  <div className="text-xs text-gray-600">Loading…</div>
                 ) : referralError ? (
                   <div className="text-[10px] text-red-400">{referralError}</div>
                 ) : (
                   <>
                     <div className="text-[11px] text-gray-400 leading-snug">
-                      Подтверждённых приглашений:{' '}
+                      Confirmed invites:{' '}
                       <span className="text-white font-bold tabular-nums">{referralInvited}</span>
                       <span className="block mt-1 text-[10px] text-gray-600">
-                        Учитывается после пополнения приглашённым на 5 ₮ или больше (депозит на кошелёк).
+                        Counted after your invitee deposits 5 ₮ or more (on-chain wallet deposit).
                       </span>
                     </div>
                     {referralUrl && (
@@ -874,7 +874,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
                         >
                           <Copy size={12} />
-                          Скопировать
+                          Copy
                         </button>
                       </div>
                     )}
