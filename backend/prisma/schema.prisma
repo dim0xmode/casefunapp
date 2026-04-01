@@ -59,10 +59,16 @@ model User {
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?
+  referralCode              String?   @unique
+  referredById              String?
+  referralConfirmedAt       DateTime?
+  referralConfirmedCount    Int       @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   // Relations
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals     User[]    @relation("Referrals")
   cases         Case[]
   inventory     InventoryItem[]
   openings      CaseOpening[]
@@ -78,6 +84,7 @@ model User {
   joinedBattleLobbies BattleLobby[] @relation("BattleLobbyJoiner")
   
   @@index([walletAddress])
+  @@index([referredById])
   @@map("users")
 }
 

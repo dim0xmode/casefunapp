@@ -18,6 +18,83 @@ export const getEthPrice = async (_req: Request, res: Response, next: NextFuncti
   }
 };
 
+const recordConfirmedDeposit = async (params: {
+  userId: string;
+  txHash: string;
+  ethAmount: number;
+  confirmations: number;
+  blockNumber: number;
+}) => {
+  const { userId, txHash, ethAmount, confirmations, blockNumber } = params;
+  const priceInfo = await getEthUsdPrice();
+  if (!priceInfo) {
+    throw new AppError('Price feed unavailable', 503);
+  }
+  const usdtAmount = ethAmount * priceInfo.price;
+  const updated = await prisma.$transaction(async (txDb) => {
+    const updatedUser = await txDb.user.update({
+      where: { id: userId },
+      data: { balance: { increment: usdtAmount } },
+    });
+
+    const deposit = await txDb.deposit.create({
+      data: {
+        userId,
+        txHash,
+        chainId: Number(config.chainId),
+        amountEth: ethAmount,
+        amountUsdt: usdtAmount,
+        confirmations,
+        blockNumber,
+        status: 'confirmed',
+        metadata: {
+          price: priceInfo.price,
+          updatedAt: priceInfo.updatedAt,
+        },
+      },
+    });
+
+    await txDb.transaction.create({
+      data: {
+        userId,
+        type: 'DEPOSIT',
+        amount: usdtAmount,
+        currency: 'USDT',
+        metadata: {
+          txHash,
+          amountEth: ethAmount,
+          price: priceInfo.price,
+        },
+      },
+    });
+
+    if (updatedUser.referredById && !updatedUser.referralConfirmedAt) {
+      const depositSum = await txDb.deposit.aggregate({
+        where: { userId, status: 'confirmed' },
+        _sum: { amountUsdt: true },
+      });
+      const totalUsdt = depositSum._sum.amountUsdt ?? 0;
+      if (totalUsdt >= 5) {
+        await txDb.user.update({
+          where: { id: userId },
+          data: { referralConfirmedAt: new Date() },
+        });
+        await txDb.user.update({
+          where: { id: updatedUser.referredById },
+          data: { referralConfirmedCount: { increment: 1 } },
+        });
+      }
+    }
+
+    return { updatedUser, deposit };
+  });
+
+  return {
+    balance: updated.updatedUser.balance,
+    deposit: updated.deposit,
+  };
+};
+
 export const confirmDeposit = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).userId;
@@ -93,62 +170,94 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
       return next(new AppError('Invalid deposit amount', 400));
     }
 
-    const priceInfo = await getEthUsdPrice();
-    if (!priceInfo) {
-      return next(new AppError('Price feed unavailable', 503));
-    }
-    const usdtAmount = ethAmount * priceInfo.price;
-
-    const updated = await prisma.$transaction(async (txDb) => {
-      const updatedUser = await txDb.user.update({
-        where: { id: userId },
-        data: { balance: { increment: usdtAmount } },
-      });
-
-      const deposit = await txDb.deposit.create({
-        data: {
-          userId,
-          txHash,
-          chainId: Number(config.chainId),
-          amountEth: ethAmount,
-          amountUsdt: usdtAmount,
-          confirmations,
-          blockNumber: receipt.blockNumber,
-          status: 'confirmed',
-          metadata: {
-            price: priceInfo.price,
-            updatedAt: priceInfo.updatedAt,
-          },
-        },
-      });
-
-      await txDb.transaction.create({
-        data: {
-          userId,
-          type: 'DEPOSIT',
-          amount: usdtAmount,
-          currency: 'USDT',
-          metadata: {
-            txHash,
-            amountEth: ethAmount,
-            price: priceInfo.price,
-          },
-        },
-      });
-
-      return { updatedUser, deposit };
+    const updated = await recordConfirmedDeposit({
+      userId,
+      txHash,
+      ethAmount,
+      confirmations,
+      blockNumber: receipt.blockNumber,
     });
 
     res.json({
       status: 'success',
       data: {
-        balance: updated.updatedUser.balance,
+        balance: updated.balance,
         deposit: updated.deposit,
       },
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return next(new AppError('Deposit already processed', 409));
+    }
+    next(error);
+  }
+};
+
+export const scanDeposit = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as any).userId;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) return next(new AppError('User not found', 404));
+    if (!user.hasLinkedWallet || !user.walletAddress) {
+      return next(new AppError('Link wallet first', 400));
+    }
+    if (!provider) return next(new AppError('Blockchain provider not configured', 500));
+
+    const userAddr = normalizeAddress(user.walletAddress);
+    const treasury = normalizeAddress(config.treasuryAddress);
+    const currentBlock = await provider.getBlockNumber();
+    const startBlock = currentBlock - 40;
+
+    for (let blockNum = currentBlock; blockNum >= startBlock; blockNum--) {
+      const block = await provider.getBlock(blockNum, true);
+      if (!block?.prefetchedTransactions) continue;
+
+      for (const tx of block.prefetchedTransactions) {
+        if (normalizeAddress(tx.from) !== userAddr) continue;
+        if (!tx.to || normalizeAddress(tx.to) !== treasury) continue;
+
+        const existing = await prisma.deposit.findUnique({ where: { txHash: tx.hash } });
+        if (existing) continue;
+
+        const ethAmount = Number(ethers.formatEther(tx.value || 0n));
+        if (!Number.isFinite(ethAmount) || ethAmount <= 0) continue;
+
+        const receipt = await provider.getTransactionReceipt(tx.hash);
+        if (!receipt || receipt.status !== 1) {
+          return res.json({
+            status: 'success',
+            data: { found: true, pending: true, txHash: tx.hash, confirmations: 0 },
+          });
+        }
+
+        const confirmations = currentBlock - receipt.blockNumber + 1;
+        if (confirmations < config.confirmations) {
+          return res.json({
+            status: 'success',
+            data: { found: true, pending: true, txHash: tx.hash, confirmations },
+          });
+        }
+
+        const updated = await recordConfirmedDeposit({
+          userId,
+          txHash: tx.hash,
+          ethAmount,
+          confirmations,
+          blockNumber: receipt.blockNumber,
+        });
+
+        return res.json({
+          status: 'success',
+          data: { found: true, balance: updated.balance, deposit: updated.deposit },
+        });
+      }
+    }
+
+    res.json({ status: 'success', data: { found: false } });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      return res.json({ status: 'success', data: { found: true } });
     }
     next(error);
   }

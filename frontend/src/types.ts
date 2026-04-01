@@ -99,6 +99,8 @@ export interface User {
   twitterUsername?: string | null;
   twitterName?: string | null;
   twitterLinkedAt?: string | number | null;
+  referralCode?: string | null;
+  referralConfirmedCount?: number;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {

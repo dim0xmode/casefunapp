@@ -8,7 +8,7 @@ import { BattleView } from './components/BattleView';
 import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
 import { LiveFeed } from './components/LiveFeed';
-import { TelegramMiniAppView } from './components/TelegramMiniAppView';
+import { TelegramMiniAppSection } from './components/telegram/TelegramMiniAppSection';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { TopUpModal } from './components/TopUpModal';
 import { FeedbackWidget } from './components/FeedbackWidget';
@@ -21,6 +21,23 @@ import { api, resolveAssetUrl } from './services/api';
 import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
 import { playCaseCreatedCelebration, playDullClick } from './utils/audio';
 import type { TelegramWalletOption } from './utils/walletConnect';
+import {
+  TELEGRAM_PREFERRED_WALLET_STORAGE_KEY,
+  getCanonicalTelegramMiniAppPath,
+  getTopUpAmountFromLocation,
+  getTopUpBridgeModeFromLocation,
+  getWalletLinkBotFromLocation,
+  getWalletLinkModeFromLocation,
+  hasInjectedEthereumProvider,
+  isTelegramMiniAppPath,
+  isTelegramWalletOption,
+  isTelegramWebViewContext,
+  isWalletLinkBridgeMode,
+  getRefCodeFromLocation,
+  saveRefCode,
+  getStoredRefCode,
+  clearRefCode,
+} from './utils/telegramMiniApp';
 
 interface BattleRecord {
   id: string;
@@ -29,6 +46,13 @@ interface BattleRecord {
   cost: number;
   wonValue: number;
   wonItems: Item[];
+}
+
+interface TelegramWalletConnectSession {
+  provider: any;
+  address: string;
+  wallet: TelegramWalletOption;
+  disconnect: () => Promise<void>;
 }
 
 const TAB_PATHS: Record<string, string> = {
@@ -45,9 +69,6 @@ const BACKGROUND_ANIMATION_STORAGE_KEY = 'casefun:bgAnimationEnabled';
 const EARLY_ACCESS_NOTICE_STORAGE_KEY_PREFIX = 'casefun:earlyAccessDecisionSeen:';
 const TELEGRAM_DEV_ID_STORAGE_KEY = 'casefun:tgDevIdentity';
 const TELEGRAM_DEV_LOGIN_ENABLED = import.meta.env.VITE_ENABLE_TG_DEV_LOGIN === '1';
-const TELEGRAM_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '';
-const TELEGRAM_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || '11155111');
-const TELEGRAM_RPC_URL = import.meta.env.VITE_RPC_URL || '';
 
 type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -72,13 +93,18 @@ interface EarlyAccessStatusPayload {
 }
 
 const getTabFromPath = (pathname: string) => {
+  if (isTelegramMiniAppPath(pathname)) {
+    return 'tg';
+  }
   const normalized = pathname.toLowerCase();
   const match = Object.entries(TAB_PATHS).find(([, path]) => path === normalized);
   return match?.[0] || 'home';
 };
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState(() => getTabFromPath(window.location.pathname));
+  const [activeTab, setActiveTab] = useState(() =>
+    getTabFromPath(getCanonicalTelegramMiniAppPath(window.location.pathname))
+  );
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
@@ -131,6 +157,13 @@ const App = () => {
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
   const [telegramDevAuthBusy, setTelegramDevAuthBusy] = useState(false);
   const [telegramWalletLinking, setTelegramWalletLinking] = useState(false);
+  const [telegramBridgeAutoTried, setTelegramBridgeAutoTried] = useState(false);
+  const [telegramTopUpBridgeAutoTried, setTelegramTopUpBridgeAutoTried] = useState(false);
+  const [telegramWalletLaunchLink, setTelegramWalletLaunchLink] = useState<{
+    primaryUrl: string;
+    fallbackUrl?: string;
+  } | null>(null);
+  const [telegramWalletConnectSession, setTelegramWalletConnectSession] = useState<TelegramWalletConnectSession | null>(null);
   const [earlyAccessStatus, setEarlyAccessStatus] = useState<EarlyAccessStatusPayload | null>(null);
   const [earlyAccessSubmitting, setEarlyAccessSubmitting] = useState(false);
   const [earlyAccessDecisionNotice, setEarlyAccessDecisionNotice] = useState<string | null>(null);
@@ -143,6 +176,14 @@ const App = () => {
       return true;
     }
   });
+
+  useEffect(() => {
+    const canonicalPath = getCanonicalTelegramMiniAppPath(window.location.pathname);
+    if (canonicalPath !== window.location.pathname) {
+      const nextUrl = `${canonicalPath}${window.location.search}${window.location.hash}`;
+      window.history.replaceState(window.history.state, '', nextUrl);
+    }
+  }, []);
 
   const {
     address: walletAddress,
@@ -246,6 +287,10 @@ const App = () => {
     setTelegramAuthError(null);
     setTelegramDevAuthBusy(false);
     setTelegramWalletLinking(false);
+    setTelegramBridgeAutoTried(false);
+    setTelegramTopUpBridgeAutoTried(false);
+    setTelegramWalletLaunchLink(null);
+    setTelegramWalletConnectSession(null);
     setActiveTab('home');
   };
 
@@ -255,6 +300,7 @@ const App = () => {
     } catch (error) {
       console.error('Logout failed', error);
     }
+    await disconnectTelegramWalletConnectSession().catch(() => {});
     resetUserState();
     setLastAuthAddress(null);
   };
@@ -385,7 +431,7 @@ const App = () => {
     setTelegramAuthBusy(true);
     setTelegramAuthError(null);
     try {
-      const response = await api.loginWithTelegram(initData);
+      const response = await api.loginWithTelegram(initData, getStoredRefCode());
       const nextUser = response.data?.user;
       if (!nextUser) {
         throw new Error('Telegram login failed.');
@@ -402,6 +448,7 @@ const App = () => {
         setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
       }
       await loadProfile(nextUser.walletAddress);
+      clearRefCode();
       setTelegramError(null);
     } catch (error: any) {
       setTelegramAuthError(error?.message || 'Failed to authorize with Telegram.');
@@ -448,7 +495,10 @@ const App = () => {
     setTelegramDevAuthBusy(true);
     setTelegramAuthError(null);
     try {
-      const response = await api.loginWithTelegramDev(identity);
+      const response = await api.loginWithTelegramDev({
+        ...identity,
+        referralCode: getStoredRefCode() || undefined,
+      });
       const nextUser = response.data?.user;
       if (!nextUser) {
         throw new Error('Dev Telegram login failed.');
@@ -465,6 +515,7 @@ const App = () => {
         setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
       }
       await loadProfile(nextUser.walletAddress);
+      clearRefCode();
       setTelegramError(null);
     } catch (error: any) {
       setTelegramAuthError(error?.message || 'Dev Telegram login failed.');
@@ -606,84 +657,258 @@ const App = () => {
     }
   };
 
-  const handleLinkWalletForTelegram = async (walletOption: TelegramWalletOption) => {
+  const getPreferredTelegramWalletOption = (): TelegramWalletOption => {
+    try {
+      const raw = String(localStorage.getItem(TELEGRAM_PREFERRED_WALLET_STORAGE_KEY) || '')
+        .trim()
+        .toLowerCase();
+      if (isTelegramWalletOption(raw)) {
+        return raw;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 'metamask';
+  };
+
+  const setPreferredTelegramWalletOption = (wallet: TelegramWalletOption) => {
+    try {
+      localStorage.setItem(TELEGRAM_PREFERRED_WALLET_STORAGE_KEY, wallet);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const getWalletConnectRuntimeConfig = () => {
+    const projectId = String(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '').trim();
+    const rawChainId = Number(import.meta.env.VITE_CHAIN_ID || 11155111);
+    const chainId = Number.isFinite(rawChainId) && rawChainId > 0 ? Math.floor(rawChainId) : 11155111;
+    const rpcUrl = String(import.meta.env.VITE_RPC_URL || '').trim();
+    return {
+      projectId,
+      chainId,
+      rpcUrl: rpcUrl || undefined,
+    };
+  };
+
+
+  const disconnectTelegramWalletConnectSession = useCallback(async () => {
+    const activeSession = telegramWalletConnectSession;
+    setTelegramWalletConnectSession(null);
+    setTelegramWalletLaunchLink(null);
+    if (!activeSession) return;
+    await activeSession.disconnect().catch(() => {});
+  }, [telegramWalletConnectSession]);
+
+  const resolveTelegramBotUsername = async () => {
+    const fromQuery = getWalletLinkBotFromLocation();
+    if (fromQuery) {
+      return fromQuery;
+    }
+    let botUsername = 'casefun_bot';
+    try {
+      const info = await api.getTelegramBotInfo();
+      const raw = String(info.data?.botUsername || '').trim().replace(/^@+/, '');
+      if (raw) {
+        botUsername = raw;
+      }
+    } catch {
+      // fallback to known production bot username
+    }
+    return botUsername;
+  };
+
+  const openTelegramMiniAppDeepLink = (botUsername: string) => {
+    const normalizedBot = String(botUsername || 'casefun_bot').trim().replace(/^@+/, '') || 'casefun_bot';
+    const nativeUrl = `tg://resolve?domain=${normalizedBot}&startapp=linked`;
+    const webUrl = `https://t.me/${normalizedBot}?startapp=linked`;
+    try {
+      window.location.assign(nativeUrl);
+    } catch {
+      // ignore and continue with https fallback
+    }
+
+    // Some wallet webviews ignore the first deep-link attempt.
+    window.setTimeout(() => {
+      try {
+        window.location.assign(webUrl);
+      } catch {
+        // ignore fallback navigation errors
+      }
+    }, 260);
+
+    window.setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        try {
+          window.location.assign(nativeUrl);
+        } catch {
+          // ignore retry navigation errors
+        }
+      }
+    }, 1100);
+    return { normalizedBot, webUrl };
+  };
+
+  const handleReturnToTelegramFromBridge = async (bridgeKind: 'wallet' | 'topup' = 'wallet') => {
+    if (isTelegramWebViewContext()) {
+      return;
+    }
+    const botUsername = await resolveTelegramBotUsername();
+    const links = openTelegramMiniAppDeepLink(botUsername);
+    window.setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        const fallbackPath =
+          bridgeKind === 'topup'
+            ? `/tg?topupMode=return&bot=${encodeURIComponent(links.normalizedBot)}`
+            : `/tg?walletLinkMode=return&bot=${encodeURIComponent(links.normalizedBot)}`;
+        window.location.replace(fallbackPath);
+      }
+    }, 1600);
+  };
+
+  const handleLinkWalletForTelegram = async (walletOption?: TelegramWalletOption) => {
     if (!lastAuthAddress) {
       setTelegramAuthError('Authorize with Telegram first.');
       return;
     }
+    const resolvedWallet = walletOption || 'metamask';
+    setPreferredTelegramWalletOption(resolvedWallet);
     setTelegramWalletLinking(true);
+    setTelegramWalletLaunchLink(null);
     setTelegramAuthError(null);
-    let wcDisconnect: (() => Promise<void>) | null = null;
     try {
       let linkedAddress = walletAddress || '';
-      let signerProvider: BrowserProvider | null = null;
 
-      if (typeof window !== 'undefined' && window.ethereum) {
+      if (hasInjectedEthereumProvider() && window.ethereum) {
+        // Browser with injected wallet — use the old signature-based flow
         if (!linkedAddress) {
           linkedAddress = (await connectWallet()) || '';
         }
-        if (!linkedAddress || !window.ethereum) {
+        if (!linkedAddress || !hasInjectedEthereumProvider() || !window.ethereum) {
           throw new Error('Connect an EVM wallet first and approve access.');
         }
-        signerProvider = new BrowserProvider(window.ethereum);
-      } else {
-        const { connectWalletWithDeeplink } = await import('./utils/walletConnect');
-        const session = await connectWalletWithDeeplink({
-          wallet: walletOption,
-          projectId: TELEGRAM_WALLETCONNECT_PROJECT_ID,
-          chainId: TELEGRAM_CHAIN_ID,
-          rpcUrl: TELEGRAM_RPC_URL || undefined,
-          onDeeplink: () => {
-            setTelegramAuthError('Open wallet app, approve WalletConnect, then return to Telegram.');
-          },
-        });
-        wcDisconnect = session.disconnect;
-        linkedAddress = session.address;
-        signerProvider = new BrowserProvider(session.provider as any);
-        setTelegramAuthError('Wallet connected. Confirm signature in wallet to finish linking.');
+        const signerProvider = new BrowserProvider(window.ethereum);
+        const normalizedAddress = String(linkedAddress).toLowerCase();
+        const nonceResponse = await api.getNonce(normalizedAddress);
+        const message = nonceResponse.data?.message;
+        if (!message) throw new Error('Failed to get nonce for wallet linking.');
+        const signer = await signerProvider.getSigner();
+        const signature = await signer.signMessage(message);
+        const response = await api.linkWalletToCurrentAccount(normalizedAddress, signature, message);
+        const nextUser = response.data?.user;
+        if (!nextUser) throw new Error('Wallet link failed.');
+        setUser((prev) => ({ ...prev, ...nextUser, walletAddress: nextUser.walletAddress || normalizedAddress || prev.walletAddress }));
+        if (typeof nextUser.balance === 'number') setBalance(nextUser.balance);
+        if (nextUser.walletAddress) setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
+        await loadProfile(nextUser.walletAddress || normalizedAddress || undefined);
+        setTelegramWalletLaunchLink(null);
+        setTelegramAuthError(null);
+        if (isWalletLinkBridgeMode()) { await handleReturnToTelegramFromBridge('wallet'); return; }
+        return;
       }
 
-      if (!signerProvider) {
-        throw new Error('Wallet provider is unavailable.');
-      }
+      // Telegram Mini App — standard WalletConnect.
+      // WC Modal handles wallet selection, deep linking, and session management.
+      const { connectWallet: wcConnect } = await import('./utils/walletConnect');
+      const config = getWalletConnectRuntimeConfig();
 
-      const normalizedAddress = String(linkedAddress).toLowerCase();
-      const nonceResponse = await api.getNonce(normalizedAddress);
-      const message = nonceResponse.data?.message;
-      if (!message) {
-        throw new Error('Failed to get nonce for wallet linking.');
-      }
+      const session = await wcConnect({
+        projectId: config.projectId,
+        chainId: config.chainId,
+        rpcUrl: config.rpcUrl,
+        onStatus: (msg) => setTelegramAuthError(msg),
+      });
 
-      const signer = await signerProvider.getSigner();
-      const signature = await signer.signMessage(message);
-      const response = await api.linkWalletToCurrentAccount(normalizedAddress, signature, message);
+      const normalizedAddress = session.address.toLowerCase();
+      setTelegramWalletConnectSession({
+        provider: session.provider,
+        address: normalizedAddress,
+        wallet: resolvedWallet,
+        disconnect: session.disconnect,
+      });
+
+      const response = await api.linkWalletFromTelegram(normalizedAddress);
       const nextUser = response.data?.user;
-      if (!nextUser) {
-        throw new Error('Wallet link failed.');
-      }
+      if (!nextUser) throw new Error('Wallet link failed.');
 
-      setUser((prev) => ({
-        ...prev,
-        ...nextUser,
-        walletAddress: nextUser.walletAddress || normalizedAddress || prev.walletAddress,
-      }));
-      if (typeof nextUser.balance === 'number') {
-        setBalance(nextUser.balance);
-      }
-      if (nextUser.walletAddress) {
-        setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
-      }
+      setUser((prev) => ({ ...prev, ...nextUser, walletAddress: nextUser.walletAddress || normalizedAddress || prev.walletAddress }));
+      if (typeof nextUser.balance === 'number') setBalance(nextUser.balance);
+      if (nextUser.walletAddress) setLastAuthAddress(String(nextUser.walletAddress).toLowerCase());
       await loadProfile(nextUser.walletAddress || normalizedAddress || undefined);
+      setTelegramWalletLaunchLink(null);
       setTelegramAuthError(null);
     } catch (error: any) {
-      setTelegramAuthError(error?.message || 'Failed to link wallet.');
+      const rawMessage = String(error?.message || '').trim();
+      setTelegramAuthError(rawMessage || 'Failed to link wallet.');
     } finally {
-      if (wcDisconnect) {
-        await wcDisconnect().catch(() => {});
-      }
       setTelegramWalletLinking(false);
     }
   };
+
+  useEffect(() => {
+    if (telegramBridgeAutoTried) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('walletLinkMode') !== 'bridge') return;
+    if (!lastAuthAddress) return;
+    if (user.hasLinkedWallet) return;
+    if (!hasInjectedEthereumProvider()) {
+      setTelegramAuthError('Open this link inside wallet app browser to continue linking.');
+      setTelegramBridgeAutoTried(true);
+      return;
+    }
+    setTelegramBridgeAutoTried(true);
+    void handleLinkWalletForTelegram('metamask');
+  }, [telegramBridgeAutoTried, lastAuthAddress, user.hasLinkedWallet]);
+
+  useEffect(() => {
+    if (telegramTopUpBridgeAutoTried) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('topupMode') !== 'bridge') return;
+    if (!lastAuthAddress) return;
+    if (!hasInjectedEthereumProvider()) {
+      setTelegramAuthError('Open this link inside wallet app browser to continue top up.');
+      setTelegramTopUpBridgeAutoTried(true);
+      return;
+    }
+    const amountUsdt = getTopUpAmountFromLocation();
+    if (amountUsdt > 0) {
+      setTopUpInitialUsdt(amountUsdt);
+    }
+    setTelegramAuthError(null);
+    setTelegramTopUpBridgeAutoTried(true);
+    setIsTopUpOpen(true);
+  }, [telegramTopUpBridgeAutoTried, lastAuthAddress]);
+
+  const handleOpenTelegramFromBridgeHelper = async () => {
+    try {
+      setTelegramAuthError(null);
+      const botUsername = await resolveTelegramBotUsername();
+      openTelegramMiniAppDeepLink(botUsername);
+    } catch (error: any) {
+      setTelegramAuthError(error?.message || 'Failed to open Telegram Mini App.');
+    }
+  };
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (activeTab !== 'tg') return;
+      if (isTelegramWebViewContext() && (!lastAuthAddress || !user.hasLinkedWallet)) {
+        const initData = getTelegramWebAppInitData();
+        if (initData) {
+          void handleTelegramLogin();
+          return;
+        }
+      }
+      if (!lastAuthAddress) return;
+      void loadProfile().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [activeTab, lastAuthAddress, user.hasLinkedWallet]);
 
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);
@@ -694,7 +919,7 @@ const App = () => {
   };
 
   const loginWithWalletAddress = async (address: string) => {
-    if (!address || !window.ethereum) return false;
+    if (!address || !hasInjectedEthereumProvider() || !window.ethereum) return false;
     if (isAuthLoading) return false;
     setIsAuthLoading(true);
     try {
@@ -711,7 +936,12 @@ const App = () => {
       const signer = await provider.getSigner();
       const signature = await signer.signMessage(message);
 
-      const loginResponse = await api.loginWithWallet(address, signature, message);
+      const loginResponse = await api.loginWithWallet(
+        address,
+        signature,
+        message,
+        getStoredRefCode()
+      );
       if (loginResponse.data?.user) {
         setUser(prev => ({
           ...prev,
@@ -724,6 +954,7 @@ const App = () => {
       }
       await loadProfile(address);
       setLastAuthAddress(address.toLowerCase());
+      clearRefCode();
       return true;
     } catch (error) {
       console.error('Wallet login failed', error);
@@ -762,6 +993,24 @@ const App = () => {
   }, [walletAddress, lastAuthAddress, user.hasLinkedWallet]);
 
   useEffect(() => {
+    const refCode = getRefCodeFromLocation();
+    if (refCode) {
+      saveRefCode(refCode);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('ref');
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, '', next);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'tg' && isTelegramWebViewContext()) {
+      const initData = getTelegramWebAppInitData();
+      if (initData) {
+        void handleTelegramLogin();
+        return;
+      }
+    }
     loadProfile();
   }, []);
 
@@ -1109,6 +1358,52 @@ const App = () => {
       typeof prefillUsdt === 'number' && Number.isFinite(prefillUsdt) && prefillUsdt > 0
         ? prefillUsdt
         : null;
+    if (activeTab === 'tg' && isTelegramWebViewContext() && !hasInjectedEthereumProvider()) {
+      setTelegramAuthError(null);
+      if (telegramWalletConnectSession?.provider) {
+        const linkedWallet = String(user.walletAddress || '').toLowerCase();
+        if (
+          user.hasLinkedWallet &&
+          linkedWallet.startsWith('0x') &&
+          telegramWalletConnectSession.address &&
+          telegramWalletConnectSession.address !== linkedWallet
+        ) {
+          void disconnectTelegramWalletConnectSession();
+          setTelegramAuthError('Connected wallet does not match linked wallet. Reconnect with your linked wallet.');
+          return;
+        }
+        setTopUpInitialUsdt(safePrefill);
+        setIsTopUpOpen(true);
+        return;
+      }
+      void (async () => {
+        try {
+          const { connectWallet: wcConnect } = await import('./utils/walletConnect');
+          const config = getWalletConnectRuntimeConfig();
+
+          const session = await wcConnect({
+            projectId: config.projectId,
+            chainId: config.chainId,
+            rpcUrl: config.rpcUrl,
+            onStatus: (msg) => setTelegramAuthError(msg),
+          });
+
+          setTelegramWalletConnectSession({
+            provider: session.provider,
+            address: session.address.toLowerCase(),
+            wallet: getPreferredTelegramWalletOption(),
+            disconnect: session.disconnect,
+          });
+          setTelegramAuthError(null);
+          setTopUpInitialUsdt(safePrefill);
+          setIsTopUpOpen(true);
+        } catch (error: any) {
+          const rawMessage = String(error?.message || '').trim();
+          setTelegramAuthError(rawMessage || 'Top up failed. Tap again.');
+        }
+      })();
+      return;
+    }
     setTopUpInitialUsdt(safePrefill);
     setIsTopUpOpen(true);
   };
@@ -1504,6 +1799,22 @@ const App = () => {
   };
   const backgroundPulseClass = isBackgroundAnimated ? 'animate-pulse-slow' : '';
 
+  const walletLinkMode = getWalletLinkModeFromLocation();
+  const topUpBridgeMode = getTopUpBridgeModeFromLocation();
+  const walletLinkBot = getWalletLinkBotFromLocation();
+  const isExternalBridgeContext = activeTab === 'tg' && !isTelegramWebViewContext();
+  const isWalletBridgeLinked = walletLinkMode === 'bridge' && Boolean(user.hasLinkedWallet);
+  const showTelegramWalletBridgeRunner =
+    isExternalBridgeContext && walletLinkMode === 'bridge' && !isWalletBridgeLinked;
+  const showTelegramTopUpBridgeRunner = isExternalBridgeContext && topUpBridgeMode === 'bridge';
+  const showTelegramBridgeReturnHelper =
+    isExternalBridgeContext &&
+    (walletLinkMode === 'return' ||
+      walletLinkMode === 'done' ||
+      isWalletBridgeLinked ||
+      topUpBridgeMode === 'return' ||
+      topUpBridgeMode === 'done');
+
   return (
     <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
       {/* Global Parallax Background - Fixed positioning */}
@@ -1591,58 +1902,84 @@ const App = () => {
             )}
 
             {activeTab === 'tg' && (
-              <div className="animate-fade-in">
-                <TelegramMiniAppView
-                  user={user}
-                  isAuthenticated={Boolean(lastAuthAddress)}
-                  isAuthenticating={telegramAuthBusy}
-                  isDevAuthenticating={telegramDevAuthBusy}
-                  showDevLogin={isTelegramDevLoginAvailable}
-                  authError={telegramAuthError}
-                  isLinkingWallet={telegramWalletLinking}
-                  cases={cases}
-                  inventory={inventory}
-                  burntItems={burntItems}
-                  claimedItems={claimedItems}
-                  battleHistory={battleHistory}
-                  balance={balance}
-                  isActivitiesEnabled={canUseActivities}
-                  onOpenCase={handleOpenCase}
-                  onUpgrade={handleUpgrade}
-                  onBattleFinish={handleBattleFinish}
-                  onChargeBattle={handleChargeBattle}
-                  onOpenTopUp={handleOpenTopUp}
-                  onBalanceUpdate={setBalance}
-                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
-                  onClaimToken={handleClaimToken}
-                  onSelectUser={handleSelectUser}
-                  getUserAvatarByName={getUserAvatarByName}
-                  onUpdateUsername={handleUpdateUsername}
-                  onUploadAvatar={handleUploadAvatar}
-                  onUpdateAvatarMeta={handleUpdateAvatarMeta}
-                  onConnectTwitter={handleConnectTwitter}
-                  onDisconnectTwitter={handleDisconnectTwitter}
-                  twitterBusy={twitterBusy}
-                  twitterNotice={twitterNotice}
-                  twitterError={twitterError}
-                  onConnectTelegram={handleConnectTelegram}
-                  onDisconnectTelegram={handleDisconnectTelegram}
-                  onOpenTelegramMiniApp={handleOpenTelegramMiniApp}
-                  telegramBusy={telegramBusy}
-                  telegramError={telegramError}
-                  isBackgroundAnimated={isBackgroundAnimated}
-                  onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
-                  onSubmitEarlyAccess={handleSubmitEarlyAccess}
-                  earlyAccessSubmitting={earlyAccessSubmitting}
-                  earlyAccessStatus={earlyAccessStatus}
-                  onAuthenticate={handleTelegramLogin}
-                  onDevAuthenticate={handleTelegramDevLogin}
-                  onOpenTelegramBot={handleOpenTelegramMiniApp}
-                  onLinkWallet={handleLinkWalletForTelegram}
-                  onOpenHome={() => handleTabChange('home')}
-                  onCreateCase={handleCaseCreated}
-                />
-              </div>
+              <TelegramMiniAppSection
+                showTelegramBridgeReturnHelper={showTelegramBridgeReturnHelper}
+                showTelegramWalletBridgeRunner={showTelegramWalletBridgeRunner}
+                showTelegramTopUpBridgeRunner={showTelegramTopUpBridgeRunner}
+                walletLinkBot={walletLinkBot}
+                telegramAuthError={telegramAuthError}
+                onOpenTelegramFromBridgeHelper={handleOpenTelegramFromBridgeHelper}
+                miniAppViewProps={{
+                  user,
+                  isAuthenticated: Boolean(lastAuthAddress),
+                  isAuthenticating: telegramAuthBusy,
+                  isDevAuthenticating: telegramDevAuthBusy,
+                  showDevLogin: isTelegramDevLoginAvailable,
+                  authError: telegramAuthError,
+                  isLinkingWallet: telegramWalletLinking,
+                  cases,
+                  inventory,
+                  burntItems,
+                  claimedItems,
+                  battleHistory,
+                  balance,
+                  isActivitiesEnabled: canUseActivities,
+                  onOpenCase: handleOpenCase,
+                  onUpgrade: handleUpgrade,
+                  onBattleFinish: handleBattleFinish,
+                  onChargeBattle: handleChargeBattle,
+                  onOpenTopUp: handleOpenTopUp,
+                  onBalanceUpdate: setBalance,
+                  onOpenWalletConnect: () => setIsWalletConnectOpen(true),
+                  onClaimToken: handleClaimToken,
+                  onSelectUser: handleSelectUser,
+                  getUserAvatarByName,
+                  onUpdateUsername: handleUpdateUsername,
+                  onUploadAvatar: handleUploadAvatar,
+                  onUpdateAvatarMeta: handleUpdateAvatarMeta,
+                  onConnectTwitter: handleConnectTwitter,
+                  onDisconnectTwitter: handleDisconnectTwitter,
+                  twitterBusy,
+                  twitterNotice,
+                  twitterError,
+                  onConnectTelegram: handleConnectTelegram,
+                  onDisconnectTelegram: handleDisconnectTelegram,
+                  onOpenTelegramMiniApp: handleOpenTelegramMiniApp,
+                  telegramBusy,
+                  telegramError,
+                  isBackgroundAnimated,
+                  onToggleBackgroundAnimation: () => setIsBackgroundAnimated((prev) => !prev),
+                  onSubmitEarlyAccess: handleSubmitEarlyAccess,
+                  earlyAccessSubmitting,
+                  earlyAccessStatus,
+                  onAuthenticate: handleTelegramLogin,
+                  onDevAuthenticate: handleTelegramDevLogin,
+                  onOpenTelegramBot: handleOpenTelegramMiniApp,
+                  onLinkWallet: handleLinkWalletForTelegram,
+                  walletDeepLink: telegramWalletLaunchLink?.primaryUrl || null,
+                  onOpenHome: () => handleTabChange('home'),
+                  onCreateCase: handleCaseCreated,
+                  externalProvider: telegramWalletConnectSession?.provider || null,
+                  onConnectWalletForTopUp: async () => {
+                    const { connectWallet: wcConnect } = await import('./utils/walletConnect');
+                    const cfg = getWalletConnectRuntimeConfig();
+                    const session = await wcConnect({
+                      projectId: cfg.projectId,
+                      chainId: cfg.chainId,
+                      rpcUrl: cfg.rpcUrl,
+                      onStatus: (msg) => setTelegramAuthError(msg),
+                    });
+                    setTelegramWalletConnectSession({
+                      provider: session.provider,
+                      address: session.address.toLowerCase(),
+                      wallet: getPreferredTelegramWalletOption(),
+                      disconnect: session.disconnect,
+                    });
+                    setTelegramAuthError(null);
+                    return session.provider;
+                  },
+                }}
+              />
             )}
 
             {activeTab === 'createcase' && (
@@ -1763,10 +2100,20 @@ const App = () => {
         isOpen={isTopUpOpen}
         onClose={handleCloseTopUp}
         onBalanceUpdate={handleBalanceUpdate}
+        onTopUpConfirmed={
+          topUpBridgeMode === 'bridge'
+            ? () => handleReturnToTelegramFromBridge('topup')
+            : undefined
+        }
         isAuthenticated={Boolean(lastAuthAddress)}
         onConnectWallet={() => setIsWalletConnectOpen(true)}
         initialUsdtAmount={topUpInitialUsdt}
         walletAddress={user.walletAddress || walletAddress}
+        externalProvider={
+          activeTab === 'tg' && isTelegramWebViewContext() && !hasInjectedEthereumProvider()
+            ? telegramWalletConnectSession?.provider
+            : undefined
+        }
       />
 
       {createdCaseNotice && (
@@ -1863,7 +2210,7 @@ const App = () => {
         </div>
       )}
 
-      {activeTab !== 'admin' && (
+      {activeTab !== 'admin' && activeTab !== 'tg' && (
         <>
         {battleStartAlert && (
           <button

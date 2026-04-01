@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, Item, Case, ImageMeta } from '../types';
 import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause } from 'lucide-react';
 import { ItemCard } from './ItemCard';
@@ -12,6 +12,7 @@ import { ImageAdjustModal } from './ui/ImageAdjustModal';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
+import { api } from '../services/api';
 
 const formatWalletAddress = (address: string): string => {
   if (!address) return '';
@@ -112,6 +113,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
   const [claimingCaseId, setClaimingCaseId] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [referralUrl, setReferralUrl] = useState<string | null>(null);
+  const [referralInvited, setReferralInvited] = useState<number>(user?.referralConfirmedCount ?? 0);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [referralError, setReferralError] = useState<string | null>(null);
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;
@@ -439,6 +444,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setAvatarMeta(user.avatarMeta);
     }
   }, [user?.avatarMeta]);
+
+  useEffect(() => {
+    setReferralInvited(user?.referralConfirmedCount ?? 0);
+  }, [user?.referralConfirmedCount]);
+
+  useEffect(() => {
+    if (!isEditable || !user?.id) return;
+    let cancelled = false;
+    setReferralLoading(true);
+    setReferralError(null);
+    void (async () => {
+      try {
+        const r = await api.getReferralCode();
+        if (cancelled || !r.data?.code) return;
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        setReferralUrl(`${origin}/?ref=${encodeURIComponent(r.data.code)}`);
+        setReferralInvited(r.data.invitedCount ?? 0);
+      } catch (e: any) {
+        if (!cancelled) {
+          setReferralError(e?.message || 'Не удалось загрузить реферальную ссылку');
+        }
+      } finally {
+        if (!cancelled) setReferralLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditable, user?.id]);
 
   const handleSaveName = async () => {
     if (!onUpdateUsername) return;
@@ -812,6 +846,42 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </button>
               )}
             </div>
+
+            {isEditable && (
+              <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Рефералы</div>
+                {referralLoading ? (
+                  <div className="text-xs text-gray-600">Загрузка…</div>
+                ) : referralError ? (
+                  <div className="text-[10px] text-red-400">{referralError}</div>
+                ) : (
+                  <>
+                    <div className="text-[11px] text-gray-400 leading-snug">
+                      Подтверждённых приглашений:{' '}
+                      <span className="text-white font-bold tabular-nums">{referralInvited}</span>
+                      <span className="block mt-1 text-[10px] text-gray-600">
+                        Учитывается после пополнения приглашённым на 5 ₮ или больше (депозит на кошелёк).
+                      </span>
+                    </div>
+                    {referralUrl && (
+                      <div className="flex items-center gap-2 min-w-0 pt-0.5">
+                        <span className="text-[11px] text-web3-accent truncate flex-1 font-mono">{referralUrl}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(referralUrl).catch(() => {});
+                          }}
+                          className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                        >
+                          <Copy size={12} />
+                          Скопировать
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {!isTelegramMiniApp && (

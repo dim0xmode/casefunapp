@@ -65,27 +65,50 @@ class ApiClient {
     return this.request<{ nonce: string; message: string }>(`/auth/nonce?walletAddress=${walletAddress}`);
   }
 
-  async loginWithWallet(walletAddress: string, signature: string, message: string) {
+  async loginWithWallet(
+    walletAddress: string,
+    signature: string,
+    message: string,
+    referralCode?: string | null
+  ) {
+    const body: Record<string, string> = { walletAddress, signature, message };
+    const ref = referralCode?.trim();
+    if (ref) body.referralCode = ref;
+
     const response = await this.request<{ user: any }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ walletAddress, signature, message }),
+      body: JSON.stringify(body),
     });
 
     return response;
   }
 
-  async loginWithTelegram(initData: string) {
+  async loginWithTelegram(initData: string, referralCode?: string | null) {
+    const body: Record<string, string> = { initData };
+    const ref = referralCode?.trim();
+    if (ref) body.referralCode = ref;
+
     return this.request<{ user: any }>('/auth/telegram/login', {
       method: 'POST',
-      body: JSON.stringify({ initData }),
+      body: JSON.stringify(body),
     });
   }
 
-  async loginWithTelegramDev(payload: { telegramId: string; telegramUsername: string }) {
+  async loginWithTelegramDev(payload: {
+    telegramId: string;
+    telegramUsername: string;
+    referralCode?: string;
+    telegramFirstName?: string;
+    telegramLastName?: string;
+  }) {
     return this.request<{ user: any }>('/auth/telegram/dev-login', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  }
+
+  async getReferralCode() {
+    return this.request<{ code: string; invitedCount: number }>('/user/referral/code');
   }
 
   async linkWalletToCurrentAccount(walletAddress: string, signature: string, message: string) {
@@ -93,6 +116,33 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ walletAddress, signature, message }),
     });
+  }
+
+  async linkWalletFromTelegram(walletAddress: string) {
+    return this.request<{ user: any }>('/auth/telegram/wallet-link', {
+      method: 'POST',
+      body: JSON.stringify({ walletAddress }),
+    });
+  }
+
+  async startTelegramWalletBrowserLink() {
+    return this.request<{ token: string; expiresAt: string; claimUrl: string }>('/auth/telegram/wallet-link/start', {
+      method: 'POST',
+    });
+  }
+
+  async startTelegramTopUpBrowserLink(amountUsdt?: number) {
+    return this.request<{ token: string; expiresAt: string; claimUrl: string; amountUsdt?: number | null }>(
+      '/auth/telegram/topup-link/start',
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          typeof amountUsdt === 'number' && Number.isFinite(amountUsdt) && amountUsdt > 0
+            ? { amountUsdt }
+            : {}
+        ),
+      }
+    );
   }
 
   async getProfile() {
@@ -118,6 +168,12 @@ class ApiClient {
     return this.request<{ balance?: number; pending?: boolean; confirmations?: number }>('/wallet/deposit/confirm', {
       method: 'POST',
       body: JSON.stringify({ txHash }),
+    });
+  }
+
+  async scanDeposit() {
+    return this.request<{ found?: boolean; balance?: number; pending?: boolean; confirmations?: number; txHash?: string }>('/wallet/deposit/scan', {
+      method: 'POST',
     });
   }
 
