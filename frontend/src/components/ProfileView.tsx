@@ -833,6 +833,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>
           )}
         </div>
+      </div>
 
       <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'mb-3 flex-wrap' : 'mb-6'}`}>
         <Tabs
