@@ -12,6 +12,30 @@ const buildLoginMessage = (nonce: string) => {
   return `CaseFun Login\nNonce: ${nonce}`;
 };
 
+const NONCE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+let lastNonceCleanupAt = 0;
+
+const normalizeEvmWalletAddress = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return ethers.getAddress(raw).toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+const cleanupExpiredWalletNonces = async () => {
+  const now = Date.now();
+  if (now - lastNonceCleanupAt < NONCE_CLEANUP_INTERVAL_MS) return;
+  lastNonceCleanupAt = now;
+  await prisma.walletNonce.deleteMany({
+    where: {
+      expiresAt: { lt: new Date(now) },
+    },
+  });
+};
+
 const extractNonceFromMessage = (message: string) => {
   const match = String(message || '').match(/nonce:\s*([a-f0-9]+)/i);
   return match?.[1] ? String(match[1]).toLowerCase() : '';
@@ -321,19 +345,28 @@ export const getNonce = async (
   try {
     const { walletAddress } = req.query as { walletAddress?: string };
 
-    if (!walletAddress) {
-      return next(new AppError('Missing required fields', 400));
+    const normalizedAddress = normalizeEvmWalletAddress(walletAddress);
+    if (!normalizedAddress) {
+      return next(new AppError('Valid EVM wallet address required', 400));
     }
+
+    await cleanupExpiredWalletNonces();
 
     const nonce = crypto.randomBytes(16).toString('hex');
     const expiresAt = new Date(Date.now() + config.nonceTtlMinutes * 60 * 1000);
 
-    await prisma.walletNonce.create({
-      data: {
-        walletAddress: walletAddress.toLowerCase(),
-        nonce,
-        expiresAt,
-      },
+    await prisma.$transaction(async (tx) => {
+      // Keep only one active nonce per wallet to avoid unbounded growth.
+      await tx.walletNonce.deleteMany({
+        where: { walletAddress: normalizedAddress },
+      });
+      await tx.walletNonce.create({
+        data: {
+          walletAddress: normalizedAddress,
+          nonce,
+          expiresAt,
+        },
+      });
     });
 
     res.json({
@@ -360,7 +393,10 @@ export const loginWithWallet = async (
       return next(new AppError('Missing required fields', 400));
     }
 
-    const normalizedAddress = walletAddress.toLowerCase();
+    const normalizedAddress = normalizeEvmWalletAddress(walletAddress);
+    if (!normalizedAddress) {
+      return next(new AppError('Valid EVM wallet address required', 400));
+    }
 
     const nonceRecord = await resolveWalletNonceRecord(normalizedAddress, String(message || ''));
     if (!nonceRecord) {
@@ -533,7 +569,10 @@ export const linkWalletToCurrentAccount = async (
       return next(new AppError('Missing required fields', 400));
     }
 
-    const normalizedAddress = String(walletAddress).toLowerCase();
+    const normalizedAddress = normalizeEvmWalletAddress(walletAddress);
+    if (!normalizedAddress) {
+      return next(new AppError('Valid EVM wallet address required', 400));
+    }
     const nonceRecord = await resolveWalletNonceRecord(normalizedAddress, String(message || ''));
     if (!nonceRecord) {
       return next(new AppError('Nonce expired or not found', 401));
@@ -703,9 +742,8 @@ export const linkWalletToCurrentAccount = async (
 };
 
 /**
- * Link wallet to a Telegram-authenticated account WITHOUT a signature.
- * WalletConnect connection approval proves wallet ownership.
- * Only allowed for sessions with a linked telegramId.
+ * Link wallet to a Telegram-authenticated account with signature proof.
+ * Prevents arbitrary wallet binding by requiring nonce-based message signing.
  */
 export const linkWalletFromTelegram = async (
   req: AuthRequest,
@@ -714,15 +752,26 @@ export const linkWalletFromTelegram = async (
 ) => {
   try {
     const userId = String(req.userId || '').trim();
-    const { walletAddress } = req.body || {};
+    const { walletAddress, signature, message } = req.body || {};
     if (!userId) {
       return next(new AppError('Authentication required', 401));
     }
-    if (!walletAddress || typeof walletAddress !== 'string' || !walletAddress.startsWith('0x')) {
-      return next(new AppError('Valid EVM wallet address required', 400));
+    if (!walletAddress || !signature || !message) {
+      return next(new AppError('Missing required fields', 400));
     }
 
-    const normalizedAddress = String(walletAddress).toLowerCase();
+    const normalizedAddress = normalizeEvmWalletAddress(walletAddress);
+    if (!normalizedAddress) {
+      return next(new AppError('Valid EVM wallet address required', 400));
+    }
+    const nonceRecord = await resolveWalletNonceRecord(normalizedAddress, String(message || ''));
+    if (!nonceRecord) {
+      return next(new AppError('Nonce expired or not found', 401));
+    }
+    const recoveredAddress = ethers.verifyMessage(String(message), String(signature));
+    if (recoveredAddress.toLowerCase() !== normalizedAddress) {
+      return next(new AppError('Invalid signature', 401));
+    }
 
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
@@ -832,6 +881,10 @@ export const linkWalletFromTelegram = async (
           data: { walletAddress: normalizedAddress, hasLinkedWallet: true, walletLinkedAt: new Date() },
         });
       }
+
+      await tx.walletNonce.deleteMany({
+        where: { walletAddress: normalizedAddress },
+      });
 
       const targetUser = await tx.user.findUnique({ where: { id: targetUserId } });
       if (!targetUser) throw new AppError('User not found', 404);

@@ -83,38 +83,36 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
         <div
           key={caseData.id}
           onClick={() => onSelectCase(caseData, inactive ? 'stats' : 'open')}
-          className="group relative aspect-square min-h-0 overflow-hidden rounded-xl border border-white/[0.08] bg-web3-card/45 p-1 transition-all duration-200 hover:-translate-y-0.5 hover:border-web3-accent/50"
+          className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-web3-card/40 transition-all duration-200 active:scale-[0.97] hover:border-web3-accent/40"
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.03] to-web3-purple/[0.03] group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-200"></div>
-          <div className="relative z-10 grid h-full grid-rows-[auto_1fr_auto_auto] gap-1 p-0.5">
-            <div className="text-[7px] uppercase tracking-[0.08em] text-gray-500 text-center leading-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.04] to-web3-purple/[0.04] group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-200" />
+          <div className="relative z-10 flex flex-col items-center p-2.5 gap-1.5">
+            <div className="text-[8px] uppercase tracking-wider text-gray-500 leading-none">
               {remainingTime || (inactive ? 'closed' : 'open')}
             </div>
 
-            <div className="flex flex-1 items-center justify-center min-h-0">
-              <div className="w-[52%] max-w-[44px] min-w-[22px] aspect-square rounded-lg border border-web3-accent/40 bg-gradient-to-br from-web3-purple/30 to-web3-accent/30 flex items-center justify-center overflow-hidden">
-                {logoValue ? (
-                  logoIsImage ? (
-                    <ImageWithMeta
-                      src={logoValue}
-                      meta={caseData.imageMeta}
-                      className="w-full h-full"
-                      imgClassName="w-full h-full"
-                    />
-                  ) : (
-                    <span className="text-[14px] leading-none select-none">{logoValue}</span>
-                  )
+            <div className="w-14 h-14 rounded-xl border border-web3-accent/30 bg-gradient-to-br from-web3-purple/25 to-web3-accent/25 flex items-center justify-center overflow-hidden shadow-[0_0_16px_rgba(102,252,241,0.1)]">
+              {logoValue ? (
+                logoIsImage ? (
+                  <ImageWithMeta
+                    src={logoValue}
+                    meta={caseData.imageMeta}
+                    className="w-full h-full"
+                    imgClassName="w-full h-full"
+                  />
                 ) : (
-                  <span className="text-[8px] uppercase tracking-widest text-gray-500">Logo</span>
-                )}
-              </div>
+                  <span className="text-2xl leading-none select-none">{logoValue}</span>
+                )
+              ) : (
+                <span className="text-[8px] uppercase tracking-widest text-gray-500">Logo</span>
+              )}
             </div>
 
-            <div className="text-[9px] font-black text-white text-center leading-tight truncate">
+            <div className="text-[11px] font-black text-white text-center leading-tight truncate w-full">
               {caseData.name}
             </div>
 
-            <div className="flex items-center justify-between gap-1 text-[8px] leading-none">
+            <div className="flex items-center justify-between gap-2 w-full text-[10px] leading-none px-0.5">
               <span className="font-bold text-web3-accent">{caseData.price} ₮</span>
               <span className="font-bold text-web3-success">{caseData.rtu}%</span>
             </div>
@@ -221,7 +219,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
         {ownCasesMini.length > 0 && viewMode === 'active' && (
           <div className="mb-4">
             <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">My cases</div>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 gap-2">
               {ownCasesMini.map((caseData) => renderCaseCard(caseData, false))}
             </div>
           </div>
@@ -235,7 +233,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             {viewMode === 'inactive' ? 'No unavailable cases' : 'No community cases'}
           </div>
         ) : (
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-3 gap-2">
             {(viewMode === 'inactive' ? allCases : communityCases).map((caseData) =>
               renderCaseCard(caseData, viewMode === 'inactive')
             )}

@@ -75,8 +75,10 @@ export interface BattleRecord {
   cost: number;
   wonValue: number;
   wonItems: Item[];
-  timestamp: number;
-  caseCount: number;
+  timestamp?: number;
+  caseCount?: number;
+  roundCount?: number;
+  mode?: 'BOT' | 'PVP' | string;
 }
 
 export interface User {

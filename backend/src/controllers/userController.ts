@@ -104,6 +104,210 @@ const parseTwitterState = (rawState: string) => {
   }
 };
 
+type BattleMode = 'BOT' | 'PVP';
+type BattleTieWinner = 'USER' | 'OPPONENT';
+
+type BattleProofDrop = {
+  id: string;
+  caseId: string;
+  name: string;
+  value: number;
+  currency: string;
+  rarity: string;
+  color: string;
+  image: string | null;
+};
+
+type BattleProofPayload = {
+  userId: string;
+  mode: BattleMode;
+  caseIds: string[];
+  userDrops: BattleProofDrop[];
+  opponentDrops: BattleProofDrop[];
+  tieWinner: BattleTieWinner;
+  expiresAt: number;
+};
+
+const BATTLE_PROOF_TTL_MS = 15 * 60 * 1000;
+const BATTLE_CHARGE_WINDOW_MS = 30 * 60 * 1000;
+
+const normalizeCaseIds = (raw: any): string[] =>
+  (Array.isArray(raw) ? raw : [])
+    .map((value: any) => String(value || '').trim())
+    .filter(Boolean)
+    .slice(0, 25);
+
+const toBattleProofDrop = (drop: any): BattleProofDrop => ({
+  id: String(drop?.id || ''),
+  caseId: String(drop?.caseId || ''),
+  name: String(drop?.name || 'Reward'),
+  value: roundToTwo(Number(drop?.value || 0)),
+  currency: String(drop?.currency || ''),
+  rarity: String(drop?.rarity || 'COMMON'),
+  color: String(drop?.color || '#9CA3AF'),
+  image: drop?.image ? String(drop.image) : null,
+});
+
+type BattleProofCorePayload = {
+  userId: string;
+  mode: BattleMode;
+  caseIds: string[];
+  userDrops: BattleProofDrop[];
+  opponentDrops: BattleProofDrop[];
+};
+
+const normalizeProofDrops = (drops: BattleProofDrop[]) =>
+  (Array.isArray(drops) ? drops : []).map((drop) => ({
+    id: String(drop?.id || ''),
+    caseId: String(drop?.caseId || '').trim(),
+    name: String(drop?.name || 'Reward'),
+    value: roundToTwo(Number(drop?.value || 0)),
+    currency: String(drop?.currency || ''),
+    rarity: String(drop?.rarity || 'COMMON').toUpperCase(),
+    color: String(drop?.color || '#9CA3AF'),
+    image: drop?.image ? String(drop.image) : null,
+  }));
+
+const toProofCorePayload = (payload: BattleProofCorePayload): BattleProofCorePayload => ({
+  userId: String(payload.userId || '').trim(),
+  mode: payload.mode === 'BOT' ? 'BOT' : 'PVP',
+  caseIds: normalizeCaseIds(payload.caseIds),
+  userDrops: normalizeProofDrops(payload.userDrops),
+  opponentDrops: normalizeProofDrops(payload.opponentDrops),
+});
+
+const hasSameCaseSequence = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((caseId, index) => caseId === right[index]);
+
+const deriveBattleTieWinner = (payload: BattleProofCorePayload): BattleTieWinner => {
+  const core = toProofCorePayload(payload);
+  const digest = createHmac('sha256', config.jwtSecret)
+    .update(JSON.stringify(core))
+    .digest();
+  return digest[0] % 2 === 0 ? 'USER' : 'OPPONENT';
+};
+
+/** Same battle → same coin flip for both players (host vs joiner). Do not hash userId or per-player drop order. */
+const derivePvpLobbyTieWinnerForRequester = (
+  lobbyId: string,
+  caseIds: string[],
+  rounds: any[],
+  requesterIsHost: boolean,
+): BattleTieWinner => {
+  const hostDrops = rounds.map((round: any) => toBattleProofDrop(round.hostDrop || round.userDrop));
+  const joinerDrops = rounds.map((round: any) => toBattleProofDrop(round.joinerDrop || round.opponentDrop));
+  const digest = createHmac('sha256', config.jwtSecret)
+    .update(
+      JSON.stringify({
+        v: 1,
+        lobbyId: String(lobbyId || ''),
+        caseIds: normalizeCaseIds(caseIds),
+        hostDrops,
+        joinerDrops,
+      }),
+    )
+    .digest();
+  const hostWinsTie = digest[0] % 2 === 0;
+  if (requesterIsHost) return hostWinsTie ? 'USER' : 'OPPONENT';
+  return hostWinsTie ? 'OPPONENT' : 'USER';
+};
+
+const createBattleProofBundleWithTieWinner = (payload: BattleProofCorePayload, tieWinner: BattleTieWinner) => {
+  const core = toProofCorePayload(payload);
+  const battleProofPayload: BattleProofPayload = {
+    ...core,
+    tieWinner,
+    expiresAt: Date.now() + BATTLE_PROOF_TTL_MS,
+  };
+  return {
+    tieWinner,
+    battleProof: createBattleProof(battleProofPayload),
+    proofKey: createBattleProofKey(battleProofPayload),
+  };
+};
+
+const createBattleProofKey = (payload: Pick<BattleProofPayload, 'userId' | 'mode' | 'caseIds' | 'userDrops' | 'opponentDrops' | 'tieWinner'>) => {
+  const core = toProofCorePayload(payload);
+  const tieWinner: BattleTieWinner = payload.tieWinner === 'OPPONENT' ? 'OPPONENT' : 'USER';
+  return createHmac('sha256', config.jwtSecret)
+    .update(JSON.stringify({ ...core, tieWinner }))
+    .digest('hex');
+};
+
+const createBattleProofBundle = (payload: BattleProofCorePayload) => {
+  const tieWinner = deriveBattleTieWinner(payload);
+  return createBattleProofBundleWithTieWinner(payload, tieWinner);
+};
+
+const createBattleProof = (payload: BattleProofPayload) => {
+  const signature = createHmac('sha256', config.jwtSecret)
+    .update(JSON.stringify(payload))
+    .digest('hex');
+  return encodeBase64Url(JSON.stringify({ payload, signature }));
+};
+
+const parseBattleProof = (rawProof: string, userId: string): { payload: BattleProofPayload; signature: string } | null => {
+  try {
+    const decoded = decodeBase64Url(String(rawProof || ''));
+    const parsed = JSON.parse(decoded) as { payload?: BattleProofPayload; signature?: string };
+    if (!parsed?.payload || !parsed?.signature) return null;
+
+    const expected = createHmac('sha256', config.jwtSecret)
+      .update(JSON.stringify(parsed.payload))
+      .digest('hex');
+    if (expected !== parsed.signature) return null;
+
+    const payload = parsed.payload;
+    if (String(payload.userId || '') !== userId) return null;
+    if (!['BOT', 'PVP'].includes(String(payload.mode || ''))) return null;
+    if (!['USER', 'OPPONENT'].includes(String(payload.tieWinner || ''))) return null;
+    if (!Array.isArray(payload.caseIds) || payload.caseIds.length === 0 || payload.caseIds.length > 25) return null;
+    if (!Array.isArray(payload.userDrops) || payload.userDrops.length !== payload.caseIds.length) return null;
+    if (!Array.isArray(payload.opponentDrops) || payload.opponentDrops.length !== payload.caseIds.length) return null;
+    if (!Number.isFinite(Number(payload.expiresAt || 0)) || Number(payload.expiresAt) <= Date.now()) return null;
+
+    const dropsValid = [...payload.userDrops, ...payload.opponentDrops].every((drop) => {
+      const value = Number(drop?.value || 0);
+      return Boolean(String(drop?.caseId || '').trim()) && Number.isFinite(value) && value >= 0;
+    });
+    if (!dropsValid) return null;
+
+    return { payload, signature: String(parsed.signature) };
+  } catch {
+    return null;
+  }
+};
+
+const getBattleCostByCaseIds = async (
+  db: any,
+  caseIds: string[],
+  options?: { requireActive?: boolean }
+) => {
+  const normalizedCaseIds = normalizeCaseIds(caseIds);
+  if (!normalizedCaseIds.length) {
+    throw new AppError('Select at least one case', 400);
+  }
+  const uniqueCaseIds = Array.from(new Set(normalizedCaseIds));
+  const rows = await db.case.findMany({
+    where: {
+      id: { in: uniqueCaseIds },
+      ...(options?.requireActive === false ? {} : { isActive: true }),
+    },
+    select: { id: true, price: true },
+  });
+  if (rows.length !== uniqueCaseIds.length) {
+    throw new AppError('Some cases are not available', 400);
+  }
+  const byId = new Map(rows.map((row: any) => [String(row.id), Number(row.price || 0)]));
+  const totalCost = normalizedCaseIds.reduce((sum, caseId) => sum + Number(byId.get(caseId) || 0), 0);
+  return roundToTwo(totalCost);
+};
+
+const getChargeMetadata = (metadata: any) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  return metadata as Record<string, any>;
+};
+
 const ensureTwitterConfigured = () => {
   if (!config.twitterClientId || !config.twitterClientSecret || !config.twitterRedirectUri) {
     throw new AppError('Twitter integration is not configured', 503);
@@ -903,78 +1107,154 @@ export const unlinkTwitterAccount = async (req: Request, res: Response, next: Ne
 
 export const recordBattle = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).userId;
-    const { result, cost, wonItems, reserveItems, mode, lobbyId, opponentName } = req.body;
-    if (!result || !Number.isFinite(Number(cost))) {
-      return next(new AppError('Invalid battle data', 400));
+    const userId = String((req as any).userId || '').trim();
+    const lobbyId = req.body?.lobbyId ? String(req.body.lobbyId) : '';
+    const opponentName = req.body?.opponentName ? String(req.body.opponentName).trim() : null;
+    const battleProofRaw = String(req.body?.battleProof || '').trim();
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
     }
 
-    const wonValue = Array.isArray(wonItems)
-      ? wonItems.reduce((sum: number, item: any) => sum + Number(item.value || 0), 0)
-      : 0;
+    const parsedProof = parseBattleProof(battleProofRaw, userId);
+    if (!parsedProof) {
+      return next(new AppError('Battle proof is invalid or expired', 400));
+    }
+    const parsedProofKey = createBattleProofKey(parsedProof.payload);
+
+    const totalCost = await getBattleCostByCaseIds(prisma, parsedProof.payload.caseIds, { requireActive: false });
+    const normalizeDrop = (drop: BattleProofDrop) => {
+      const rarity = String(drop.rarity || 'COMMON').toUpperCase();
+      return {
+        id: String(drop.id || ''),
+        caseId: String(drop.caseId || ''),
+        name: String(drop.name || 'Reward'),
+        value: roundToTwo(Number(drop.value || 0)),
+        currency: String(drop.currency || ''),
+        rarity,
+        color: String(drop.color || (RARITY_COLORS as Record<string, string>)[rarity] || '#9CA3AF'),
+        image: drop.image ? String(drop.image) : null,
+      };
+    };
+
+    const userDrops = parsedProof.payload.userDrops.map(normalizeDrop);
+    const opponentDrops = parsedProof.payload.opponentDrops.map(normalizeDrop);
+    const finalUserTotal = userDrops.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const finalOpponentTotal = opponentDrops.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const userWon =
+      finalUserTotal > finalOpponentTotal ||
+      (finalUserTotal === finalOpponentTotal && parsedProof.payload.tieWinner === 'USER');
+
+    const wonItems = userWon ? [...userDrops, ...opponentDrops] : [];
+    const reserveItems = !userWon && parsedProof.payload.mode === 'BOT' ? userDrops : [];
+    const wonValue = wonItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
     const createdItems: any[] = [];
+    const chargeWindowStart = new Date(Date.now() - BATTLE_CHARGE_WINDOW_MS);
+
     await prisma.$transaction(async (tx) => {
-      await tx.battle.create({
-        data: {
+      const recentCharges = await tx.transaction.findMany({
+        where: {
           userId,
-          opponentId: opponentName ? String(opponentName).trim() : null,
-          result,
-          cost: Number(cost),
-          wonValue,
-          wonItems: wonItems ?? [],
+          type: 'BATTLE',
+          timestamp: { gte: chargeWindowStart },
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 160,
+      });
+
+      const chargeTx = recentCharges.find((entry) => {
+        const metadata = getChargeMetadata(entry.metadata);
+        if (!metadata || metadata.source !== 'battle_start' || metadata.battleConsumedAt) return false;
+        const matchesAmount = Math.abs(Number(entry.amount || 0) + totalCost) <= 1e-6;
+        if (!matchesAmount) return false;
+        const metadataCaseIds = normalizeCaseIds(metadata.caseIds);
+        const matchesCaseIds = hasSameCaseSequence(metadataCaseIds, parsedProof.payload.caseIds);
+        const metadataProofSig = String(metadata.battleProofSig || '');
+        const metadataProofKey = String(metadata.battleProofKey || '');
+        if (metadataProofSig || metadataProofKey) {
+          const signatureOrKeyMatch = (
+            (metadataProofSig && metadataProofSig === parsedProof.signature) ||
+            (metadataProofKey && metadataProofKey === parsedProofKey)
+          );
+          if (signatureOrKeyMatch) return true;
+          // Legacy fallback: before battleProofKey existed, proof signatures could rotate by expiresAt.
+          if (!metadataProofKey) return matchesCaseIds;
+          return false;
+        }
+        return matchesCaseIds;
+      });
+
+      if (!chargeTx) {
+        throw new AppError('Battle charge not found or already used', 409);
+      }
+
+      const chargeMetadata = getChargeMetadata(chargeTx.metadata) || {};
+      await tx.transaction.update({
+        where: { id: chargeTx.id },
+        data: {
+          metadata: {
+            ...chargeMetadata,
+            battleProofSig: parsedProof.signature,
+            battleProofKey: parsedProofKey,
+            battleConsumedAt: new Date().toISOString(),
+            battleResult: userWon ? 'WIN' : 'LOSS',
+          },
         },
       });
 
-      if (Array.isArray(wonItems)) {
-        for (const item of wonItems) {
-          const rarity = item.rarity || getRarityByValue(Number(item.value || 0));
-          const created = await tx.inventoryItem.create({
-            data: {
-              userId,
-              caseId: item.caseId ?? null,
-              name: item.name || `${item.value} ${item.currency}`,
-              value: Number(item.value || 0),
-              currency: item.currency,
-              rarity,
-              color: item.color || (RARITY_COLORS as Record<string, string>)[rarity],
-              image: item.image || null,
-              status: 'ACTIVE',
-            },
-          });
-          createdItems.push(created);
+      await tx.battle.create({
+        data: {
+          userId,
+          opponentId: opponentName || null,
+          result: userWon ? 'WIN' : 'LOSS',
+          cost: totalCost,
+          wonValue,
+          wonItems,
+          roundCount: parsedProof.payload.caseIds.length,
+        },
+      });
 
-          if (item.caseId) {
-            const caseInfo = await tx.case.findUnique({
-              where: { id: item.caseId },
-            });
-            if (caseInfo?.tokenPrice) {
-              await recordRtuEvent(
-                {
-                  caseId: item.caseId,
-                  userId,
-                  tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
-                  tokenPriceUsdt: caseInfo.tokenPrice,
-                  rtuPercent: caseInfo.rtu,
-                  type: 'BATTLE',
-                  deltaSpentUsdt: 0,
-                  deltaToken: Number(item.value || 0),
-                  metadata: { source: 'battle' },
-                },
-                tx
-              );
-            }
+      for (const item of wonItems) {
+        const created = await tx.inventoryItem.create({
+          data: {
+            userId,
+            caseId: item.caseId || null,
+            name: item.name || `${item.value} ${item.currency}`,
+            value: Number(item.value || 0),
+            currency: item.currency,
+            rarity: item.rarity,
+            color: item.color || (RARITY_COLORS as Record<string, string>)[item.rarity],
+            image: item.image || null,
+            status: 'ACTIVE',
+          },
+        });
+        createdItems.push(created);
+
+        if (item.caseId) {
+          const caseInfo = await tx.case.findUnique({ where: { id: item.caseId } });
+          if (caseInfo?.tokenPrice) {
+            await recordRtuEvent(
+              {
+                caseId: item.caseId,
+                userId,
+                tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
+                tokenPriceUsdt: caseInfo.tokenPrice,
+                rtuPercent: caseInfo.rtu,
+                type: 'BATTLE',
+                deltaSpentUsdt: 0,
+                deltaToken: Number(item.value || 0),
+                metadata: { source: 'battle' },
+              },
+              tx
+            );
           }
         }
       }
 
-      // For bot losses we add only user drops to reserve.
-      if (Array.isArray(reserveItems) && reserveItems.length > 0) {
+      if (reserveItems.length > 0) {
         for (const item of reserveItems) {
-          if (!item?.caseId) continue;
-          const caseInfo = await tx.case.findUnique({
-            where: { id: item.caseId },
-          });
+          if (!item.caseId) continue;
+          const caseInfo = await tx.case.findUnique({ where: { id: item.caseId } });
           if (!caseInfo?.tokenPrice) continue;
           await recordRtuEvent(
             {
@@ -986,7 +1266,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
               type: 'BATTLE',
               deltaSpentUsdt: 0,
               deltaToken: -Number(item.value || 0),
-              metadata: { source: 'battle_reserve', mode: mode || 'BOT' },
+              metadata: { source: 'battle_reserve', mode: parsedProof.payload.mode },
             },
             tx
           );
@@ -995,7 +1275,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
 
       if (lobbyId) {
         await tx.battleLobby.updateMany({
-          where: { id: String(lobbyId), status: 'OPEN' },
+          where: { id: String(lobbyId) },
           data: {
             status: 'FINISHED',
             finishedAt: new Date(),
@@ -1004,7 +1284,14 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
       }
     });
 
-    res.json({ status: 'success', data: { items: createdItems } });
+    res.json({
+      status: 'success',
+      data: {
+        items: createdItems,
+        result: userWon ? 'WIN' : 'LOSS',
+        cost: totalCost,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -1073,6 +1360,7 @@ export const createBattleLobby = async (req: Request, res: Response, next: NextF
 
 export const listBattleLobbies = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const userId = String((req as any).userId || '').trim();
     const lobbies = await prisma.battleLobby.findMany({
       where: {
         status: { in: ['OPEN', 'IN_PROGRESS'] },
@@ -1095,11 +1383,48 @@ export const listBattleLobbies = async (req: Request, res: Response, next: NextF
       },
     });
     const serialized = lobbies.map((lobby) => ({
-      ...lobby,
-      hostAvatar: lobby.hostUser?.avatarUrl || null,
-      hostAvatarMeta: lobby.hostUser?.avatarMeta || null,
-      joinerAvatar: lobby.joinerUser?.avatarUrl || null,
-      joinerAvatarMeta: lobby.joinerUser?.avatarMeta || null,
+      ...(() => {
+        const base = {
+          ...lobby,
+          hostAvatar: lobby.hostUser?.avatarUrl || null,
+          hostAvatarMeta: lobby.hostUser?.avatarMeta || null,
+          joinerAvatar: lobby.joinerUser?.avatarUrl || null,
+          joinerAvatarMeta: lobby.joinerUser?.avatarMeta || null,
+        } as any;
+
+        const rounds = Array.isArray(lobby.roundsJson) ? lobby.roundsJson : [];
+        const isParticipant = Boolean(userId) && (lobby.hostUserId === userId || lobby.joinerUserId === userId);
+        if (!isParticipant || rounds.length === 0) {
+          return base;
+        }
+
+        const requesterIsHost = lobby.hostUserId === userId;
+        const proofCaseIds = normalizeCaseIds(lobby.caseIds);
+        const userDropsForProof = rounds.map((round: any) =>
+          toBattleProofDrop(requesterIsHost ? (round.hostDrop || round.userDrop) : (round.joinerDrop || round.opponentDrop))
+        );
+        const opponentDropsForProof = rounds.map((round: any) =>
+          toBattleProofDrop(requesterIsHost ? (round.joinerDrop || round.opponentDrop) : (round.hostDrop || round.userDrop))
+        );
+        const modeLm = lobby.mode === 'BOT' ? 'BOT' : 'PVP';
+        const coreLm = {
+          userId,
+          mode: modeLm as BattleMode,
+          caseIds: proofCaseIds,
+          userDrops: userDropsForProof,
+          opponentDrops: opponentDropsForProof,
+        };
+        const tieWinnerLm =
+          modeLm === 'PVP'
+            ? derivePvpLobbyTieWinnerForRequester(String(lobby.id), proofCaseIds, rounds, requesterIsHost)
+            : deriveBattleTieWinner(coreLm);
+        const { tieWinner, battleProof } = createBattleProofBundleWithTieWinner(coreLm, tieWinnerLm);
+        return {
+          ...base,
+          battleProof,
+          tieWinner,
+        };
+      })(),
     }));
     res.json({ status: 'success', data: { lobbies: serialized } });
   } catch (error) {
@@ -1111,7 +1436,7 @@ export const startBattleLobby = async (req: Request, res: Response, next: NextFu
   try {
     const userId = (req as any).userId;
     const lobbyId = String(req.params?.lobbyId || '').trim();
-    const mode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+    const mode: BattleMode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
     if (!lobbyId) {
       return next(new AppError('Lobby id is required', 400));
     }
@@ -1127,11 +1452,44 @@ export const startBattleLobby = async (req: Request, res: Response, next: NextFu
     }
 
     if (lobby.status === 'IN_PROGRESS' || lobby.status === 'FINISHED') {
+      const rounds = Array.isArray(lobby.roundsJson) ? lobby.roundsJson : [];
+      if (rounds.length > 0) {
+        const requesterIsHost = lobby.hostUserId === userId;
+        const proofCaseIds = normalizeCaseIds(lobby.caseIds);
+        const userDropsForProof = rounds.map((round: any) =>
+          toBattleProofDrop(requesterIsHost ? (round.hostDrop || round.userDrop) : (round.joinerDrop || round.opponentDrop))
+        );
+        const opponentDropsForProof = rounds.map((round: any) =>
+          toBattleProofDrop(requesterIsHost ? (round.joinerDrop || round.opponentDrop) : (round.hostDrop || round.userDrop))
+        );
+        const modeReplay = lobby.mode === 'BOT' ? 'BOT' : 'PVP';
+        const coreReplay = {
+          userId,
+          mode: modeReplay as BattleMode,
+          caseIds: proofCaseIds,
+          userDrops: userDropsForProof,
+          opponentDrops: opponentDropsForProof,
+        };
+        const tieWinnerReplay =
+          modeReplay === 'PVP'
+            ? derivePvpLobbyTieWinnerForRequester(String(lobby.id), proofCaseIds, rounds, requesterIsHost)
+            : deriveBattleTieWinner(coreReplay);
+        const { tieWinner, battleProof } = createBattleProofBundleWithTieWinner(coreReplay, tieWinnerReplay);
+        return res.json({ status: 'success', data: { lobby, battleProof, tieWinner } });
+      }
       return res.json({ status: 'success', data: { lobby } });
     }
 
     let joinerUserId = lobby.joinerUserId || null;
     let joinerName = lobby.joinerName || null;
+    if (mode === 'BOT') {
+      if (lobby.hostUserId !== userId) {
+        return next(new AppError('Only the host can start a BOT battle', 400));
+      }
+      if (lobby.joinerUserId) {
+        return next(new AppError('An opponent already joined — cannot call bot', 400));
+      }
+    }
     if (mode === 'PVP') {
       if (lobby.hostUserId === userId) {
         return next(new AppError('Host cannot start PVP without opponent', 400));
@@ -1152,12 +1510,11 @@ export const startBattleLobby = async (req: Request, res: Response, next: NextFu
           ? { ...round, hostDrop: round.userDrop, joinerDrop: round.opponentDrop }
           : { ...round, hostDrop: round.opponentDrop, joinerDrop: round.userDrop };
       }
-      // BOT mode: host is always the real player.
       return { ...round, hostDrop: round.userDrop, joinerDrop: round.opponentDrop };
     });
 
     const updated = await prisma.battleLobby.update({
-      where: { id: lobbyId },
+      where: { id: lobbyId, status: 'OPEN' },
       data: {
         joinerUserId,
         joinerName,
@@ -1168,7 +1525,28 @@ export const startBattleLobby = async (req: Request, res: Response, next: NextFu
       },
     });
 
-    res.json({ status: 'success', data: { lobby: updated } });
+    const requesterIsHost = updated.hostUserId === userId;
+    const proofCaseIds = normalizeCaseIds(updated.caseIds);
+    const userDropsForProof = roundsCanonical.map((round: any) =>
+      toBattleProofDrop(requesterIsHost ? round.hostDrop : round.joinerDrop)
+    );
+    const opponentDropsForProof = roundsCanonical.map((round: any) =>
+      toBattleProofDrop(requesterIsHost ? round.joinerDrop : round.hostDrop)
+    );
+    const coreStart = {
+      userId,
+      mode,
+      caseIds: proofCaseIds,
+      userDrops: userDropsForProof,
+      opponentDrops: opponentDropsForProof,
+    };
+    const tieWinnerStart =
+      mode === 'PVP'
+        ? derivePvpLobbyTieWinnerForRequester(String(lobbyId), proofCaseIds, roundsCanonical, requesterIsHost)
+        : deriveBattleTieWinner(coreStart);
+    const { tieWinner, battleProof } = createBattleProofBundleWithTieWinner(coreStart, tieWinnerStart);
+
+    res.json({ status: 'success', data: { lobby: updated, battleProof, tieWinner } });
   } catch (error) {
     next(error);
   }
@@ -1189,15 +1567,23 @@ export const joinBattleLobby = async (req: Request, res: Response, next: NextFun
 
     const lobby = await prisma.battleLobby.findUnique({ where: { id: lobbyId } });
     if (!lobby || lobby.status !== 'OPEN') {
-      return next(new AppError('Lobby not found', 404));
+      return next(new AppError('Lobby not found or already started', 404));
     }
 
     if (lobby.hostUserId === userId) {
       return res.json({ status: 'success', data: { lobby } });
     }
 
+    if (lobby.joinerUserId && lobby.joinerUserId !== userId) {
+      return next(new AppError('Battle already has an opponent', 400));
+    }
+
+    if (lobby.joinerUserId === userId) {
+      return res.json({ status: 'success', data: { lobby } });
+    }
+
     const updated = await prisma.battleLobby.update({
-      where: { id: lobbyId },
+      where: { id: lobbyId, status: 'OPEN' },
       data: {
         joinerUserId: userId,
         joinerName: user.username,
@@ -1212,23 +1598,34 @@ export const joinBattleLobby = async (req: Request, res: Response, next: NextFun
 
 export const resolveBattle = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const caseIdsRaw = Array.isArray(req.body?.caseIds) ? req.body.caseIds : [];
-    const caseIds = caseIdsRaw
-      .map((value: any) => String(value || '').trim())
-      .filter(Boolean)
-      .slice(0, 25);
-    const mode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+    const userId = String((req as any).userId || '').trim();
+    const caseIds = normalizeCaseIds(req.body?.caseIds);
+    const mode: BattleMode = String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP';
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
     if (!caseIds.length) {
       return next(new AppError('Select at least one case', 400));
     }
     const resolved = await resolveBattleDrops(caseIds, mode);
+    const userDrops = resolved.rounds.map((round) => toBattleProofDrop(round.userDrop));
+    const opponentDrops = resolved.rounds.map((round) => toBattleProofDrop(round.opponentDrop));
+    const { tieWinner, battleProof } = createBattleProofBundle({
+      userId,
+      mode,
+      caseIds,
+      userDrops,
+      opponentDrops,
+    });
 
     res.json({
       status: 'success',
       data: {
         mode: resolved.mode,
-        userDrops: resolved.rounds.map((round) => round.userDrop),
-        opponentDrops: resolved.rounds.map((round) => round.opponentDrop),
+        userDrops,
+        opponentDrops,
+        tieWinner,
+        battleProof,
       },
     });
   } catch (error) {
@@ -1268,37 +1665,119 @@ export const finishBattleLobby = async (req: Request, res: Response, next: NextF
 
 export const chargeBattle = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).userId;
-    const { amount } = req.body;
-    const value = Number(amount);
-    if (!Number.isFinite(value) || value <= 0) {
-      return next(new AppError('Invalid amount', 400));
+    const userId = String((req as any).userId || '').trim();
+    const battleProofRaw = String(req.body?.battleProof || '').trim();
+    const requestedCaseIds = normalizeCaseIds(req.body?.caseIds);
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    const parsedProof = battleProofRaw ? parseBattleProof(battleProofRaw, userId) : null;
+    if (battleProofRaw && !parsedProof) {
+      return next(new AppError('Battle proof is invalid or expired', 400));
+    }
+    const parsedProofKey = parsedProof ? createBattleProofKey(parsedProof.payload) : null;
+
+    const effectiveCaseIds = parsedProof?.payload.caseIds || requestedCaseIds;
+    if (!effectiveCaseIds.length) {
+      console.error('[chargeBattle] empty caseIds', {
+        bodyType: typeof req.body,
+        bodyCaseIds: req.body?.caseIds,
+        rawBodyLen: typeof (req as any).rawBody === 'string' ? (req as any).rawBody.length : 'n/a',
+        contentType: req.headers['content-type'],
+        requestedLen: requestedCaseIds.length,
+        proofPresent: !!battleProofRaw,
+      });
+      return next(new AppError('Select at least one case', 400));
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const totalCost = await getBattleCostByCaseIds(prisma, effectiveCaseIds, { requireActive: true });
+    if (!Number.isFinite(totalCost) || totalCost <= 0) {
+      return next(new AppError('Invalid battle cost', 400));
+    }
+
+    const chargeWindowStart = new Date(Date.now() - BATTLE_CHARGE_WINDOW_MS);
+    const [user, recentCharges] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.transaction.findMany({
+        where: {
+          userId,
+          type: 'BATTLE',
+          timestamp: { gte: chargeWindowStart },
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 120,
+      }),
+    ]);
+
     if (!user) {
       return next(new AppError('User not found', 404));
     }
-    if (user.balance < value) {
+
+    const existingUnconsumed = parsedProof
+      ? recentCharges.find((entry) => {
+          const metadata = getChargeMetadata(entry.metadata);
+          if (!metadata || metadata.source !== 'battle_start' || metadata.battleConsumedAt) return false;
+          const caseCount = Number(metadata?.caseCount || 0);
+          const matchesCaseCount = caseCount > 0 && caseCount === effectiveCaseIds.length;
+          const matchesAmount = Math.abs(Number(entry.amount || 0) + totalCost) <= 1e-6;
+          if (!matchesAmount || !matchesCaseCount) return false;
+          const metadataCaseIds = normalizeCaseIds(metadata?.caseIds);
+          const matchesCaseIds = hasSameCaseSequence(metadataCaseIds, effectiveCaseIds);
+          const metadataProofSig = String(metadata?.battleProofSig || '');
+          const metadataProofKey = String(metadata?.battleProofKey || '');
+          if (metadataProofSig || metadataProofKey) {
+            const signatureOrKeyMatch = (
+              (metadataProofSig && metadataProofSig === parsedProof.signature) ||
+              (Boolean(parsedProofKey) && metadataProofKey === parsedProofKey)
+            );
+            if (signatureOrKeyMatch) return true;
+            if (!metadataProofKey) return matchesCaseIds;
+            return false;
+          }
+          // Legacy fallback for previously created charge entries without proof fingerprint.
+          return matchesCaseIds;
+        })
+      : null;
+    if (existingUnconsumed) {
+      return res.json({
+        status: 'success',
+        data: { balance: user.balance, chargedAmount: 0, alreadyCharged: true },
+      });
+    }
+
+    if (user.balance < totalCost) {
       return next(new AppError('Insufficient balance', 400));
     }
 
+    const chargeMode: BattleMode =
+      parsedProof?.payload.mode ||
+      (String(req.body?.mode || 'PVP').toUpperCase() === 'BOT' ? 'BOT' : 'PVP');
+
     const updated = await prisma.user.update({
       where: { id: userId },
-      data: { balance: { decrement: value } },
+      data: { balance: { decrement: totalCost } },
     });
 
     await prisma.transaction.create({
       data: {
         userId,
         type: 'BATTLE',
-        amount: -value,
+        amount: -totalCost,
         currency: 'USDT',
-        metadata: { source: 'battle_start' },
+        metadata: {
+          source: 'battle_start',
+          battleProofSig: parsedProof?.signature || null,
+          battleProofKey: parsedProofKey,
+          mode: chargeMode,
+          tieWinner: parsedProof?.payload.tieWinner || null,
+          caseIds: effectiveCaseIds,
+          caseCount: effectiveCaseIds.length,
+          totalCost,
+        },
       },
     });
 
-    res.json({ status: 'success', data: { balance: updated.balance } });
+    res.json({ status: 'success', data: { balance: updated.balance, chargedAmount: totalCost } });
   } catch (error) {
     next(error);
   }

@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Item, Case, ImageMeta } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -31,6 +31,8 @@ interface BattleRecord {
   lostItems?: Item[];
   timestamp?: number;
   caseCount?: number;
+  /** Same as caseCount when set from API; preferred for display */
+  roundCount?: number;
   mode?: 'BOT' | 'PVP' | string;
 }
 
@@ -62,6 +64,7 @@ interface ProfileViewProps {
   isBackgroundAnimated?: boolean;
   onToggleBackgroundAnimation?: () => void;
   isTelegramMiniApp?: boolean;
+  telegramBotUsername?: string;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -91,6 +94,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isBackgroundAnimated = true,
   onToggleBackgroundAnimation,
   isTelegramMiniApp = false,
+  telegramBotUsername = 'casefun_bot',
 }) => {
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -104,6 +108,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [nameError, setNameError] = useState<string | null>(null);
   const [isSavingName, setIsSavingName] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState(0);
+  const avatarAbortRef = useRef<(() => void) | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -170,17 +176,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   }, [activeInventory, sortOrder]);
 
   const groupedExpired = useMemo(() => {
+    const CURRENCY_EMOJI: Record<string, string> = {
+      SOL: '◎', ETH: 'Ξ', BTC: '₿', USDC: '💲', USDT: '💲', BNB: '🔶', MATIC: '🟣', AVAX: '🔺', TON: '💎',
+    };
     const groups = new Map<string, Item & { count: number }>();
     if (!inventory || !Array.isArray(inventory)) return [];
     for (const item of inventory) {
       if (!item || !isCaseExpired(item.caseId) || item.claimedAt) continue;
       const currencyKey = item.currency || 'UNKNOWN';
       const existing = groups.get(currencyKey);
+      const fallbackImage = item.image || CURRENCY_EMOJI[currencyKey.toUpperCase()] || '🪙';
       if (!existing) {
         groups.set(currencyKey, {
           ...item,
           id: `expired-${currencyKey}`,
           name: `${Number(item.value || 0)} ${currencyKey}`,
+          image: item.image || fallbackImage,
           value: Number(item.value || 0),
           count: 1,
         });
@@ -188,6 +199,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         const nextValue = Number(existing.value || 0) + Number(item.value || 0);
         groups.set(currencyKey, {
           ...existing,
+          image: existing.image || fallbackImage,
           value: nextValue,
           name: `${nextValue} ${currencyKey}`,
           count: existing.count + 1,
@@ -464,8 +476,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       try {
         const r = await api.getReferralCode();
         if (cancelled || !r.data?.code) return;
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        setReferralUrl(`${origin}/?ref=${encodeURIComponent(r.data.code)}`);
+        const code = r.data.code;
+        if (isTelegramMiniApp) {
+          setReferralUrl(`https://t.me/${telegramBotUsername}?startapp=ref_${encodeURIComponent(code)}`);
+        } else {
+          const origin = typeof window !== 'undefined' ? window.location.origin : '';
+          setReferralUrl(`${origin}/?ref=${encodeURIComponent(code)}`);
+        }
         setReferralInvited(r.data.invitedCount ?? 0);
       } catch (e: any) {
         if (!cancelled) {
@@ -478,7 +495,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isEditable, user?.id, canShowReferralLink]);
+  }, [isEditable, user?.id, canShowReferralLink, isTelegramMiniApp, telegramBotUsername]);
 
   const handleSaveName = async () => {
     if (!onUpdateUsername) return;
@@ -516,7 +533,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  const handleAvatarChange = async (file?: File | null) => {
+  const handleAvatarChange = useCallback((file?: File | null) => {
     if (!file || !onUploadAvatar) return;
     setAvatarError(null);
     if (file.size > 1024 * 1024) {
@@ -528,18 +545,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const initialMeta: ImageMeta = { fit: 'cover', scale: 1, x: 0, y: 0 };
     setAvatarMeta(initialMeta);
     setIsUploadingAvatar(true);
-    try {
-      const nextUrl = await onUploadAvatar(file, initialMeta);
-      if (typeof nextUrl === 'string' && nextUrl) {
-        setAvatarPreview(nextUrl);
-        setIsAvatarAdjustOpen(true);
-      }
-    } catch (error) {
-      setAvatarError('Failed to upload avatar.');
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
+    setAvatarUploadProgress(0);
+
+    const { promise, abort } = api.uploadAvatarWithProgress(
+      file,
+      initialMeta,
+      (pct) => setAvatarUploadProgress(pct),
+    );
+    avatarAbortRef.current = abort;
+
+    promise
+      .then(async (response) => {
+        const avatarUrl = response.data?.avatarUrl;
+        if (avatarUrl) {
+          try { await onUploadAvatar(file, initialMeta); } catch {}
+          setAvatarPreview(avatarUrl.startsWith('/') ? avatarUrl : avatarUrl);
+          setIsAvatarAdjustOpen(true);
+        }
+      })
+      .catch((err) => {
+        if (err?.message !== 'Upload cancelled') setAvatarError('Failed to upload avatar.');
+      })
+      .finally(() => {
+        setIsUploadingAvatar(false);
+        setAvatarUploadProgress(0);
+        avatarAbortRef.current = null;
+      });
+  }, [onUploadAvatar]);
+
+  const cancelAvatarUpload = useCallback(() => {
+    avatarAbortRef.current?.();
+    setIsUploadingAvatar(false);
+    setAvatarUploadProgress(0);
+    avatarAbortRef.current = null;
+  }, []);
 
   const successRate = useMemo(() => {
     try {
@@ -685,7 +724,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple bg-size-200 animate-gradient"></div>
           {isEditable && (
             <>
-              {onToggleBackgroundAnimation && (
+              {!isTelegramMiniApp && onToggleBackgroundAnimation && (
                 <button
                   onClick={onToggleBackgroundAnimation}
                   className={`absolute left-4 top-4 h-9 px-2.5 rounded-full border flex items-center justify-center gap-1.5 transition ${
@@ -870,18 +909,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                     </div>
                     {referralUrl && (
-                      <div className="flex items-center gap-2 min-w-0 pt-0.5">
-                        <span className="text-[11px] text-web3-accent truncate flex-1 font-mono">{referralUrl}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard?.writeText(referralUrl).catch(() => {});
-                          }}
-                          className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
-                        >
-                          <Copy size={12} />
-                          Copy
-                        </button>
+                      <div className="flex flex-col gap-1.5 pt-0.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[11px] text-web3-accent truncate flex-1 font-mono">{referralUrl}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(referralUrl).catch(() => {});
+                            }}
+                            className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white hover:border-web3-accent/40 transition"
+                          >
+                            <Copy size={12} />
+                            Copy
+                          </button>
+                        </div>
+                        {isTelegramMiniApp && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                const tg = (window as any)?.Telegram?.WebApp;
+                                const text = `Join me on CaseFun! Open crypto cases and win tokens.`;
+                                if (typeof tg?.openTelegramLink === 'function') {
+                                  tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(referralUrl)}&text=${encodeURIComponent(text)}`);
+                                } else {
+                                  window.open(`https://t.me/share/url?url=${encodeURIComponent(referralUrl)}&text=${encodeURIComponent(text)}`, '_blank');
+                                }
+                              } catch { /* ignore */ }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-web3-accent to-web3-success text-black active:scale-[0.98] transition"
+                          >
+                            <ExternalLink size={12} />
+                            Share via Telegram
+                          </button>
+                        )}
                       </div>
                     )}
                   </>
@@ -911,34 +972,68 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'mb-3 flex-wrap' : 'mb-6'}`}>
-        <Tabs
-          className="flex-1"
-          tabs={[
+      {isTelegramMiniApp ? (
+        <div className="mb-3 space-y-2">
+          <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-black/30 p-0.5 overflow-x-auto">
+            {([
               { id: 'inventory', label: 'Items' },
-            { id: 'expired', label: 'Expired' },
-            { id: 'claimed', label: 'Claimed' },
+              { id: 'expired', label: 'Expired' },
+              { id: 'claimed', label: 'Claimed' },
               { id: 'burnt', label: 'Burnt' },
               { id: 'battles', label: 'Battles' },
-          ]}
-          activeId={tab}
-          onChange={(id) => setTab(id as any)}
-        />
-            {tab === 'inventory' && (
-              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-                Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+            ] as const).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 min-w-0 px-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition whitespace-nowrap ${
+                  tab === t.id
+                    ? 'bg-web3-accent/15 text-web3-accent border border-web3-accent/30'
+                    : 'text-gray-500 border border-transparent'
+                }`}
+              >
+                {t.label}
               </button>
-            )}
-        {tab === 'expired' && (
-          <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-            Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-          </button>
-        )}
+            ))}
           </div>
+          {(tab === 'inventory' || tab === 'expired') && (
+            <button
+              onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-widest"
+            >
+              {tab === 'inventory' ? 'Price' : 'Amount'} {sortOrder === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 mb-6">
+          <Tabs
+            className="flex-1"
+            tabs={[
+              { id: 'inventory', label: 'Items' },
+              { id: 'expired', label: 'Expired' },
+              { id: 'claimed', label: 'Claimed' },
+              { id: 'burnt', label: 'Burnt' },
+              { id: 'battles', label: 'Battles' },
+            ]}
+            activeId={tab}
+            onChange={(id) => setTab(id as any)}
+          />
+          {tab === 'inventory' && (
+            <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+              Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+            </button>
+          )}
+          {tab === 'expired' && (
+            <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+              Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+            </button>
+          )}
+        </div>
+      )}
 
       <div
         className={`bg-black/20 border border-white/[0.12] rounded-2xl flex flex-col backdrop-blur-2xl ${
-          isTelegramMiniApp ? 'p-3 h-[70dvh]' : 'p-6 h-[810px]'
+          isTelegramMiniApp ? 'p-3 min-h-[320px]' : 'p-6 h-[810px]'
         }`}
       >
             {/* Inventory Tab */}
@@ -1178,7 +1273,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           const hasOpponentWinnings = Object.keys(opponentByCategory).length > 0;
                           const cost = Number(battle.cost) || 0;
                           const modeLabel = String(battle.mode || '').toUpperCase() === 'PVP' ? 'PVP' : 'BOT';
-                          const roundsLabel = Math.max(1, Number(battle.caseCount) || (battle.wonItems?.length || 1));
+                          const wonLen = (battle.wonItems || []).length;
+                          const fromStored = Number(battle.roundCount) || Number(battle.caseCount) || 0;
+                          const inferredWinRounds =
+                            battle.result === 'WIN' && wonLen >= 2 ? Math.floor(wonLen / 2) : 0;
+                          const roundsLabel = Math.max(1, fromStored || inferredWinRounds || 1);
                           const topWonItems = (battle.wonItems || []).slice(0, 4);
                           const extraWonItems = Math.max(0, (battle.wonItems || []).length - topWonItems.length);
                           const opponentName = String(battle.opponent || 'Unknown');
@@ -1448,6 +1547,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           handleSaveAvatarMeta(nextMeta);
         }}
       />
+
+      {isUploadingAvatar && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-[280px] rounded-2xl border border-white/[0.08] bg-[#0B1018] p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <UploadCloud size={20} className="text-web3-accent animate-pulse" />
+              <span className="text-sm font-bold text-white">Uploading Avatar</span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden mb-2">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-web3-accent to-web3-success transition-all duration-300 ease-out"
+                style={{ width: `${avatarUploadProgress}%` }}
+              />
+            </div>
+            <div className="text-xs tabular-nums text-gray-400 text-right mb-5">
+              {avatarUploadProgress}%
+            </div>
+            <button
+              type="button"
+              onClick={cancelAvatarUpload}
+              className="w-full py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-sm font-semibold text-red-400 active:scale-[0.97] transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

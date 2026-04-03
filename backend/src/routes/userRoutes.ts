@@ -38,7 +38,7 @@ const upload = multer({
 
 router.use(requireAuth);
 
-router.post('/topup', requireRole(['ADMIN', 'MODERATOR']), topUpBalance);
+router.post('/topup', requireRole(['ADMIN']), topUpBalance);
 router.post('/upgrade', requireRole(['ADMIN', 'MODERATOR']), upgradeItem);
 router.post('/battles/charge', requireRole(['ADMIN', 'MODERATOR']), chargeBattle);
 router.post('/battles/record', requireRole(['ADMIN', 'MODERATOR']), recordBattle);

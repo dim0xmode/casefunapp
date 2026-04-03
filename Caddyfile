@@ -6,7 +6,7 @@
       read_header 10s
       read_body 15s
       write 20s
-      idle 2m
+      idle 90s
     }
   }
 }
@@ -18,20 +18,22 @@ www.casefun.net {
 casefun.net {
   encode gzip
 
+  # Block cache-bust flood on ANY path (e.g. "/?_=<random>", "/create?_=<random>").
+  # This pattern was exploited to bypass nginx caching and flood the frontend container.
+  @cachebust_flood `{query}.matches('(^|&)_=')`
+
   # Drop known abusive bot pattern before proxying.
   @api_abuse_pattern {
     path /api/*
     header_regexp abuse_ua User-Agent (?i)^undici/
     header_regexp abuse_ct Content-Type (?i)^%.*%$
   }
-  respond @api_abuse_pattern 403
 
   # Session-protected API groups should never be hit without a real session cookie.
   @api_auth_required_no_session {
     path /api/user/* /api/admin/* /api/token/* /api/wallet/deposit/*
     not header_regexp has_session Cookie (?i)(^|;\s*)session=
   }
-  respond @api_auth_required_no_session 401
 
   # Case write endpoints are auth-only; reject anonymous writes early.
   @api_case_write_no_session {
@@ -39,16 +41,35 @@ casefun.net {
     path /api/cases /api/cases/upload /api/cases/*/open
     not header_regexp has_session Cookie (?i)(^|;\s*)session=
   }
-  respond @api_case_write_no_session 401
 
-  reverse_proxy /api/* backend:3001 {
-    transport http {
-      dial_timeout 2s
-      response_header_timeout 15s
-      read_timeout 15s
-      write_timeout 15s
+  route {
+    respond @cachebust_flood 403
+    respond @api_abuse_pattern 403
+    respond @api_auth_required_no_session 401
+    respond @api_case_write_no_session 401
+
+    reverse_proxy /api/* backend:3001 {
+      header_up X-Forwarded-For {remote_host}
+      header_up X-Real-IP {remote_host}
+      transport http {
+        dial_timeout 2s
+        response_header_timeout 60s
+        read_timeout 60s
+        write_timeout 60s
+      }
     }
+
+    reverse_proxy /uploads/* backend:3001 {
+      header_up X-Forwarded-For {remote_host}
+      header_up X-Real-IP {remote_host}
+      transport http {
+        dial_timeout 2s
+        response_header_timeout 20s
+        read_timeout 20s
+        write_timeout 20s
+      }
+    }
+
+    reverse_proxy frontend:80
   }
-  reverse_proxy /uploads/* backend:3001
-  reverse_proxy frontend:80
 }

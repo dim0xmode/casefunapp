@@ -106,6 +106,17 @@ export const getRefCodeFromLocation = (): string | null => {
   return v ? v : null;
 };
 
+export const getRefCodeFromTelegramStartParam = (): string | null => {
+  try {
+    const startParam = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (!startParam || typeof startParam !== 'string') return null;
+    const match = startParam.match(/^ref[_-](.+)$/i);
+    return match?.[1]?.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
 export const saveRefCode = (code: string) => {
   try {
     localStorage.setItem(REFERRAL_STORAGE_KEY, code.trim());

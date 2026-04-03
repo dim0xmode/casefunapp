@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Case, Item, Rarity, ImageMeta } from '../types';
 import { Plus, Trash2, Sparkles, ChevronDown, UploadCloud, Smile } from 'lucide-react';
 import { ItemCard } from './ItemCard';
@@ -73,6 +73,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const [imageUrl, setImageUrl] = useState('');
   const [imageError, setImageError] = useState<string | null>(null);
   const [isImageUploading, setIsImageUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -197,7 +199,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     setDrops((prev) => prev.map((drop) => (drop.id === id ? { ...drop, ...patch } : drop)));
   };
 
-  const handleImageUpload = async (file?: File | null) => {
+  const handleImageUpload = useCallback((file?: File | null) => {
     if (!file) return;
     setImageError(null);
     if (file.size > 1024 * 1024) {
@@ -205,22 +207,35 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
       return;
     }
     setIsImageUploading(true);
-    try {
-      const response = await api.uploadCaseImage(file);
-      const url = response.data?.imageUrl;
-      if (!url) {
-        setImageError('Upload failed. Try another image.');
-        return;
-      }
-      setImageUrl(url);
-      setImageMeta({ fit: 'contain', scale: 1, x: 0, y: 0 });
-      setIsLogoAdjustOpen(true);
-    } catch (error) {
-      setImageError('Upload failed. Try another image.');
-    } finally {
-      setIsImageUploading(false);
-    }
-  };
+    setUploadProgress(0);
+
+    const { promise, abort } = api.uploadCaseImageWithProgress(file, (pct) => setUploadProgress(pct));
+    uploadAbortRef.current = abort;
+
+    promise
+      .then((response) => {
+        const url = response.data?.imageUrl;
+        if (!url) { setImageError('Upload failed. Try another image.'); return; }
+        setImageUrl(url);
+        setImageMeta({ fit: 'contain', scale: 1, x: 0, y: 0 });
+        setIsLogoAdjustOpen(true);
+      })
+      .catch((err) => {
+        if (err?.message !== 'Upload cancelled') setImageError('Upload failed. Try another image.');
+      })
+      .finally(() => {
+        setIsImageUploading(false);
+        setUploadProgress(0);
+        uploadAbortRef.current = null;
+      });
+  }, []);
+
+  const cancelImageUpload = useCallback(() => {
+    uploadAbortRef.current?.();
+    setIsImageUploading(false);
+    setUploadProgress(0);
+    uploadAbortRef.current = null;
+  }, []);
 
   const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/u;
   const isEmoji = (value: string) => emojiRegex.test(value);
@@ -577,25 +592,24 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               <div className="space-y-2 md:col-span-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Token Logo (Upload or Emoji)</div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => logoInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition"
-                    disabled={isImageUploading}
-                  >
-                    <UploadCloud size={16} className="text-web3-accent" />
-                    <span className="text-xs uppercase tracking-widest text-gray-300">
-                      {isImageUploading ? 'Uploading...' : 'Choose Image'}
-                    </span>
-                  </button>
-                  <input
-                    ref={logoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => handleImageUpload(e.target.files?.[0])}
-                    disabled={isImageUploading}
-                  />
+                  <div className="relative">
+                    <div
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition pointer-events-none"
+                    >
+                      <UploadCloud size={16} className="text-web3-accent" />
+                      <span className="text-xs uppercase tracking-widest text-gray-300">
+                        {isImageUploading ? 'Uploading...' : 'Choose Image'}
+                      </span>
+                    </div>
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      onChange={(e) => { handleImageUpload(e.target.files?.[0]); e.target.value = ''; }}
+                      disabled={isImageUploading}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => setIsEmojiOpen((prev) => !prev)}
@@ -842,10 +856,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                 {validationMessages[0]}
               </div>
             )}
-            <div className="flex items-center justify-center gap-3 w-full">
-              <div className="px-5 h-[52px] rounded-2xl bg-web3-card/50 border border-gray-700/50 text-sm font-black text-gray-200 flex items-center">
-                {CREATE_CASE_FEE} ₮
-              </div>
+            <div className="flex items-center justify-center w-full">
               <AdminActionButton
                 isAuthenticated={isAuthenticated}
                 isAdmin={isAdmin}
@@ -857,18 +868,48 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                 readyLabel={
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Create Case
+                    Create Case · {CREATE_CASE_FEE} ₮
                   </>
                 }
                 labelOverride={isCreating ? 'Creating...' : undefined}
                 forceLabel={isCreating}
                 disabled={isCreateDisabled}
-                className="h-[52px] w-full max-w-md px-10 text-sm font-black rounded-2xl uppercase tracking-wide flex items-center justify-center gap-2"
+                className={`w-full max-w-md font-black rounded-2xl uppercase tracking-wide flex items-center justify-center gap-2 ${isTelegramMiniApp ? 'h-10 px-6 text-xs' : 'h-[52px] px-10 text-sm'}`}
               />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Upload progress overlay */}
+      {isImageUploading && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-[280px] rounded-2xl border border-white/[0.08] bg-[#0B1018] p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <UploadCloud size={20} className="text-web3-accent animate-pulse" />
+              <span className="text-sm font-bold text-white">Uploading Image</span>
+            </div>
+
+            <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden mb-2">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-web3-accent to-web3-success transition-all duration-300 ease-out"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+            <div className="text-xs tabular-nums text-gray-400 text-right mb-5">
+              {uploadProgress}%
+            </div>
+
+            <button
+              type="button"
+              onClick={cancelImageUpload}
+              className="w-full py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-sm font-semibold text-red-400 active:scale-[0.97] transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -34,6 +34,7 @@ import {
   isTelegramWebViewContext,
   isWalletLinkBridgeMode,
   getRefCodeFromLocation,
+  getRefCodeFromTelegramStartParam,
   saveRefCode,
   getStoredRefCode,
   clearRefCode,
@@ -46,6 +47,10 @@ interface BattleRecord {
   cost: number;
   wonValue: number;
   wonItems: Item[];
+  timestamp?: number;
+  caseCount?: number;
+  roundCount?: number;
+  mode?: 'BOT' | 'PVP' | string;
 }
 
 interface TelegramWalletConnectSession {
@@ -416,16 +421,26 @@ const App = () => {
       }
       if (response.data?.battleHistory) {
         setBattleHistory(
-          response.data.battleHistory.map((battle: any) => ({
-            id: battle.id,
-            opponent: battle.opponent || battle.opponentId || 'Bot',
-            result: battle.result,
-            cost: battle.cost,
-            wonValue: battle.wonValue,
-            wonItems: battle.wonItems || [],
-            timestamp: battle.timestamp ? new Date(battle.timestamp).getTime() : Date.now(),
-            caseCount: battle.caseCount || battle.wonItems?.length || 0,
-          }))
+          response.data.battleHistory.map((battle: any) => {
+            const wonItems = battle.wonItems || [];
+            const wonLen = Array.isArray(wonItems) ? wonItems.length : 0;
+            const fromDb = Number(battle.roundCount) || Number(battle.caseCount) || 0;
+            const inferredFromDoubledItems =
+              String(battle.result).toUpperCase() === 'WIN' && wonLen >= 2 ? Math.floor(wonLen / 2) : 0;
+            const roundCount = fromDb > 0 ? fromDb : inferredFromDoubledItems;
+            return {
+              id: battle.id,
+              opponent: battle.opponent || battle.opponentId || 'Bot',
+              result: battle.result,
+              cost: battle.cost,
+              wonValue: battle.wonValue,
+              wonItems,
+              timestamp: battle.timestamp ? new Date(battle.timestamp).getTime() : Date.now(),
+              caseCount: roundCount,
+              roundCount,
+              mode: battle.mode,
+            };
+          })
         );
       }
     } catch (error) {
@@ -855,7 +870,14 @@ const App = () => {
         disconnect: session.disconnect,
       });
 
-      const response = await api.linkWalletFromTelegram(normalizedAddress);
+      const nonceResponse = await api.getNonce(normalizedAddress);
+      const message = nonceResponse.data?.message;
+      if (!message) throw new Error('Failed to get nonce for wallet linking.');
+      const wcSignerProvider = new BrowserProvider(session.provider);
+      const wcSigner = await wcSignerProvider.getSigner();
+      const signature = await wcSigner.signMessage(message);
+
+      const response = await api.linkWalletFromTelegram(normalizedAddress, signature, message);
       const nextUser = response.data?.user;
       if (!nextUser) throw new Error('Wallet link failed.');
 
@@ -1028,6 +1050,11 @@ const App = () => {
       url.searchParams.delete('ref');
       const next = `${url.pathname}${url.search}${url.hash}`;
       window.history.replaceState({}, '', next);
+      return;
+    }
+    const tgRef = getRefCodeFromTelegramStartParam();
+    if (tgRef) {
+      saveRefCode(tgRef);
     }
   }, []);
 
@@ -1561,28 +1588,49 @@ const App = () => {
   const handleBattleFinish = async (
     wonItems: Item[],
     totalCost: number,
-    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null; opponentName?: string }
+    options?: {
+      reserveItems?: Item[];
+      mode?: 'BOT' | 'PVP';
+      lobbyId?: string | null;
+      opponentName?: string;
+      caseIds?: string[];
+      battleProof?: string | null;
+    }
   ) => {
     const isWin = wonItems.length > 0;
     const wonValue = wonItems.reduce((sum, item) => sum + item.value, 0);
     
+    const roundCount =
+      Array.isArray(options?.caseIds) && options.caseIds.length > 0
+        ? options.caseIds.length
+        : isWin && wonItems.length >= 2
+          ? Math.floor(wonItems.length / 2)
+          : 1;
     const battleRecord: BattleRecord = {
       id: `battle-${Date.now()}`,
       opponent: options?.opponentName || 'Bot',
       result: isWin ? 'WIN' : 'LOSS',
       cost: totalCost,
       wonValue: wonValue,
-      wonItems: wonItems
+      wonItems: wonItems,
+      caseCount: roundCount,
+      roundCount,
+      mode: options?.mode,
     };
     
     setBattleHistory(prev => [battleRecord, ...prev]);
 
     try {
+      if (!options?.battleProof) {
+        throw new Error('Battle proof missing');
+      }
       const response = await api.recordBattle(isWin ? 'WIN' : 'LOSS', totalCost, wonItems, {
         reserveItems: options?.reserveItems || [],
         mode: options?.mode || 'PVP',
         lobbyId: options?.lobbyId || undefined,
         opponentName: options?.opponentName || undefined,
+        battleProof: options.battleProof,
+        caseIds: options?.caseIds || [],
       });
       const created = response.data?.items;
       if (Array.isArray(created) && created.length > 0) {
@@ -1603,9 +1651,6 @@ const App = () => {
       }
     } catch (error) {
       console.error('Failed to record battle', error);
-      if (isWin) {
-        setInventory(prev => [...wonItems, ...prev]);
-      }
     }
   };
 
@@ -1735,17 +1780,12 @@ const App = () => {
     }
   };
 
-  const handleChargeBattle = async (amount: number) => {
-    try {
-      const response = await api.chargeBattle(amount);
-      if (response.data?.balance !== undefined) {
-        setBalance(response.data.balance);
-      }
-      return true;
-    } catch (error) {
-      console.error('Failed to charge battle', error);
-      return false;
+  const handleChargeBattle = async (caseIds: string[], battleProof?: string | null) => {
+    const response = await api.chargeBattle(caseIds, battleProof || undefined);
+    if (response.data?.balance !== undefined) {
+      setBalance(response.data.balance);
     }
+    return true;
   };
 
   const buildBotProfile = (username: string) => {
@@ -1988,7 +2028,9 @@ const App = () => {
                   onLinkWallet: handleLinkWalletForTelegram,
                   walletDeepLink: telegramWalletLaunchLink?.primaryUrl || null,
                   onOpenHome: () => handleTabChange('home'),
-                  onCreateCase: handleCaseCreated,
+                  onCreateCase: (newCase: Case) => {
+                    setCases(prev => [newCase, ...prev]);
+                  },
                   externalProvider: telegramWalletConnectSession?.provider || null,
                   onConnectWalletForTopUp: async () => {
                     const { connectWallet: wcConnect } = await import('./utils/walletConnect');

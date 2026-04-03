@@ -49,12 +49,13 @@ const shortWallet = (value?: string) => {
 };
 
 type AdminViewProps = {
-  currentUser?: { walletAddress?: string | null };
+  currentUser?: { walletAddress?: string | null; role?: string | null };
 };
 
 export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
-  const canEditRoles =
+  const isBootstrapWalletUser =
     (currentUser?.walletAddress || '').toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase();
+  const canEditRoles = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -715,9 +716,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         disabled={!canEditRoles || user.walletAddress?.toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase()}
                         onChange={async (e) => {
                           setSaving(user.id);
-                          await api.updateAdminUserRole(user.id, e.target.value);
-                          await load();
-                          setSaving(null);
+                          try {
+                            await api.updateAdminUserRole(user.id, e.target.value);
+                            await load();
+                          } catch (err: any) {
+                            window.alert(err?.message || 'Failed to update role');
+                            await load();
+                          } finally {
+                            setSaving(null);
+                          }
                         }}
                         className="w-full bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
                       >
@@ -764,7 +771,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 {selectedUserId ? (
                   <UserDetail
                     userId={selectedUserId}
-                    isBootstrapAdmin={canEditRoles}
+                    isBootstrapAdmin={isBootstrapWalletUser}
                     onUserDeleted={() => {
                       setSelectedUserId(null);
                       void load();
@@ -1449,6 +1456,8 @@ const UserDetail: React.FC<{
   const u = detail.user;
   const refIn = detail.referralInsight;
   const sum = detail.summary;
+  const isImmutableBootstrap =
+    String(u.walletAddress || '').toLowerCase() === IMMUTABLE_ADMIN_WALLET.toLowerCase();
 
   const tabButtons: { key: UserDetailTab; label: string }[] = [
     { key: 'inventory', label: `Items (${u.inventory?.length ?? 0})` },
@@ -1482,8 +1491,9 @@ const UserDetail: React.FC<{
         {isBootstrapAdmin && (
           <button
             type="button"
-            disabled={deleting}
+            disabled={deleting || isImmutableBootstrap}
             onClick={async () => {
+              if (isImmutableBootstrap) return;
               if (
                 !window.confirm(
                   `Permanently delete user "${u.username}"? Cases they created will be reassigned to the main admin. This cannot be undone.`
@@ -1503,7 +1513,7 @@ const UserDetail: React.FC<{
             }}
             className="shrink-0 px-2 py-1.5 rounded-lg text-[10px] uppercase tracking-widest bg-red-500/15 text-red-300 border border-red-500/40 hover:bg-red-500/25 disabled:opacity-50"
           >
-            {deleting ? 'Deleting…' : 'Delete user'}
+            {isImmutableBootstrap ? 'Immutable account' : deleting ? 'Deleting…' : 'Delete user'}
           </button>
         )}
       </div>
@@ -1603,11 +1613,13 @@ const UserDetail: React.FC<{
       <div className="grid grid-cols-3 gap-2 items-center">
         <input
           value={balanceEdit}
+          disabled={isImmutableBootstrap}
           onChange={(e) => setBalanceEdit(e.target.value)}
           className="col-span-2 bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
         />
         <button
           onClick={async () => {
+            if (isImmutableBootstrap) return;
             setSaving(true);
             try {
               await api.updateAdminUserBalance(userId, Number(balanceEdit));
@@ -1616,9 +1628,10 @@ const UserDetail: React.FC<{
               setSaving(false);
             }
           }}
+          disabled={saving || isImmutableBootstrap}
           className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-widest bg-web3-accent/20 text-web3-accent border border-web3-accent/40"
         >
-          {saving ? 'Saving...' : 'Set balance'}
+          {isImmutableBootstrap ? 'Locked' : saving ? 'Saving...' : 'Set balance'}
         </button>
       </div>
 

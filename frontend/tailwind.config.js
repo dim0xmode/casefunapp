@@ -19,6 +19,8 @@ export default {
         'gradient': 'gradient 8s ease infinite',
         'float': 'float 30s ease-in-out infinite',
         'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'loading-bar': 'loadingBar 1.8s ease-in-out infinite',
+        'scale-in': 'scaleIn 0.5s cubic-bezier(0.16,1,0.3,1) forwards',
       },
       keyframes: {
         fadeIn: {
@@ -28,6 +30,15 @@ export default {
         fadeInUp: {
           '0%': { opacity: '0', transform: 'translateY(30px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        loadingBar: {
+          '0%': { transform: 'translateX(-100%)' },
+          '50%': { transform: 'translateX(0%)' },
+          '100%': { transform: 'translateX(200%)' },
+        },
+        scaleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.85)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
         },
         gradient: {
           '0%, 100%': { backgroundPosition: '0% 50%' },

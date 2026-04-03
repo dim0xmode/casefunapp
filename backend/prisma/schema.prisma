@@ -249,6 +249,7 @@ model Battle {
   cost        Float
   wonValue    Float
   wonItems    Json     // Array of items won
+  roundCount  Int?     // cases / rounds in this battle (both players get same count)
   timestamp   DateTime @default(now())
 
   // Relations

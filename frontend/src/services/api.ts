@@ -23,10 +23,14 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
+    const method = String(options.method || 'GET').toUpperCase();
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
-    const headers: HeadersInit = isFormData
-      ? { ...options.headers }
-      : { 'Content-Type': 'application/json', ...options.headers };
+    // Do not send Content-Type on GET/HEAD: some CDNs/WAFs treat "GET + application/json" as bot traffic.
+    const jsonBodyMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+    const headers: HeadersInit =
+      isFormData || !jsonBodyMethods.has(method)
+        ? { ...options.headers }
+        : { 'Content-Type': 'application/json', ...options.headers };
 
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -118,10 +122,10 @@ class ApiClient {
     });
   }
 
-  async linkWalletFromTelegram(walletAddress: string) {
+  async linkWalletFromTelegram(walletAddress: string, signature: string, message: string) {
     return this.request<{ user: any }>('/auth/telegram/wallet-link', {
       method: 'POST',
-      body: JSON.stringify({ walletAddress }),
+      body: JSON.stringify({ walletAddress, signature, message }),
     });
   }
 
@@ -194,7 +198,19 @@ class ApiClient {
     );
   }
 
-  async recordBattle(result: string, cost: number, wonItems: any[], options?: { reserveItems?: any[]; mode?: 'BOT' | 'PVP'; lobbyId?: string; opponentName?: string }) {
+  async recordBattle(
+    result: string,
+    cost: number,
+    wonItems: any[],
+    options?: {
+      reserveItems?: any[];
+      mode?: 'BOT' | 'PVP';
+      lobbyId?: string;
+      opponentName?: string;
+      battleProof?: string;
+      caseIds?: string[];
+    }
+  ) {
     return this.request<{ items: any[] }>('/user/battles/record', {
       method: 'POST',
       body: JSON.stringify({
@@ -205,14 +221,19 @@ class ApiClient {
         mode: options?.mode || 'PVP',
         lobbyId: options?.lobbyId || null,
         opponentName: options?.opponentName || null,
+        battleProof: options?.battleProof || null,
+        caseIds: options?.caseIds || [],
       }),
     });
   }
 
-  async chargeBattle(amount: number) {
+  async chargeBattle(caseIds: string[], battleProof?: string) {
     return this.request<{ balance: number }>('/user/battles/charge', {
       method: 'POST',
-      body: JSON.stringify({ amount }),
+      body: JSON.stringify({
+        caseIds,
+        ...(battleProof ? { battleProof } : {}),
+      }),
     });
   }
 
@@ -234,17 +255,26 @@ class ApiClient {
   }
 
   async startBattleLobby(lobbyId: string, mode: 'BOT' | 'PVP') {
-    return this.request<{ lobby: any }>(`/user/battles/lobbies/${lobbyId}/start`, {
+    return this.request<{ lobby: any; battleProof?: string; tieWinner?: 'USER' | 'OPPONENT' }>(
+      `/user/battles/lobbies/${lobbyId}/start`,
+      {
       method: 'POST',
       body: JSON.stringify({ mode }),
-    });
+      }
+    );
   }
 
   async resolveBattle(caseIds: string[], mode: 'BOT' | 'PVP') {
-    return this.request<{ mode: 'BOT' | 'PVP'; userDrops: any[]; opponentDrops: any[] }>('/user/battles/resolve', {
-      method: 'POST',
-      body: JSON.stringify({ caseIds, mode }),
-    });
+    return this.request<{
+      mode: 'BOT' | 'PVP';
+      userDrops: any[];
+      opponentDrops: any[];
+      tieWinner?: 'USER' | 'OPPONENT';
+      battleProof?: string;
+    }>('/user/battles/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ caseIds, mode }),
+      });
   }
 
   async finishBattleLobby(lobbyId: string) {
@@ -307,6 +337,40 @@ class ApiClient {
       method: 'POST',
       body: form,
     });
+  }
+
+  uploadAvatarWithProgress(
+    file: File,
+    meta: Record<string, any> | undefined,
+    onProgress: (pct: number) => void,
+  ): { promise: Promise<ApiResponse<{ avatarUrl: string; user: any }>>; abort: () => void } {
+    const form = new FormData();
+    form.append('file', file);
+    if (meta) form.append('meta', JSON.stringify(meta));
+    const xhr = new XMLHttpRequest();
+
+    const promise = new Promise<ApiResponse<{ avatarUrl: string; user: any }>>((resolve, reject) => {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+      xhr.addEventListener('load', () => {
+        try {
+          const json = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ status: 'success', data: json.data });
+          } else {
+            reject(new Error(json.message || 'Upload failed'));
+          }
+        } catch { reject(new Error('Upload failed')); }
+      });
+      xhr.addEventListener('error', () => reject(new Error('Network error')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+      xhr.open('POST', `${this.baseUrl}/user/avatar`);
+      xhr.withCredentials = true;
+      xhr.send(form);
+    });
+
+    return { promise, abort: () => xhr.abort() };
   }
 
   async updateAvatarMeta(meta: Record<string, any>) {
@@ -417,6 +481,38 @@ class ApiClient {
       method: 'POST',
       body: form,
     });
+  }
+
+  uploadCaseImageWithProgress(
+    file: File,
+    onProgress: (pct: number) => void,
+  ): { promise: Promise<ApiResponse<{ imageUrl: string }>>; abort: () => void } {
+    const form = new FormData();
+    form.append('file', file);
+    const xhr = new XMLHttpRequest();
+
+    const promise = new Promise<ApiResponse<{ imageUrl: string }>>((resolve, reject) => {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+      xhr.addEventListener('load', () => {
+        try {
+          const json = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ status: 'success', data: json.data });
+          } else {
+            reject(new Error(json.message || 'Upload failed'));
+          }
+        } catch { reject(new Error('Upload failed')); }
+      });
+      xhr.addEventListener('error', () => reject(new Error('Network error')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+      xhr.open('POST', `${this.baseUrl}/cases/upload`);
+      xhr.withCredentials = true;
+      xhr.send(form);
+    });
+
+    return { promise, abort: () => xhr.abort() };
   }
 
   async openCase(caseId: string) {

@@ -6,6 +6,7 @@ import {
   ExternalLink,
   MessageCircle,
   PlusCircle,
+  Sparkles,
   Swords,
   UserCircle2,
   Wallet,
@@ -29,6 +30,7 @@ interface BattleRecord {
   wonItems: Item[];
   timestamp?: number;
   caseCount?: number;
+  roundCount?: number;
 }
 
 type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -74,9 +76,16 @@ interface TelegramMiniAppViewProps {
   onBattleFinish: (
     wonItems: Item[],
     totalCost: number,
-    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null; opponentName?: string }
+    options?: {
+      reserveItems?: Item[];
+      mode?: 'BOT' | 'PVP';
+      lobbyId?: string | null;
+      opponentName?: string;
+      caseIds?: string[];
+      battleProof?: string | null;
+    }
   ) => void;
-  onChargeBattle: (amount: number) => Promise<boolean>;
+  onChargeBattle: (caseIds: string[], battleProof?: string | null) => Promise<boolean>;
   onOpenTopUp: (prefillUsdt?: number) => void;
   onBalanceUpdate?: (balance: number) => void;
   onOpenWalletConnect: () => void;
@@ -113,17 +122,17 @@ interface TelegramMiniAppViewProps {
 
 type MiniTab = 'cases' | 'create' | 'upgrade' | 'battle' | 'profile' | 'topup' | 'early';
 
-const PRIMARY_TABS: Array<{
-  id: MiniTab;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-}> = [
+type TabDef = { id: MiniTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> };
+
+const BASE_TABS: TabDef[] = [
   { id: 'cases', label: 'Cases', icon: Boxes },
   { id: 'create', label: 'Create', icon: PlusCircle },
   { id: 'upgrade', label: 'Upgrade', icon: Coins },
   { id: 'battle', label: 'Battle', icon: Swords },
   { id: 'profile', label: 'Profile', icon: UserCircle2 },
 ];
+
+const EARLY_TAB: TabDef = { id: 'early', label: 'Access', icon: Sparkles };
 
 const SECONDARY_TITLES: Partial<Record<MiniTab, string>> = {
   topup: 'Top Up',
@@ -164,8 +173,8 @@ const initTelegramApp = () => {
     if (!tg) return;
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
-    if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B1018');
-    if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#0B1018');
+    if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
+    if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#0B0C10');
   } catch { /* ignore */ }
 };
 
@@ -175,17 +184,49 @@ const initTelegramApp = () => {
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
     className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
-    style={{ background: 'var(--tg-theme-bg-color, #0B1018)' }}
+    style={{ background: '#0B0C10' }}
   >
-    {children}
+    <div className="absolute inset-0 pointer-events-none" style={{
+      background: [
+        'radial-gradient(ellipse 90% 55% at 50% -12%, rgba(102,252,241,0.10) 0%, transparent 55%)',
+        'radial-gradient(ellipse 70% 50% at 85% 100%, rgba(139,92,246,0.07) 0%, transparent 50%)',
+        'radial-gradient(ellipse 50% 45% at 10% 60%, rgba(16,185,129,0.05) 0%, transparent 50%)',
+      ].join(', '),
+    }} />
+    <div className="relative z-[1] flex flex-col flex-1 overflow-hidden">
+      {children}
+    </div>
   </div>
 );
 
-/** Centered full-screen layout for auth/wallet screens */
 const CenteredShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Shell>
     <div className="flex-1 flex items-center justify-center p-5 overflow-y-auto">
       {children}
+    </div>
+  </Shell>
+);
+
+const SplashScreen: React.FC = () => (
+  <Shell>
+    {/* Decorative glow orbs — match main site background feel */}
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute w-[340px] h-[340px] rounded-full blur-[100px] animate-pulse-slow" style={{ top: '-80px', right: '-40px', background: 'rgba(102,252,241,0.12)' }} />
+      <div className="absolute w-[280px] h-[280px] rounded-full blur-[90px] animate-pulse-slow" style={{ bottom: '-60px', left: '-30px', background: 'rgba(139,92,246,0.09)', animationDelay: '1.5s' }} />
+    </div>
+
+    <div className="relative z-[2] flex-1 flex flex-col items-center justify-center gap-8">
+      <div className="animate-scale-in flex flex-col items-center gap-3">
+        <div className="text-6xl font-black tracking-[0.2em]">
+          <span className="text-white/95">CASE</span>
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">FUN</span>
+        </div>
+        <div className="text-[10px] font-semibold tracking-[0.3em] text-web3-accent/60 uppercase animate-fade-in">Open&nbsp;&nbsp;·&nbsp;&nbsp;Win&nbsp;&nbsp;·&nbsp;&nbsp;Collect</div>
+      </div>
+
+      <div className="w-48 h-[3px] rounded-full bg-white/[0.06] overflow-hidden mt-2 animate-fade-in">
+        <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-web3-accent to-web3-success animate-loading-bar" />
+      </div>
     </div>
   </Shell>
 );
@@ -245,7 +286,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<MiniTab>('cases');
   const [lastPrimaryTab, setLastPrimaryTab] = useState<MiniTab>('cases');
+  const [successToast, setSuccessToast] = useState<string | null>(null);
   const [earlyContact, setEarlyContact] = useState('');
+  const [splashDone, setSplashDone] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashDone(true), 3400);
+    return () => clearTimeout(timer);
+  }, []);
   const [earlyMessage, setEarlyMessage] = useState('');
   const [earlyNotice, setEarlyNotice] = useState<string | null>(null);
   const [topUpUsdt, setTopUpUsdt] = useState('');
@@ -254,8 +302,47 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [topUpBusy, setTopUpBusy] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<string | null>(null);
   const [topUpPendingHash, setTopUpPendingHash] = useState<string | null>(null);
+  const [battleAlert, setBattleAlert] = useState<{ lobbyId: string; hostName: string; joinerName: string; rounds: number; totalCost: number } | null>(null);
+  const battleAlertSeenRef = React.useRef<Set<string>>(new Set());
 
   useEffect(() => { initTelegramApp(); }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isActivitiesEnabled) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await api.getBattleLobbies();
+        const lobbies = Array.isArray(res.data?.lobbies) ? res.data.lobbies : [];
+        const fresh = lobbies.find((l: any) => {
+          if (l?.status !== 'IN_PROGRESS' || !l?.startedAt) return false;
+          if (l.hostUserId !== user.id) return false;
+          if (activeTab === 'battle') return false;
+          const key = `${l.id}:${l.startedAt}`;
+          return !battleAlertSeenRef.current.has(key);
+        });
+        if (!fresh || cancelled) return;
+        battleAlertSeenRef.current.add(`${fresh.id}:${fresh.startedAt}`);
+        setBattleAlert({
+          lobbyId: fresh.id,
+          hostName: fresh.hostName || 'Host',
+          joinerName: fresh.joinerName || 'Opponent',
+          rounds: Array.isArray(fresh.caseIds) ? fresh.caseIds.length : 0,
+          totalCost: Number(fresh.totalCost || 0),
+        });
+      } catch {}
+    };
+    poll();
+    const timer = setInterval(poll, 8000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isAuthenticated, isActivitiesEnabled, user.id, activeTab]);
+
+  useEffect(() => {
+    if (!battleAlert) return;
+    const timer = setTimeout(() => setBattleAlert(null), 8000);
+    return () => clearTimeout(timer);
+  }, [battleAlert]);
 
   const hasWallet = Boolean(user.hasLinkedWallet && user.walletAddress);
   const caseMap = useMemo(() => new Map(cases.map((e) => [e.id, e])), [cases]);
@@ -274,10 +361,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     });
   }, [inventory, caseMap]);
 
-  const isSecondaryTab = activeTab === 'topup' || activeTab === 'early';
+  const needsEarlyAccess = !isActivitiesEnabled
+    && earlyAccessStatus?.blockReason !== 'ALREADY_APPROVED'
+    && earlyAccessStatus?.blockReason !== 'ALREADY_EARLY_ACCESS';
+
+  const primaryTabs = useMemo(() => {
+    return needsEarlyAccess ? [...BASE_TABS, EARLY_TAB] : BASE_TABS;
+  }, [needsEarlyAccess]);
+
+  const isSecondaryTab = activeTab === 'topup';
 
   const goToTab = (tab: MiniTab) => {
-    if (PRIMARY_TABS.find((t) => t.id === tab)) setLastPrimaryTab(tab);
+    if (primaryTabs.find((t) => t.id === tab)) setLastPrimaryTab(tab);
     setActiveTab(tab);
   };
 
@@ -389,8 +484,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
     if (activeTab === 'create') return (
       <CreateCaseView
-        onCreate={onCreateCase} creatorName={user.username} balance={balance}
-        onOpenTopUp={onOpenTopUp} onBalanceUpdate={onBalanceUpdate}
+        onCreate={(newCase) => { onCreateCase(newCase); goToTab('cases'); setSuccessToast(`Case "${newCase.name}" created!`); setTimeout(() => setSuccessToast(null), 4000); }}
+        creatorName={user.username} balance={balance}
+        onOpenTopUp={() => goToTab('topup')} onBalanceUpdate={onBalanceUpdate}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin={isActivitiesEnabled} cases={cases} isTelegramMiniApp
       />
@@ -430,20 +526,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           onOpenTelegramMiniApp={onOpenTelegramMiniApp} telegramBusy={telegramBusy}
           telegramError={telegramError} isBackgroundAnimated={isBackgroundAnimated}
           onToggleBackgroundAnimation={onToggleBackgroundAnimation} isTelegramMiniApp
+          telegramBotUsername="casefun_bot"
         />
-        {canSubmitEarly && (
-          <button
-            type="button"
-            onClick={() => goToTab('early')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.06] transition"
-          >
-            <MessageCircle size={18} style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }} />
-            <span className="flex-1 text-left text-sm font-medium" style={{ color: 'var(--tg-theme-text-color, #ffffff)' }}>
-              Request Early Access
-            </span>
-            <span style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }} className="text-sm">›</span>
-          </button>
-        )}
       </div>
     );
 
@@ -453,19 +537,19 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       return (
         <div className="space-y-3">
           {/* Balance card */}
-          <div className="rounded-2xl p-4" style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.04))' }}>
-            <div className="text-xs font-medium mb-1" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+          <div className="rounded-2xl p-4 border border-white/[0.06] bg-black/20">
+            <div className="text-xs font-medium mb-1 text-gray-500">
               Current balance
             </div>
-            <div className="text-3xl font-black" style={{ color: 'var(--tg-theme-text-color, #ffffff)' }}>
-              {Number(balance || 0).toFixed(2)} <span style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}>₮</span>
+            <div className="text-3xl font-black text-white">
+              {Number(balance || 0).toFixed(2)} <span className="text-web3-accent">₮</span>
             </div>
           </div>
 
           {/* Amount inputs */}
-          <div className="rounded-2xl p-4 space-y-4" style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.04))' }}>
+          <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
             <div>
-              <label className="text-xs font-medium block mb-2" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+              <label className="text-xs font-medium block mb-2 text-gray-500">
                 You get (Balance ₮)
               </label>
               <input
@@ -487,10 +571,10 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               </div>
             </div>
 
-            <div className="h-px" style={{ background: 'var(--tg-theme-hint-color, rgba(255,255,255,0.06))' }} />
+            <div className="h-px bg-white/[0.06]" />
 
             <div>
-              <label className="text-xs font-medium block mb-2" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+              <label className="text-xs font-medium block mb-2 text-gray-500">
                 You pay (ETH Sepolia)
               </label>
               <input
@@ -499,15 +583,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 placeholder="0.000000"
                 className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
               />
-              <div className="mt-1.5 text-xs" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+              <div className="mt-1.5 text-xs text-gray-500">
                 {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
               </div>
             </div>
           </div>
 
           {topUpStatus && (
-            <div className="px-4 py-3 rounded-xl border border-white/[0.06] text-sm text-gray-300 break-words"
-              style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.03))' }}>
+            <div className="px-4 py-3 rounded-xl border border-white/[0.06] bg-black/20 text-sm text-gray-300 break-words">
               {topUpStatus}
             </div>
           )}
@@ -526,20 +609,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               type="button"
               onClick={handleTopUpSubmit}
               disabled={!canTopUp}
-              className="w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition"
-              style={{
-                background: canTopUp ? 'var(--tg-theme-button-color, linear-gradient(to right, #66FCF1, #10B981))' : undefined,
-                color: canTopUp ? 'var(--tg-theme-button-text-color, #000)' : undefined,
-                ...(canTopUp ? {} : { background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }),
-              }}
+              className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
+                canTopUp
+                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black'
+                  : 'bg-white/[0.08] text-white/30'
+              }`}
             >
               {topUpBusy ? 'Processing…' : 'Top Up via MetaMask'}
             </button>
           )}
 
           <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs transition"
-            style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-web3-accent transition">
             Need test ETH? Sepolia faucet <ExternalLink size={11} />
           </a>
         </div>
@@ -554,8 +635,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             {earlyBlockMessage}
           </div>
         )}
-        <div className="rounded-2xl p-4 space-y-3"
-          style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.04))' }}>
+        <div className="rounded-2xl p-4 space-y-3 border border-white/[0.06] bg-black/20">
           <input
             value={earlyContact} onChange={(e) => setEarlyContact(e.target.value)}
             placeholder="@telegram_username"
@@ -566,18 +646,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             placeholder="Tell us why you need early access…" rows={4}
             className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] text-sm text-white focus:outline-none focus:border-web3-accent/40 resize-none"
           />
-          <div className="text-xs" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+          <div className="text-xs text-gray-500">
             {200 - earlyMessage.length} chars remaining
           </div>
           {earlyNotice && <div className="text-sm text-gray-300">{earlyNotice}</div>}
           <button
             type="button" onClick={submitEarlyAccess}
             disabled={earlyAccessSubmitting || !canSubmitEarly}
-            className="w-full py-3.5 rounded-xl text-sm font-black disabled:opacity-50 active:scale-[0.98] transition"
-            style={{
-              background: 'var(--tg-theme-button-color, linear-gradient(to right, #66FCF1, #10B981))',
-              color: 'var(--tg-theme-button-text-color, #000)',
-            }}
+            className="w-full py-3.5 rounded-xl text-sm font-black disabled:opacity-50 active:scale-[0.98] transition bg-gradient-to-r from-web3-accent to-web3-success text-black"
           >
             {earlyAccessSubmitting ? 'Sending…' : 'Submit Request'}
           </button>
@@ -586,20 +662,22 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
   };
 
+  // ── Loading splash — show for at least 2.4 s so users notice it ─────────────
+  if (!splashDone || isAuthenticating || isDevAuthenticating) {
+    return <SplashScreen />;
+  }
+
   // ── Unauthenticated ──────────────────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
       <CenteredShell>
         <div className="w-full max-w-sm space-y-5">
           <div className="text-center space-y-2">
-            <div
-              className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto border border-white/[0.08]"
-              style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(102,252,241,0.1))' }}
-            >
-              <span className="text-3xl font-black" style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}>CF</span>
+            <div className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto border border-white/[0.08] bg-web3-accent/10">
+              <span className="text-3xl font-black text-web3-accent">CF</span>
             </div>
-            <div className="text-2xl font-black" style={{ color: 'var(--tg-theme-text-color, #ffffff)' }}>Casefun</div>
-            <div className="text-sm" style={{ color: 'var(--tg-theme-hint-color, #9ca3af)' }}>
+            <div className="text-2xl font-black text-white">Casefun</div>
+            <div className="text-sm text-gray-400">
               Sign in with Telegram to start playing
             </div>
           </div>
@@ -607,19 +685,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           <div className="space-y-2.5">
             <button
               type="button" onClick={() => onAuthenticate()} disabled={isAuthenticating}
-              className="w-full py-4 rounded-2xl text-base font-black disabled:opacity-60 active:scale-[0.98] transition"
-              style={{
-                background: 'var(--tg-theme-button-color, linear-gradient(to right, #66FCF1, #10B981))',
-                color: 'var(--tg-theme-button-text-color, #000)',
-              }}
+              className="w-full py-4 rounded-2xl text-base font-black disabled:opacity-60 active:scale-[0.98] transition bg-gradient-to-r from-web3-accent to-web3-success text-black"
             >
               {isAuthenticating ? 'Authorizing…' : 'Sign In with Telegram'}
             </button>
             {onOpenTelegramBot && (
               <button
                 type="button" onClick={() => { if (onOpenTelegramBot) void onOpenTelegramBot(); }}
-                className="w-full py-3.5 rounded-2xl border border-white/[0.12] text-sm font-semibold inline-flex items-center justify-center gap-2 active:opacity-70 transition"
-                style={{ color: 'var(--tg-theme-text-color, #e5e7eb)' }}
+                className="w-full py-3.5 rounded-2xl border border-white/[0.12] text-sm font-semibold inline-flex items-center justify-center gap-2 active:opacity-70 transition text-gray-200"
               >
                 Open in Telegram <ExternalLink size={14} />
               </button>
@@ -627,8 +700,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             {showDevLogin && (
               <button
                 type="button" onClick={() => onDevAuthenticate?.()} disabled={isDevAuthenticating}
-                className="w-full py-3 rounded-2xl border border-white/[0.06] text-xs font-medium disabled:opacity-60 transition"
-                style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}
+                className="w-full py-3 rounded-2xl border border-white/[0.06] text-xs font-medium disabled:opacity-60 transition text-gray-500"
               >
                 {isDevAuthenticating ? 'Signing in…' : 'Dev Login'}
               </button>
@@ -657,40 +729,33 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             >
               <Wallet size={32} className="text-amber-400" />
             </div>
-            <div className="text-2xl font-black" style={{ color: 'var(--tg-theme-text-color, #ffffff)' }}>
+            <div className="text-2xl font-black text-white">
               Link your wallet
             </div>
-            <div className="text-sm" style={{ color: 'var(--tg-theme-hint-color, #9ca3af)' }}>
+            <div className="text-sm text-gray-400">
               Connect an EVM wallet to start playing
             </div>
           </div>
 
-          <div
-            className="rounded-2xl p-4 space-y-3"
-            style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.04))' }}
-          >
-            <ul className="space-y-2 text-sm" style={{ color: 'var(--tg-theme-hint-color, #9ca3af)' }}>
+          <div className="rounded-2xl p-4 space-y-3 border border-white/[0.06] bg-black/20">
+            <ul className="space-y-2 text-sm text-gray-400">
               <li className="flex items-center gap-2">
-                <span style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}>→</span>
+                <span className="text-web3-accent">→</span>
                 One wallet per account
               </li>
               <li className="flex items-center gap-2">
-                <span style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}>→</span>
+                <span className="text-web3-accent">→</span>
                 Use the same wallet on site and mini app
               </li>
             </ul>
             <button
               type="button" onClick={() => onLinkWallet()} disabled={isLinkingWallet}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl text-sm font-black disabled:opacity-60 active:scale-[0.98] transition"
-              style={{
-                background: 'var(--tg-theme-button-color, linear-gradient(to right, #66FCF1, #10B981))',
-                color: 'var(--tg-theme-button-text-color, #000)',
-              }}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl text-sm font-black disabled:opacity-60 active:scale-[0.98] transition bg-gradient-to-r from-web3-accent to-web3-success text-black"
             >
               <Wallet size={18} />
               {isLinkingWallet ? 'Connecting…' : 'Connect Wallet'}
             </button>
-            <div className="text-center text-xs" style={{ color: 'var(--tg-theme-hint-color, #6b7280)' }}>
+            <div className="text-center text-xs text-gray-500">
               MetaMask · Trust · OKX · Coinbase · WalletConnect
             </div>
           </div>
@@ -709,124 +774,110 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   return (
     <Shell>
       {/* ── Top bar ── */}
-      <div
-        className="shrink-0 flex items-center gap-3 px-4 border-b"
-        style={{
-          height: '56px',
-          background: 'var(--tg-theme-bg-color, #0B1018)',
-          borderColor: 'var(--tg-theme-hint-color, rgba(255,255,255,0.06))',
-        }}
-      >
-        {/* Left: back OR avatar */}
+      <div className="shrink-0 flex items-center gap-3 px-4" style={{ height: '52px' }}>
         {isSecondaryTab ? (
           <button
             type="button" onClick={() => goToTab(lastPrimaryTab)}
-            className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full border border-white/[0.08] active:bg-white/[0.08] transition"
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-white/[0.05] active:bg-white/[0.1] transition"
           >
-            <ChevronLeft size={18} style={{ color: 'var(--tg-theme-text-color, #e5e7eb)' }} />
+            <ChevronLeft size={18} className="text-gray-300" />
           </button>
         ) : (
-          <div className="w-9 h-9 shrink-0 rounded-full overflow-hidden border border-white/[0.1]">
+          <div className="w-8 h-8 shrink-0 rounded-xl overflow-hidden border border-white/[0.08]">
             {user.avatar ? (
               <img src={user.avatar} alt="" className="w-full h-full object-cover" />
             ) : (
-              <div
-                className="w-full h-full flex items-center justify-center text-sm font-black"
-                style={{
-                  background: 'var(--tg-theme-secondary-bg-color, rgba(102,252,241,0.15))',
-                  color: 'var(--tg-theme-accent-text-color, #66FCF1)',
-                }}
-              >
+              <div className="w-full h-full flex items-center justify-center text-xs font-black bg-web3-accent/10 text-web3-accent">
                 {(user.username || 'U')[0].toUpperCase()}
               </div>
             )}
           </div>
         )}
 
-        {/* Center: username or secondary title */}
         <div className="flex-1 min-w-0">
-          <div
-            className="text-sm font-bold truncate leading-tight"
-            style={{ color: 'var(--tg-theme-text-color, #ffffff)' }}
-          >
+          <div className="text-[15px] font-bold text-white truncate">
             {isSecondaryTab ? SECONDARY_TITLES[activeTab] : (user.username || 'User')}
           </div>
         </div>
 
-        {/* Right: balance chip → opens top-up */}
         <button
           type="button" onClick={() => goToTab('topup')}
-          className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full border border-white/[0.08] active:scale-95 transition"
-          style={{ background: 'var(--tg-theme-secondary-bg-color, rgba(102,252,241,0.08))' }}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl active:scale-95 transition"
+          style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}
         >
-          <span
-            className="text-[13px] font-black tabular-nums"
-            style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}
-          >
-            {Number(balance || 0).toFixed(2)} ₮
-          </span>
-          <span
-            className="text-base font-bold leading-none opacity-60"
-            style={{ color: 'var(--tg-theme-accent-text-color, #66FCF1)' }}
-          >
-            +
+          <Wallet size={14} className="text-web3-accent" />
+          <span className="text-[13px] font-black tabular-nums text-web3-accent">
+            {Number(balance || 0).toFixed(2)}
           </span>
         </button>
       </div>
 
       {/* ── Scrollable content ── */}
+      {successToast && (
+        <div className="mx-3 mt-2 px-4 py-3 rounded-xl bg-web3-accent/20 border border-web3-accent/40 text-web3-accent text-xs font-bold flex items-center justify-between animate-fade-in">
+          <span>{successToast}</span>
+          <button onClick={() => setSuccessToast(null)} className="ml-3 text-web3-accent/60 hover:text-white font-bold">✕</button>
+        </div>
+      )}
+
       <div
         className="flex-1 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        <div className="p-3 pb-6">
+        <div className="px-3 pt-2 pb-4">
           {renderTabContent()}
         </div>
       </div>
 
+      {/* Battle alert toast */}
+      {battleAlert && (
+        <button
+          type="button"
+          onClick={() => {
+            sessionStorage.setItem('casefun:focusBattleLobbyId', battleAlert.lobbyId);
+            goToTab('battle');
+            setBattleAlert(null);
+          }}
+          className="shrink-0 mx-3 mb-2 px-4 py-3 rounded-xl border border-web3-accent/50 bg-black/90 backdrop-blur-md text-left shadow-[0_0_20px_rgba(102,252,241,0.25)] active:scale-[0.98] transition animate-fade-in"
+        >
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-pulse" />
+            <span className="text-[10px] uppercase tracking-widest text-web3-accent font-bold">Battle started</span>
+          </div>
+          <div className="text-sm font-black text-white">{battleAlert.hostName} vs {battleAlert.joinerName}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{battleAlert.rounds} rounds · {Number(battleAlert.totalCost).toFixed(2)} ₮ · Tap to open</div>
+        </button>
+      )}
+
       {/* ── Bottom tab bar ── */}
       <div
-        className="shrink-0 flex border-t"
-        style={{
-          background: 'var(--tg-theme-bg-color, #0B1018)',
-          borderColor: 'var(--tg-theme-hint-color, rgba(255,255,255,0.06))',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}
+        className="shrink-0 border-t border-white/[0.04]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}
       >
-        {PRIMARY_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id} type="button"
-              onClick={() => goToTab(tab.id)}
-              className="flex-1 flex flex-col items-center justify-center gap-1 py-3 relative min-h-[56px] active:opacity-60 transition-opacity select-none"
-            >
-              {active && (
-                <span
-                  className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-full"
-                  style={{ background: 'var(--tg-theme-accent-text-color, #66FCF1)' }}
-                />
-              )}
-              <span style={{ color: active
-                ? 'var(--tg-theme-accent-text-color, #66FCF1)'
-                : 'var(--tg-theme-hint-color, #4b5563)',
-                display: 'flex', transition: 'color 150ms',
-              }}>
-                <Icon size={22} />
-              </span>
-              <span
-                className="text-[11px] font-medium leading-none transition-colors duration-150"
-                style={{ color: active
-                  ? 'var(--tg-theme-accent-text-color, #66FCF1)'
-                  : 'var(--tg-theme-hint-color, #4b5563)'
-                }}
+        <div className="flex items-end px-1 pt-1 pb-1">
+          {primaryTabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id} type="button"
+                onClick={() => goToTab(tab.id)}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-all duration-150 select-none"
+                style={active ? { background: 'rgba(102,252,241,0.08)' } : undefined}
               >
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
+                <span className="flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                  <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+                </span>
+                <span
+                  className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150"
+                  style={{ color: active ? '#66FCF1' : '#4b5563' }}
+                >
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Shell>
   );

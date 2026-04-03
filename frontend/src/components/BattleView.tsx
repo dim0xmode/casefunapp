@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Case, Item, ImageMeta } from '../types';
 import { Bot, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Trash2, Sparkles } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
@@ -22,10 +22,17 @@ interface BattleViewProps {
   onBattleFinish: (
     wonItems: Item[],
     totalCost: number,
-    options?: { reserveItems?: Item[]; mode?: 'BOT' | 'PVP'; lobbyId?: string | null; opponentName?: string }
+    options?: {
+      reserveItems?: Item[];
+      mode?: 'BOT' | 'PVP';
+      lobbyId?: string | null;
+      opponentName?: string;
+      caseIds?: string[];
+      battleProof?: string | null;
+    }
   ) => void;
   balance: number;
-  onChargeBattle: (amount: number) => Promise<boolean>;
+  onChargeBattle: (caseIds: string[], battleProof?: string | null) => Promise<boolean>;
   onOpenTopUp: (prefillUsdt?: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
@@ -57,15 +64,23 @@ export const BattleView: React.FC<BattleViewProps> = ({
     mode?: 'BOT' | 'PVP' | null;
     roundsJson?: any[] | null;
     winnerName?: string | null;
+    battleProof?: string | null;
+    tieWinner?: 'USER' | 'OPPONENT' | null;
     hostAvatar?: string | null;
     hostAvatarMeta?: ImageMeta | null;
     joinerAvatar?: string | null;
     joinerAvatarMeta?: ImageMeta | null;
     cases: Case[];
     createdAt: number;
+    startedAt?: number | null;
     source?: 'LOBBY' | 'BOT';
   };
+
+  const ROUND_TOTAL_MS = SPIN_DURATION_MS + 500 + 2000;
+  const COUNTDOWN_MS = 3000;
   const [gameState, setGameState] = useState<'SETUP' | 'BATTLE' | 'RESULT'>('SETUP');
+  const [battleStartedAt, setBattleStartedAt] = useState<number | null>(null);
+  const lastRevealedRef = useRef(-1);
   const [selectedCases, setSelectedCases] = useState<Case[]>([]);
   const [currentRound, setCurrentRound] = useState(0);
   const [opponent, setOpponent] = useState<{name: string, type: 'BOT' | null}>({name: 'Waiting...', type: null});
@@ -86,6 +101,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const [createConfirm, setCreateConfirm] = useState(false);
   const [isOwnBattle, setIsOwnBattle] = useState(false);
   const [currentBattleId, setCurrentBattleId] = useState<string | null>(null);
+  const [currentBattleSource, setCurrentBattleSource] = useState<'LOBBY' | 'BOT' | null>(null);
   const [isSpectator, setIsSpectator] = useState(false);
   const [forcedWinnerName, setForcedWinnerName] = useState<string | null>(null);
   const [prefetchedRounds, setPrefetchedRounds] = useState<any[] | null>(null);
@@ -99,6 +115,35 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const [rightPlayerIsBot, setRightPlayerIsBot] = useState(false);
   const [isWaitingForOwner, setIsWaitingForOwner] = useState(false);
   const [ownerWaitSeconds, setOwnerWaitSeconds] = useState(5);
+  const [battleProof, setBattleProof] = useState<string | null>(null);
+  const [battleTieWinner, setBattleTieWinner] = useState<'USER' | 'OPPONENT' | null>(null);
+  const [battleError, setBattleError] = useState<string | null>(null);
+  const [battleLoading, setBattleLoading] = useState(false);
+  const [showTiebreaker, setShowTiebreaker] = useState(false);
+  const [tiebreakerRotation, setTiebreakerRotation] = useState(0);
+  const [tiebreakerRevealed, setTiebreakerRevealed] = useState(false);
+  const isServerBackedBattle = currentBattleSource === 'LOBBY' && Boolean(currentBattleId);
+
+  useEffect(() => {
+    if (gameState !== 'BATTLE') return;
+    let lock: WakeLockSentinel | null = null;
+    const acquire = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          lock = await navigator.wakeLock.request('screen');
+        }
+      } catch { /* device may not support Wake Lock */ }
+    };
+    acquire();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && !lock) acquire();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      lock?.release();
+    };
+  }, [gameState]);
 
   const isCaseExpired = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
@@ -129,7 +174,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
   const pickHostWinsOnTie = () => {
     // Deterministic tie-break for PVP: both clients compute the same winner.
-    if (!currentBattleId) return Math.random() < 0.5;
+    if (!currentBattleId) return false;
     let hash = 0;
     for (let i = 0; i < currentBattleId.length; i += 1) {
       hash = (hash * 31 + currentBattleId.charCodeAt(i)) % 2147483647;
@@ -137,9 +182,21 @@ export const BattleView: React.FC<BattleViewProps> = ({
     return hash % 2 === 0;
   };
 
+  const tieWheelJitterDeg = () => {
+    const s = currentBattleId || 'battle';
+    let h = 7;
+    for (let i = 0; i < s.length; i += 1) {
+      h = (h * 31 + s.charCodeAt(i)) % 2147483647;
+    }
+    return 20 + (h % 46);
+  };
+
   const resolveUserWon = (userTotal: number, opponentTotal: number) => {
     if (userTotal > opponentTotal) return true;
     if (userTotal < opponentTotal) return false;
+    if (battleTieWinner) {
+      return battleTieWinner === 'USER';
+    }
     const hostWinsOnTie = pickHostWinsOnTie();
     return isOwnBattle ? hostWinsOnTie : !hostWinsOnTie;
   };
@@ -149,9 +206,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
     [cases]
   );
 
-  const toOutcomesFromRounds = (battle: BattleEntry, rounds: any[]) => {
+  const toOutcomesFromRounds = (battle: BattleEntry | Record<string, any>, rounds: any[]) => {
     if (!Array.isArray(rounds)) return [] as { userItem: Item; botItem: Item }[];
-    const isHost = battle.host === userName;
+    const hostDisplay = String((battle as any).host ?? (battle as any).hostName ?? '');
+    const isHost = hostDisplay === userName;
     const isJoiner = Boolean(battle.joinerName) && battle.joinerName === userName;
     const isParticipant = isHost || isJoiner;
     return rounds.map((round: any) => {
@@ -233,8 +291,14 @@ export const BattleView: React.FC<BattleViewProps> = ({
             mode: lobby.mode || null,
             roundsJson: Array.isArray(lobby.roundsJson) ? lobby.roundsJson : null,
             winnerName: lobby.winnerName || null,
+            battleProof: typeof lobby.battleProof === 'string' ? lobby.battleProof : null,
+            tieWinner:
+              lobby.tieWinner === 'USER' || lobby.tieWinner === 'OPPONENT'
+                ? lobby.tieWinner
+                : null,
             cases: lobbyCases,
             createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
+            startedAt: lobby.startedAt ? new Date(lobby.startedAt).getTime() : null,
             source: 'LOBBY',
           };
         })
@@ -269,16 +333,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
     return () => clearInterval(timer);
   }, [activeCases.length]);
 
-  useEffect(() => {
-    if (gameState !== 'SETUP') return;
-    const focusLobbyId = sessionStorage.getItem('casefun:focusBattleLobbyId');
-    if (!focusLobbyId) return;
-    const target = availableBattles.find((battle) => battle.id === focusLobbyId);
-    if (!target) return;
-    sessionStorage.removeItem('casefun:focusBattleLobbyId');
-    joinBattle(target);
-  }, [availableBattles, gameState]);
-
+  // Must run before the auto-join effect below: on Back we go to SETUP while
+  // activeBattleLobbyId still exists until this clears it — otherwise joinBattle re-fires.
   useEffect(() => {
     if (gameState !== 'SETUP' && currentBattleId) {
       sessionStorage.setItem('casefun:activeBattleLobbyId', currentBattleId);
@@ -288,6 +344,62 @@ export const BattleView: React.FC<BattleViewProps> = ({
   }, [gameState, currentBattleId]);
 
   useEffect(() => {
+    if (gameState !== 'SETUP') return;
+    const focusId = sessionStorage.getItem('casefun:focusBattleLobbyId')
+                 || sessionStorage.getItem('casefun:activeBattleLobbyId');
+    if (!focusId) return;
+    const target = availableBattles.find((battle) => battle.id === focusId);
+    if (!target) return;
+    sessionStorage.removeItem('casefun:focusBattleLobbyId');
+    joinBattle(target);
+  }, [availableBattles, gameState]);
+
+  useEffect(() => {
+    if (
+      gameState !== 'BATTLE' ||
+      !isOwnBattle ||
+      !currentBattleId ||
+      battleStarted ||
+      currentBattleSource !== 'LOBBY' ||
+      !isAdmin
+    )
+      return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await api.getBattleLobbies();
+        const lobbies = Array.isArray(res.data?.lobbies) ? res.data.lobbies : [];
+        const lobby = lobbies.find((l: any) => l.id === currentBattleId);
+        if (!lobby || cancelled) return;
+        if (lobby.joinerName && !hasRealOpponent) {
+          setHasRealOpponent(true);
+          setBotName(lobby.joinerName);
+          setOpponent({ name: lobby.joinerName, type: 'BOT' });
+          setRightPlayerAvatar(lobby.joinerAvatar || null);
+          setRightPlayerAvatarMeta(lobby.joinerAvatarMeta || undefined);
+          setRightPlayerIsBot(false);
+        }
+        if (lobby.status === 'IN_PROGRESS' && Array.isArray(lobby.roundsJson) && lobby.roundsJson.length > 0) {
+          const outcomes = toOutcomesFromRounds(lobby, lobby.roundsJson);
+          setBattleOutcomes(outcomes);
+          setPrefetchedRounds(lobby.roundsJson);
+          if (typeof lobby.battleProof === 'string') setBattleProof(lobby.battleProof);
+          if (lobby.tieWinner === 'USER' || lobby.tieWinner === 'OPPONENT') {
+            setBattleTieWinner(lobby.tieWinner);
+          }
+          if (lobby.startedAt) setBattleStartedAt(new Date(lobby.startedAt).getTime());
+          setBattleStarted(true);
+          setCountdown(3);
+        }
+      } catch {}
+    };
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [gameState, isOwnBattle, currentBattleId, battleStarted, currentBattleSource, hasRealOpponent, isAdmin]);
+
+  useEffect(() => {
     return () => {
       sessionStorage.removeItem('casefun:activeBattleLobbyId');
     };
@@ -295,6 +407,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
   const joinBattle = (battle: BattleEntry) => {
     setSelectedCases(battle.cases);
+    setBattleProof(battle.battleProof || null);
+    setBattleTieWinner(
+      battle.tieWinner === 'USER' || battle.tieWinner === 'OPPONENT' ? battle.tieWinner : null
+    );
     setCurrentRound(0);
     setHostName(battle.host);
     const isHost = battle.host === userName;
@@ -330,6 +446,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setGameState('BATTLE');
     setCountdown(null);
     setStartConfirm(false);
+    setBattleStartedAt(battle.startedAt || null);
+    lastRevealedRef.current = -1;
     const isLobbyViewer = battle.source === 'LOBBY' && !!battle.status && battle.status !== 'OPEN';
     const isParticipant = battle.host === userName || battle.joinerName === userName;
     setIsSpectator(isLobbyViewer && !isParticipant);
@@ -355,7 +473,18 @@ export const BattleView: React.FC<BattleViewProps> = ({
     }
     setIsOwnBattle(battle.host === userName);
     setCurrentBattleId(battle.id);
+    setCurrentBattleSource(battle.source === 'LOBBY' ? 'LOBBY' : 'BOT');
     setPrefetchedRounds(Array.isArray(battle.roundsJson) ? battle.roundsJson : null);
+  };
+
+  const joinBot = () => {
+    const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+    setBotName(name);
+    setOpponent({ name, type: 'BOT' });
+    setRightPlayerAvatar(null);
+    setRightPlayerAvatarMeta(undefined);
+    setRightPlayerIsBot(true);
+    setHasRealOpponent(false);
   };
 
   const addCaseToCreate = (caseData: Case) => {
@@ -427,7 +556,6 @@ export const BattleView: React.FC<BattleViewProps> = ({
       onOpenWalletConnect();
       return;
     }
-    if (!isAdmin) return;
     if (!createConfirm) {
       if (balance < createTotalCost) {
         onOpenTopUp();
@@ -440,18 +568,23 @@ export const BattleView: React.FC<BattleViewProps> = ({
       onOpenTopUp();
       return;
     }
+    setBattleError(null);
+    setBattleLoading(true);
     try {
       const lobbyResponse = await api.createBattleLobby(createSelectedCases.map((entry) => entry.id));
       const lobby = lobbyResponse.data?.lobby;
       if (!lobby?.id) {
+        setBattleError('Failed to create lobby — server returned empty response');
         setCreateConfirm(false);
         return;
       }
 
-      const charged = await onChargeBattle(createTotalCost);
-      if (!charged) {
-        // rollback unpaid lobby so it doesn't stay visible
+      const chargeCaseIds = createSelectedCases.map((entry) => entry.id);
+      try {
+        await onChargeBattle(chargeCaseIds);
+      } catch (chargeErr: any) {
         await api.finishBattleLobby(String(lobby.id)).catch(() => {});
+        setBattleError(`Charge failed: ${chargeErr?.message || ' unknown'} [ids=${chargeCaseIds.length}:${chargeCaseIds.join(',')}]`);
         setCreateConfirm(false);
         return;
       }
@@ -462,23 +595,28 @@ export const BattleView: React.FC<BattleViewProps> = ({
         hostUserId: String(lobby.hostUserId || ''),
         cases: createSelectedCases,
         createdAt: new Date(lobby.createdAt || Date.now()).getTime(),
+        source: 'LOBBY',
+        status: 'OPEN',
       };
       await loadBattleLobbies();
       setCreateSelectedCases([]);
       setCreateBattleOpen(false);
       setCreateConfirm(false);
       joinBattle(newBattle);
-    } catch {
+    } catch (err: any) {
+      setBattleError(err?.message || 'Failed to create battle');
       setCreateConfirm(false);
+    } finally {
+      setBattleLoading(false);
     }
   };
 
   const handleStartBattle = async () => {
+    setBattleError(null);
     if (!isAuthenticated) {
       onOpenWalletConnect();
       return;
     }
-    if (!isAdmin) return;
     const requiresCharge = !isOwnBattle && !isSpectator;
     if (!startConfirm) {
       if (requiresCharge && !canAffordBattle) {
@@ -492,40 +630,61 @@ export const BattleView: React.FC<BattleViewProps> = ({
       onOpenTopUp();
       return;
     }
-    if (requiresCharge) {
-      const charged = await onChargeBattle(totalCost);
-      if (!charged) {
-        setStartConfirm(false);
-        return;
-      }
-      if (currentBattleId) {
+    setBattleLoading(true);
+    try {
+      if (requiresCharge) {
         try {
-          await api.joinBattleLobby(currentBattleId);
-        } catch {
-          // if lobby join fails, we still allow local battle flow
+          await onChargeBattle(selectedCases.map((entry) => entry.id), battleProof);
+        } catch (chargeErr: any) {
+          setBattleError(`Charge failed: ${chargeErr?.message || 'unknown error'}`);
+          setStartConfirm(false);
+          setBattleLoading(false);
+          return;
+        }
+        if (isServerBackedBattle && currentBattleId) {
+          try {
+            await api.joinBattleLobby(currentBattleId);
+          } catch {
+            // if lobby join fails, we still allow local battle flow
+          }
         }
       }
-    }
-    if (hasRealOpponent && !isOwnBattle) {
+      if (hasRealOpponent && !isOwnBattle) {
+        setStartConfirm(false);
+        setIsWaitingForOwner(true);
+        setOwnerWaitSeconds(5);
+        return;
+      }
+      await startBattleNow();
+    } catch (err: any) {
+      setBattleError(err?.message || 'Battle start failed');
       setStartConfirm(false);
-      setIsWaitingForOwner(true);
-      setOwnerWaitSeconds(5);
-      return;
+    } finally {
+      setBattleLoading(false);
     }
-    startBattleNow();
   };
 
   const startBattleNow = async () => {
-    if (currentBattleId && !isSpectator) {
+    if (isServerBackedBattle && currentBattleId && !isSpectator) {
       try {
         const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
         const startResponse = await api.startBattleLobby(currentBattleId, mode);
         const rounds = Array.isArray(startResponse.data?.lobby?.roundsJson) ? startResponse.data?.lobby?.roundsJson : null;
         setPrefetchedRounds(rounds);
+        setBattleProof(typeof startResponse.data?.battleProof === 'string' ? startResponse.data.battleProof : null);
+        setBattleTieWinner(
+          startResponse.data?.tieWinner === 'USER' || startResponse.data?.tieWinner === 'OPPONENT'
+            ? startResponse.data.tieWinner
+            : null
+        );
+        const serverStarted = startResponse.data?.lobby?.startedAt;
+        if (serverStarted) setBattleStartedAt(new Date(serverStarted).getTime());
       } catch {
-        // proceed with local resolve fallback
+        setBattleProof(null);
+        setBattleTieWinner(null);
       }
     }
+    if (!battleStartedAt) setBattleStartedAt(Date.now());
     setStartConfirm(false);
     setIsWaitingForOwner(false);
     setBattleStarted(true);
@@ -555,6 +714,13 @@ export const BattleView: React.FC<BattleViewProps> = ({
   }, [countdown]);
 
   const initializeBattle = async () => {
+    if (battleOutcomes.length > 0) {
+      setUserDrops([]);
+      setBotDrops([]);
+      setCurrentRound(0);
+      lastRevealedRef.current = -1;
+      return;
+    }
     if (prefetchedRounds && currentBattleId) {
       const battle = [...availableBattles, ...botBattles].find((entry) => entry.id === currentBattleId);
       if (battle) {
@@ -563,6 +729,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
         setUserDrops([]);
         setBotDrops([]);
         setCurrentRound(0);
+        lastRevealedRef.current = -1;
         return;
       }
     }
@@ -574,6 +741,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
       );
       const userResolved = Array.isArray(response.data?.userDrops) ? response.data.userDrops : [];
       const opponentResolved = Array.isArray(response.data?.opponentDrops) ? response.data.opponentDrops : [];
+      setBattleProof(typeof response.data?.battleProof === 'string' ? response.data.battleProof : null);
+      setBattleTieWinner(
+        response.data?.tieWinner === 'USER' || response.data?.tieWinner === 'OPPONENT'
+          ? response.data.tieWinner
+          : null
+      );
       if (userResolved.length !== selectedCases.length || opponentResolved.length !== selectedCases.length) {
         throw new Error('Resolve failed');
       }
@@ -585,7 +758,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setUserDrops([]);
     setBotDrops([]);
     setCurrentRound(0);
+    lastRevealedRef.current = -1;
     } catch {
+      setBattleProof(null);
+      setBattleTieWinner(null);
       const outcomes = selectedCases.map((caseItem) => {
         const sorted = [...caseItem.possibleDrops].sort((a, b) => Number(a.value || 0) - Number(b.value || 0));
         const safe = sorted[0] || caseItem.possibleDrops[0];
@@ -597,6 +773,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
       setBattleOutcomes(outcomes);
       setUserDrops([]);
       setBotDrops([]);
+      lastRevealedRef.current = -1;
       setCurrentRound(0);
     }
   };
@@ -605,54 +782,55 @@ export const BattleView: React.FC<BattleViewProps> = ({
     if (gameState !== 'BATTLE') return;
     if (battleOutcomes.length === 0) return;
 
-    let mounted = true;
+    const startTime = battleStartedAt || Date.now();
+    const totalRounds = selectedCases.length;
+    lastRevealedRef.current = -1;
+    let finished = false;
 
-    const runRoundSequence = async () => {
-      await new Promise(resolve => setTimeout(resolve, SPIN_DURATION_MS + 500));
-      
-      if (!mounted) return;
+    const tick = () => {
+      if (finished) return;
+      const elapsed = Date.now() - startTime - COUNTDOWN_MS;
+      if (elapsed < 0) return;
 
-      
-      
-      const outcome = battleOutcomes[currentRound];
-      if (outcome) {
-        setUserDrops(prev => [outcome.userItem, ...prev]);
-        setBotDrops(prev => [outcome.botItem, ...prev]);
+      const roundIdx = Math.min(Math.floor(elapsed / ROUND_TOTAL_MS), totalRounds - 1);
+      const inRound = elapsed - roundIdx * ROUND_TOTAL_MS;
+      const spinDone = inRound >= SPIN_DURATION_MS + 500;
+
+      const revealUpTo = spinDone ? roundIdx : roundIdx - 1;
+      if (revealUpTo > lastRevealedRef.current) {
+        const newUser: Item[] = [];
+        const newBot: Item[] = [];
+        for (let i = 0; i <= revealUpTo; i++) {
+          const o = battleOutcomes[i];
+          if (o) { newUser.push(o.userItem); newBot.push(o.botItem); }
+        }
+        setUserDrops(newUser);
+        setBotDrops(newBot);
+        lastRevealedRef.current = revealUpTo;
       }
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      if (!mounted) return;
+      setCurrentRound((prev) => (prev !== roundIdx ? roundIdx : prev));
 
-      if (currentRound < selectedCases.length - 1) {
-        setCurrentRound(prev => prev + 1);
-      } else {
+      if (elapsed >= totalRounds * ROUND_TOTAL_MS) {
+        finished = true;
         finishGame();
       }
     };
 
-    runRoundSequence();
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => { finished = true; clearInterval(timer); };
+  }, [gameState, battleOutcomes, battleStartedAt, selectedCases.length]);
 
-    return () => { mounted = false; };
-  }, [gameState, currentRound, battleOutcomes, selectedCases.length]);
-
-  const finishGame = () => {
-    setGameState('RESULT');
-    
-    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
-    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
-
+  const commitFinish = (finalUserTotal: number, finalBotTotal: number) => {
     let wonItems: Item[] = [];
     let reserveItems: Item[] = [];
     const mode: 'BOT' | 'PVP' = hasRealOpponent ? 'PVP' : 'BOT';
-    
+
     const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
     if (userWon) {
-      const allUserItems = battleOutcomes.map(o => o.userItem);
-      const allBotItems = battleOutcomes.map(o => o.botItem);
-      wonItems = [...allUserItems, ...allBotItems];
+      wonItems = [...battleOutcomes.map(o => o.userItem), ...battleOutcomes.map(o => o.botItem)];
     } else if (isOwnBattle) {
-      // Bot case: user lost, user's own drops are moved to reserve.
       reserveItems = battleOutcomes.map((entry) => entry.userItem);
     }
 
@@ -661,27 +839,67 @@ export const BattleView: React.FC<BattleViewProps> = ({
       onBattleFinish(wonItems, totalCost, {
         reserveItems,
         mode,
-        lobbyId: currentBattleId,
+        lobbyId: isServerBackedBattle ? currentBattleId : null,
         opponentName,
+        caseIds: selectedCases.map((entry) => entry.id),
+        battleProof,
       });
     }
     const winnerName = isSpectator
       ? (() => {
-          const spectatorTie = finalUserTotal === finalBotTotal;
-          if (spectatorTie) {
+          if (finalUserTotal === finalBotTotal) {
             return pickHostWinsOnTie() ? (hostName || 'Host') : (botName || 'Opponent');
           }
           return finalUserTotal > finalBotTotal ? (hostName || 'Host') : (botName || 'Opponent');
         })()
       : (userWon ? userName : (isOwnBattle ? (botName || 'Bot') : (hostName || 'Opponent')));
     setForcedWinnerName(winnerName);
-    if (currentBattleId) {
+    if (isServerBackedBattle && currentBattleId) {
       setAvailableBattles(prev => prev.filter(battle => battle.id !== currentBattleId));
       api.finishBattleLobbyWithWinner(currentBattleId, winnerName).catch(() => {});
     }
   };
 
+  const finishGame = () => {
+    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
+    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
+    const isTie = finalUserTotal === finalBotTotal;
+
+    if (isTie) {
+      setShowTiebreaker(true);
+      setTiebreakerRevealed(false);
+      setTiebreakerRotation(0);
+
+      const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
+      const leftWins = isOwnBattle ? userWon : !userWon;
+      const baseSpins = 5 * 360;
+      const jitter = tieWheelJitterDeg();
+      const targetAngle = leftWins ? (90 + jitter) : (270 + jitter);
+      const finalRotation = baseSpins + targetAngle;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setTiebreakerRotation(finalRotation));
+      });
+
+      setTimeout(() => {
+        setTiebreakerRevealed(true);
+      }, 4200);
+
+      setTimeout(() => {
+        setShowTiebreaker(false);
+        setTiebreakerRevealed(false);
+        setGameState('RESULT');
+        commitFinish(finalUserTotal, finalBotTotal);
+      }, 6000);
+    } else {
+      setGameState('RESULT');
+      commitFinish(finalUserTotal, finalBotTotal);
+    }
+  };
+
   const playAgain = () => {
+    sessionStorage.removeItem('casefun:activeBattleLobbyId');
+    sessionStorage.removeItem('casefun:focusBattleLobbyId');
     setSelectedCases([]);
     setCurrentRound(0);
     setUserDrops([]);
@@ -694,6 +912,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setStartConfirm(false);
     setBattleStarted(false);
     setCurrentBattleId(null);
+    setCurrentBattleSource(null);
     setIsSpectator(false);
     setForcedWinnerName(null);
     setPrefetchedRounds(null);
@@ -706,6 +925,13 @@ export const BattleView: React.FC<BattleViewProps> = ({
     setHasRealOpponent(false);
     setIsWaitingForOwner(false);
     setOwnerWaitSeconds(5);
+    setBattleProof(null);
+    setBattleTieWinner(null);
+    setShowTiebreaker(false);
+    setTiebreakerRotation(0);
+    setTiebreakerRevealed(false);
+    setBattleStartedAt(null);
+    lastRevealedRef.current = -1;
     setGameState('SETUP');
   };
 
@@ -720,41 +946,52 @@ export const BattleView: React.FC<BattleViewProps> = ({
     return `${hours}h ${minutes}m`;
   };
 
+  const ErrorBanner = battleError ? (
+    <div className="mx-2 mb-2 px-4 py-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs flex items-center justify-between">
+      <span>{battleError}</span>
+      <button onClick={() => setBattleError(null)} className="ml-3 text-red-400 hover:text-white font-bold">✕</button>
+    </div>
+  ) : null;
+
   // SETUP Screen
   if (gameState === 'SETUP') {
     return (
-      <div className={`flex flex-col ${isTelegramMiniApp ? 'h-auto min-h-0' : 'h-full'}`}>
-        <div className={`flex-1 overflow-y-auto custom-scrollbar ${isTelegramMiniApp ? 'p-3' : 'p-6'}`}>
-          <div className="flex flex-col items-center gap-4 mb-6">
-            <h2 className={`${isTelegramMiniApp ? 'text-xl' : 'text-3xl md:text-4xl'} font-black tracking-tight text-white`}>
-              {isTelegramMiniApp ? (
-                <>
-                  BATTLE
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                    LOBBY
-                  </span>
-                </>
-              ) : (
-                <>
-                  AVAILABLE
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                    BATTLES
-                  </span>
-                </>
-              )}
-          </h2>
-            <AdminActionButton
-              isAuthenticated={isAuthenticated}
-              isAdmin={isAdmin}
-              balance={balance}
-              cost={0}
-              onConnect={onOpenWalletConnect}
-              onTopUp={(_shortfall) => {}}
-              onAction={() => setCreateBattleOpen(true)}
-              readyLabel="Create Battle"
-              className="px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs shadow-[0_0_18px_rgba(102,252,241,0.35)]"
-            />
-          </div>
+      <div className={`flex flex-col ${isTelegramMiniApp ? '' : 'h-full'}`}>
+        {ErrorBanner}
+        <div className={`${isTelegramMiniApp ? 'p-2' : 'flex-1 overflow-y-auto custom-scrollbar p-6'}`}>
+          {isTelegramMiniApp ? (
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="text-lg font-black tracking-tight text-white">
+                BATTLE<span className="text-web3-accent">LOBBY</span>
+              </div>
+              <button
+                onClick={() => setCreateBattleOpen(true)}
+                className="px-4 py-2 rounded-xl font-black uppercase tracking-widest text-[10px] bg-gradient-to-r from-web3-accent to-web3-success text-black"
+              >
+                + Create
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <h2 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+                AVAILABLE
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                  BATTLES
+                </span>
+              </h2>
+              <AdminActionButton
+                isAuthenticated={isAuthenticated}
+                isAdmin={isAdmin}
+                balance={balance}
+                cost={0}
+                onConnect={onOpenWalletConnect}
+                onTopUp={(_shortfall) => {}}
+                onAction={() => setCreateBattleOpen(true)}
+                readyLabel="Create Battle"
+                className="px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs shadow-[0_0_18px_rgba(102,252,241,0.35)]"
+              />
+            </div>
+          )}
           <div className="mb-4">
             <SearchInput
               value={priceFilter}
@@ -778,7 +1015,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                     >
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-400">
-                          <UserIcon size={14} className="text-web3-accent" />
+                          {battle.hostAvatar ? <div className="w-5 h-5 rounded-full overflow-hidden shrink-0"><ImageWithMeta src={battle.hostAvatar} meta={battle.hostAvatarMeta ?? undefined} className="w-full h-full rounded-full" /></div> : <UserIcon size={14} className="text-web3-accent" />}
                           {battle.host}
                         </div>
                         {!isTelegramMiniApp && (
@@ -847,80 +1084,75 @@ export const BattleView: React.FC<BattleViewProps> = ({
           )}
 
           <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">All Battles</div>
-          <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 ${isTelegramMiniApp ? 'gap-2' : 'gap-4'}`}>
+          <div className={`grid ${isTelegramMiniApp ? 'grid-cols-1 gap-2' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'}`}>
             {otherBattles.map((battle) => {
               const battleCost = battle.cases.reduce((sum, c) => sum + c.price, 0);
-              return (
+              const isBotBattle = battle.source === 'BOT';
+              return isTelegramMiniApp ? (
                 <div
                   key={battle.id}
-                  className={`bg-black/20 border border-white/[0.08] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm ${
-                    isTelegramMiniApp ? 'p-3' : 'p-4'
-                  }`}
+                  onClick={() => joinBattle(battle)}
+                  className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-black/20 p-3 active:scale-[0.98] transition"
+                >
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {battle.cases.slice(0, 3).map((caseData, idx) => (
+                      <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-9 h-9 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
+                        <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                      </div>
+                    ))}
+                    {battle.cases.length > 3 && <span className="text-[10px] text-gray-500">+{battle.cases.length - 3}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {isBotBattle ? <Bot size={12} className="text-web3-accent shrink-0" /> : battle.hostAvatar ? <div className="w-4 h-4 rounded-full overflow-hidden shrink-0"><ImageWithMeta src={battle.hostAvatar} meta={battle.hostAvatarMeta ?? undefined} className="w-full h-full rounded-full" /></div> : <UserIcon size={12} className="text-web3-accent shrink-0" />}
+                      <span className="text-[11px] font-bold text-white truncate">{battle.host}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500">{battle.cases.length} rounds</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-black text-web3-accent">{format2(battleCost)} ₮</div>
+                    <div className="text-[9px] text-gray-500 uppercase">Join</div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={battle.id}
+                  className="bg-black/20 border border-white/[0.08] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-sm p-4"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-400">
-                      <Bot size={14} className="text-web3-accent" />
+                      {isBotBattle ? <Bot size={14} className="text-web3-accent" /> : battle.hostAvatar ? <div className="w-5 h-5 rounded-full overflow-hidden shrink-0"><ImageWithMeta src={battle.hostAvatar} meta={battle.hostAvatarMeta ?? undefined} className="w-full h-full rounded-full" /></div> : <UserIcon size={14} className="text-web3-accent" />}
                       {battle.host}
                     </div>
-                    {!isTelegramMiniApp && (
-                      <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
-                    )}
+                    <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
                   </div>
-
                   <div className="flex items-center gap-2 mb-3">
                     {battle.cases.slice(0, 4).map((caseData, idx) => (
                       <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                        <CaseIcon
-                          value={caseData.image || caseData.possibleDrops[0]?.image || ''}
-                          size="sm"
-                          meta={caseData.imageMeta}
-                          className="rounded-full"
-                        />
-              </div>
-            ))}
-                    {battle.cases.length > 4 && (
-                      <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>
-                    )}
-          </div>
-
+                        <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                      </div>
+                    ))}
+                    {battle.cases.length > 4 && <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>}
+                  </div>
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <div className="text-xs uppercase tracking-widest text-gray-500">
-                        {isTelegramMiniApp ? 'Cost' : 'Total Cost'}
-            </div>
+                      <div className="text-xs uppercase tracking-widest text-gray-500">Total Cost</div>
                       <div className="text-lg font-black text-white">{format2(battleCost)} ₮</div>
                     </div>
-                    {!isTelegramMiniApp && (
-                      <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
-                    )}
+                    <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                   </div>
-
                   {battle.status && battle.status !== 'OPEN' ? (
-                    <button
-                      onClick={() => joinBattle(battle)}
-                      className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 bg-web3-accent/20 border border-web3-accent/40 text-web3-accent"
-                    >
+                    <button onClick={() => joinBattle(battle)} className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 bg-web3-accent/20 border border-web3-accent/40 text-web3-accent">
                       View <ChevronRight size={16} />
-            </button>
+                    </button>
                   ) : (
-                    <AdminActionButton
-                      isAuthenticated={isAuthenticated}
-                      isAdmin={isAdmin}
-                      balance={balance}
-                      cost={battleCost}
-                      onConnect={onOpenWalletConnect}
-                      onTopUp={onOpenTopUp}
-                      onAction={() => joinBattle(battle)}
-                      readyLabel={
-                        <>
-                          Join Battle <ChevronRight size={16} />
-                        </>
-                      }
+                    <AdminActionButton isAuthenticated={isAuthenticated} isAdmin={isAdmin} balance={balance} cost={battleCost} onConnect={onOpenWalletConnect} onTopUp={onOpenTopUp} onAction={() => joinBattle(battle)}
+                      readyLabel={<>Join Battle <ChevronRight size={16} /></>}
                       topUpLabel={(shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`}
                       className="w-full py-2.5 rounded-xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                     />
                   )}
-          </div>
+                </div>
               );
             })}
         </div>
@@ -946,12 +1178,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
               </div>
               {createConfirm && (
                 <ConfirmModal
-                  title="Confirm"
-                  message={`${format2(createTotalCost)} ₮`}
-                  confirmLabel="Create"
+                  title={battleLoading ? 'Creating...' : 'Confirm'}
+                  message={battleLoading ? 'Please wait' : `${format2(createTotalCost)} ₮`}
+                  confirmLabel={battleLoading ? 'Loading...' : 'Create'}
                   cancelLabel="Cancel"
-                  onConfirm={handleCreateBattle}
-                  onCancel={() => setCreateConfirm(false)}
+                  onConfirm={battleLoading ? () => {} : handleCreateBattle}
+                  onCancel={battleLoading ? () => {} : () => setCreateConfirm(false)}
                 />
               )}
 
@@ -1151,6 +1383,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
     return (
       <div className={`flex flex-col relative ${isTelegramMiniApp ? 'min-h-0' : 'min-h-screen'}`}>
+        {ErrorBanner}
         {/* Countdown Overlay */}
         {countdown !== null && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -1159,6 +1392,128 @@ export const BattleView: React.FC<BattleViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* Tiebreaker Wheel Overlay */}
+        {showTiebreaker && (() => {
+          const tieUserWon = resolveUserWon(
+            battleOutcomes.reduce((s, r) => s + Number(r.userItem.value || 0), 0),
+            battleOutcomes.reduce((s, r) => s + Number(r.botItem.value || 0), 0)
+          );
+          const tieLeftWon = isOwnBattle ? tieUserWon : !tieUserWon;
+          const winnerColor = tieLeftWon ? '#66FCF1' : '#EF4444';
+          return (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-lg animate-fade-in">
+            <div className="flex flex-col items-center gap-6 w-full max-w-xs px-4">
+              {/* Title */}
+              <div className="text-center">
+                <div className="text-lg font-black uppercase tracking-tight text-white">
+                  Draw<span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple animate-gradient bg-size-200">!</span>
+                </div>
+                <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mt-1">Spinning for the winner</div>
+              </div>
+
+              {/* Player legend */}
+              <div className="flex items-center justify-center gap-4 w-full">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${tiebreakerRevealed && tieLeftWon ? 'border-web3-accent/60 bg-web3-accent/10' : 'border-white/[0.08] bg-black/30'} transition-all duration-500`}>
+                  <div className="w-3 h-3 rounded-full bg-[#66FCF1] shrink-0" />
+                  <span className="text-[11px] font-bold text-white truncate max-w-[80px]">{leftName}</span>
+                </div>
+                <div className="text-[10px] font-bold text-gray-600">VS</div>
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${tiebreakerRevealed && !tieLeftWon ? 'border-red-500/60 bg-red-500/10' : 'border-white/[0.08] bg-black/30'} transition-all duration-500`}>
+                  <div className="w-3 h-3 rounded-full bg-[#EF4444] shrink-0" />
+                  <span className="text-[11px] font-bold text-white truncate max-w-[80px]">{rightName}</span>
+                </div>
+              </div>
+
+              {/* Wheel */}
+              <div className="relative">
+                {/* Pointer — fixed at top */}
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-30">
+                  <div style={{
+                    width: 0, height: 0,
+                    borderLeft: '12px solid transparent',
+                    borderRight: '12px solid transparent',
+                    borderTop: '22px solid white',
+                    filter: tiebreakerRevealed ? `drop-shadow(0 0 12px ${winnerColor})` : 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))',
+                    transition: 'filter 0.5s',
+                  }} />
+                </div>
+
+                {/* Outer glow ring */}
+                <div
+                  className="absolute -inset-3 rounded-full transition-all duration-700"
+                  style={{
+                    boxShadow: tiebreakerRevealed
+                      ? `0 0 40px ${winnerColor}40, 0 0 80px ${winnerColor}20`
+                      : '0 0 30px rgba(102,252,241,0.08)',
+                  }}
+                />
+
+                {/* Wheel body */}
+                <div
+                  className="w-56 h-56 rounded-full border-[3px] border-white/10 relative overflow-hidden"
+                  style={{ boxShadow: 'inset 0 0 30px rgba(0,0,0,0.5), 0 0 20px rgba(0,0,0,0.4)' }}
+                >
+                  <div
+                    className="w-full h-full rounded-full relative"
+                    style={{
+                      transform: `rotate(${tiebreakerRotation}deg)`,
+                      transition: tiebreakerRotation > 0 ? 'transform 4s cubic-bezier(0.15, 0.85, 0.25, 1)' : 'none',
+                    }}
+                  >
+                    {/* Left=teal (180-360°), Right=red (0-180°) */}
+                    <div className="absolute inset-0" style={{
+                      background: 'conic-gradient(from 0deg, #8b1a1a 0deg, #a12020 45deg, #8b1a1a 90deg, #5c1515 180deg, #0d3d3a 180deg, #155e57 225deg, #1a7a70 270deg, #155e57 315deg, #0d3d3a 360deg)',
+                    }} />
+
+                    {/* Vertical divider */}
+                    <div className="absolute top-0 bottom-0 left-1/2 w-[3px] -translate-x-[1.5px] bg-gradient-to-b from-transparent via-white/50 to-transparent" />
+
+                    {/* Teal accent stripe (left half) */}
+                    <div className="absolute top-0 bottom-0 left-0 w-1/2">
+                      <div className="absolute inset-y-0 right-0 w-[4%] bg-[#66FCF1]/25" />
+                    </div>
+                    {/* Red accent stripe (right half) */}
+                    <div className="absolute top-0 bottom-0 right-0 w-1/2">
+                      <div className="absolute inset-y-0 left-0 w-[4%] bg-[#EF4444]/25" />
+                    </div>
+
+                    {/* Left player name (teal half) — vertical, parallel to divider */}
+                    <div className="absolute top-0 bottom-0 left-0 w-1/2 flex items-center justify-center">
+                      <span className="text-[#66FCF1] font-black text-[11px] uppercase tracking-[0.15em] drop-shadow-[0_0_8px_rgba(102,252,241,0.6)] max-w-[80px] truncate text-center" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                        {leftName}
+                      </span>
+                    </div>
+                    {/* Right player name (red half) — vertical, parallel to divider */}
+                    <div className="absolute top-0 bottom-0 right-0 w-1/2 flex items-center justify-center">
+                      <span className="text-[#EF4444] font-black text-[11px] uppercase tracking-[0.15em] drop-shadow-[0_0_8px_rgba(239,68,68,0.6)] max-w-[80px] truncate text-center" style={{ writingMode: 'vertical-rl' }}>
+                        {rightName}
+                      </span>
+                    </div>
+
+                    {/* Center hub */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-[#0B1018] border-2 border-white/20 shadow-[0_0_15px_rgba(0,0,0,0.6)]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Winner announcement */}
+              {tiebreakerRevealed && (
+                <div className="animate-scale-in text-center mt-1">
+                  <div className="text-2xl font-black uppercase tracking-tight">
+                    <span style={{ color: winnerColor }}>{tieLeftWon ? leftName : rightName}</span>
+                  </div>
+                  <div className="text-xs font-bold uppercase tracking-[0.3em] mt-1" style={{ color: winnerColor }}>
+                    Winner
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          );
+        })()}
 
         {isTelegramMiniApp && (
           <div className="px-2 pt-2">
@@ -1173,87 +1528,85 @@ export const BattleView: React.FC<BattleViewProps> = ({
         )}
 
         {/* Scoreboard */}
-        <div
-          className={`bg-black/20 border-b border-white/[0.06] shadow-lg z-20 backdrop-blur-sm h-20 flex ${
-            isTelegramMiniApp ? 'px-2 mt-2' : ''
-          }`}
-        >
-          <div className={`flex-1 flex items-center justify-center relative transition-colors duration-500 ${hasOpponent && isUserWinning ? 'bg-green-900/10' : ''}`}>
-            {!isTelegramMiniApp && (
-              <button
-                onClick={playAgain}
-                className="absolute left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/20 border border-white/[0.12] hover:border-web3-accent/50 transition-all duration-300 text-gray-400 hover:text-white"
-              >
+        {isTelegramMiniApp ? (
+          <div className="flex items-center gap-2 px-3 py-2 mt-1 bg-black/20 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-8 h-8 bg-gray-800 rounded-full border border-web3-accent flex items-center justify-center shrink-0 overflow-hidden">
+                {leftPlayerIsBot ? <Bot className="text-web3-accent" size={16} /> : leftPlayerAvatar ? <ImageWithMeta src={leftPlayerAvatar} meta={leftPlayerAvatarMeta} className="w-full h-full rounded-full" /> : <UserIcon className="text-web3-accent" size={16}/>}
+              </div>
+              <span className="text-[11px] font-bold text-white truncate">{leftName}</span>
+            </div>
+            <div className="shrink-0 px-2 py-1 rounded-lg bg-gray-900/70 border border-gray-700 text-center">
+              <div className="text-[8px] text-gray-500 font-bold uppercase">Round</div>
+              <div className="text-sm font-bold text-white">{currentRound + 1}<span className="text-gray-600">/</span>{selectedCases.length}</div>
+            </div>
+            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+              <span className="text-[11px] font-bold text-white truncate">{rightName}</span>
+              <div className="w-8 h-8 bg-gray-800 rounded-full border border-red-500 flex items-center justify-center shrink-0 overflow-hidden">
+                {rightPlayerIsBot ? <Bot className="text-red-500" size={16} /> : rightPlayerAvatar ? <ImageWithMeta src={rightPlayerAvatar} meta={rightPlayerAvatarMeta} className="w-full h-full rounded-full" /> : <UserIcon className="text-red-500" size={16}/>}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-black/20 border-b border-white/[0.06] shadow-lg z-20 backdrop-blur-sm h-20 flex">
+            <div className={`flex-1 flex items-center justify-center relative transition-colors duration-500 ${hasOpponent && isUserWinning ? 'bg-green-900/10' : ''}`}>
+              <button onClick={playAgain} className="absolute left-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/20 border border-white/[0.12] hover:border-web3-accent/50 transition-all duration-300 text-gray-400 hover:text-white">
                 <ArrowLeft size={18} />
                 <span className="font-bold">Back</span>
               </button>
-            )}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-800 rounded-full border border-web3-accent flex items-center justify-center">
-                {leftPlayerIsBot ? (
-                  <Bot className="text-web3-accent" size={20} />
-                ) : leftPlayerAvatar ? (
-                  <ImageWithMeta src={leftPlayerAvatar} meta={leftPlayerAvatarMeta} className="w-full h-full rounded-full" />
-                ) : (
-                  <UserIcon className="text-web3-accent" size={20}/>
-                )}
-            </div>
-              <div className="font-bold text-white">{leftName}</div>
-            </div>
-          </div>
-          
-          <div className={`${isTelegramMiniApp ? 'w-16 bg-gray-900/75 border-x border-gray-700' : 'w-20 bg-gray-900 border-x border-gray-700'} flex flex-col items-center justify-center z-30`}>
-            <div className="text-[10px] text-gray-500 font-bold uppercase">Round</div>
-            <div className="text-lg font-bold text-white">{currentRound + 1}<span className="text-gray-600">/</span>{selectedCases.length}</div>
-          </div>
-
-          <div className={`flex-1 flex items-center justify-center transition-colors duration-500 ${hasOpponent && !isUserWinning ? 'bg-red-900/10' : ''}`}>
-            {!battleStarted && opponent.type ? (
-              <div className="text-gray-500 font-bold uppercase tracking-wider animate-pulse">
-                Waiting for you...
-                </div>
-            ) : (
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gray-800 rounded-full border border-red-500 flex items-center justify-center">
-                  {rightPlayerIsBot ? (
-                    <Bot className="text-red-500" size={20} />
-                  ) : rightPlayerAvatar ? (
-                    <ImageWithMeta src={rightPlayerAvatar} meta={rightPlayerAvatarMeta} className="w-full h-full rounded-full" />
-                  ) : (
-                    <UserIcon className="text-red-500" size={20}/>
-                  )}
+                <div className="w-10 h-10 bg-gray-800 rounded-full border border-web3-accent flex items-center justify-center">
+                  {leftPlayerIsBot ? <Bot className="text-web3-accent" size={20} /> : leftPlayerAvatar ? <ImageWithMeta src={leftPlayerAvatar} meta={leftPlayerAvatarMeta} className="w-full h-full rounded-full" /> : <UserIcon className="text-web3-accent" size={20}/>}
                 </div>
-                <div className="font-bold text-white">{rightName}</div>
+                <div className="font-bold text-white">{leftName}</div>
               </div>
-            )}
+            </div>
+            <div className="w-20 bg-gray-900 border-x border-gray-700 flex flex-col items-center justify-center z-30">
+              <div className="text-[10px] text-gray-500 font-bold uppercase">Round</div>
+              <div className="text-lg font-bold text-white">{currentRound + 1}<span className="text-gray-600">/</span>{selectedCases.length}</div>
+            </div>
+            <div className={`flex-1 flex items-center justify-center transition-colors duration-500 ${hasOpponent && !isUserWinning ? 'bg-red-900/10' : ''}`}>
+              {!battleStarted && opponent.type ? (
+                <div className="text-gray-500 font-bold uppercase tracking-wider animate-pulse">Waiting for you...</div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-800 rounded-full border border-red-500 flex items-center justify-center">
+                    {rightPlayerIsBot ? <Bot className="text-red-500" size={20} /> : rightPlayerAvatar ? <ImageWithMeta src={rightPlayerAvatar} meta={rightPlayerAvatarMeta} className="w-full h-full rounded-full" /> : <UserIcon className="text-red-500" size={20}/>}
+                  </div>
+                  <div className="font-bold text-white">{rightName}</div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Cases Strip */}
-        <div className={`border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-visible ${
-          isTelegramMiniApp ? 'px-3 py-3' : 'px-6 py-4'
+        <div className={`border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-hidden ${
+          isTelegramMiniApp ? 'h-14' : 'px-6 py-4'
         }`}>
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
-            {isTelegramMiniApp ? 'Cost' : 'Total Cost'} <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
-          </div>
+          {!isTelegramMiniApp && (
+            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
+              Total Cost <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
+            </div>
+          )}
           <div className="absolute inset-y-0 left-0 right-0 flex items-center pointer-events-none">
             <div
-              className={`flex items-center gap-2 transition-transform duration-700 ease-out ${isTelegramMiniApp ? 'justify-center w-full' : ''}`}
-              style={
-                isTelegramMiniApp
-                  ? { left: 0, position: 'relative' }
-                  : { transform: `translateX(calc(-${currentRound * 48}px - 20px))`, left: '50%', position: 'relative' }
-              }
+              className="flex items-center gap-2 transition-transform duration-700 ease-out"
+              style={{
+                transform: `translateX(calc(50% - ${currentRound * 48}px - 20px))`,
+                position: 'relative',
+              }}
             >
               {selectedCases.map((caseData, idx) => {
                 const isActive = idx === currentRound;
+                const isPast = idx < currentRound;
                 return (
                   <div
                     key={`${caseData.id}-${idx}-strip`}
-                    className={`w-10 h-10 rounded-full border bg-black/30 flex items-center justify-center ${
+                    className={`shrink-0 rounded-full border bg-black/30 flex items-center justify-center transition-all duration-500 ${
                       isActive
-                        ? 'border-web3-accent'
-                        : 'border-white/[0.12]'
+                        ? `${isTelegramMiniApp ? 'w-10 h-10' : 'w-10 h-10'} border-web3-accent scale-125`
+                        : `w-10 h-10 border-white/[0.12] ${isPast ? 'opacity-40' : 'opacity-70'}`
                     }`}
                   >
                     <span className={isActive ? 'drop-shadow-[0_0_10px_rgba(102,252,241,0.9)]' : ''}>
@@ -1268,9 +1621,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 );
               })}
             </div>
-            {!isTelegramMiniApp && <div className="absolute left-0 top-0 bottom-0 w-[220px] bg-black/20"></div>}
+            <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-black/60 to-transparent"></div>
+            <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-black/60 to-transparent"></div>
           </div>
-            </div>
+        </div>
 
         {/* Split Screen */}
         <div className={`flex-1 relative overflow-hidden ${isTelegramMiniApp ? 'flex gap-3 p-3' : 'flex'}`}>
@@ -1432,9 +1786,10 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 </button>
                 <button
                   onClick={handleStartBattle}
-                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black font-black text-[10px] uppercase tracking-widest hover:scale-105 transition"
+                  disabled={battleLoading}
+                  className={`px-5 py-2 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black font-black text-[10px] uppercase tracking-widest hover:scale-105 transition ${battleLoading ? 'opacity-50 cursor-wait' : ''}`}
                 >
-                  {isOwnBattle ? 'Call Bot' : 'Start Battle'}
+                  {battleLoading ? 'Loading...' : isOwnBattle ? 'Call Bot' : 'Start Battle'}
                 </button>
               </div>
             </div>
