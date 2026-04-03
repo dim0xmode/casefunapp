@@ -18,18 +18,45 @@ const GAS_LOW_THRESHOLD_ETH = 0.03;
 const FEEDBACK_REVIEW_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR = 'Bootstrap admin account is immutable and cannot be modified';
 
-const getBootstrapAdminWallet = (): string => {
-  const wallet = String(process.env.BOOTSTRAP_ADMIN_WALLET || '')
-    .trim()
-    .toLowerCase();
-  if (!wallet) {
-    throw new AppError('Bootstrap admin wallet is not configured', 500);
+/** Same wallet as frontend `IMMUTABLE_ADMIN_WALLET`. Always in the set so role/delete rules work if `BOOTSTRAP_ADMIN_WALLET` in .env is missing or outdated. */
+const HARDCODED_MAIN_ADMIN_LOWER = '0xc459241d1ac02250de56b8b7165ebedf59236524';
+
+const getBootstrapWalletSet = (): Set<string> => {
+  const set = new Set<string>();
+  const envRaw = String(process.env.BOOTSTRAP_ADMIN_WALLET || '').trim();
+  if (envRaw) {
+    for (const part of envRaw.split(/[\s,]+/)) {
+      const p = part.trim().toLowerCase();
+      if (p) set.add(p);
+    }
   }
-  return wallet;
+  set.add(HARDCODED_MAIN_ADMIN_LOWER);
+  return set;
 };
 
-const isBootstrapWallet = (walletAddress: string | null | undefined, bootstrapWallet: string): boolean =>
-  Boolean(walletAddress) && walletAddress.toLowerCase() === bootstrapWallet;
+const bootstrapWalletWhereOr = (set: Set<string>) => {
+  const or: { walletAddress: string }[] = [];
+  for (const w of set) {
+    or.push({ walletAddress: w });
+    try {
+      or.push({ walletAddress: ethers.getAddress(w) });
+    } catch {
+      /* skip invalid */
+    }
+  }
+  return or;
+};
+
+const isBootstrapWallet = (walletAddress: string | null | undefined, bootstrapSet: Set<string>): boolean => {
+  if (!walletAddress) return false;
+  const lower = walletAddress.trim().toLowerCase();
+  if (bootstrapSet.has(lower)) return true;
+  try {
+    return bootstrapSet.has(ethers.getAddress(walletAddress).toLowerCase());
+  } catch {
+    return false;
+  }
+};
 
 const logAdminAction = async (adminId: string, action: string, metadata?: Record<string, any>, entity?: string, entityId?: string) => {
   await prisma.adminAuditLog.create({
@@ -224,18 +251,18 @@ export const updateUserRole = async (req: Request, res: Response, next: NextFunc
     }
     const nextRole = normalizedRole as UserRole;
 
-    const immutableWallet = getBootstrapAdminWallet();
+    const bootstrapSet = getBootstrapWalletSet();
     const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
     if (!adminUser) {
       return next(new AppError('Admin user not found', 404));
     }
-    const actorIsBootstrap = isBootstrapWallet(adminUser.walletAddress, immutableWallet);
+    const actorIsBootstrap = isBootstrapWallet(adminUser.walletAddress, bootstrapSet);
 
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) {
       return next(new AppError('User not found', 404));
     }
-    if (isBootstrapWallet(target.walletAddress, immutableWallet)) {
+    if (isBootstrapWallet(target.walletAddress, bootstrapSet)) {
       return next(new AppError(IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR, 403));
     }
 
@@ -271,12 +298,12 @@ export const updateUserBan = async (req: Request, res: Response, next: NextFunct
     }
     const { isBanned, reason } = req.body;
 
-    const immutableWallet = getBootstrapAdminWallet();
+    const bootstrapSet = getBootstrapWalletSet();
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) {
       return next(new AppError('User not found', 404));
     }
-    if (isBootstrapWallet(target.walletAddress, immutableWallet)) {
+    if (isBootstrapWallet(target.walletAddress, bootstrapSet)) {
       return next(new AppError(IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR, 403));
     }
 
@@ -307,12 +334,12 @@ export const updateUserBalance = async (req: Request, res: Response, next: NextF
       return next(new AppError('Invalid balance', 400));
     }
 
-    const immutableWallet = getBootstrapAdminWallet();
+    const bootstrapSet = getBootstrapWalletSet();
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) {
       return next(new AppError('User not found', 404));
     }
-    if (isBootstrapWallet(target.walletAddress, immutableWallet)) {
+    if (isBootstrapWallet(target.walletAddress, bootstrapSet)) {
       return next(new AppError(IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR, 403));
     }
 
@@ -337,10 +364,10 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
       return next(new AppError('User id is required', 400));
     }
 
-    const immutableWallet = getBootstrapAdminWallet();
+    const bootstrapSet = getBootstrapWalletSet();
 
     const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
-    if (!adminUser || !isBootstrapWallet(adminUser.walletAddress, immutableWallet)) {
+    if (!adminUser || !isBootstrapWallet(adminUser.walletAddress, bootstrapSet)) {
       return next(new AppError('Only the main admin wallet can delete users', 403));
     }
 
@@ -352,12 +379,12 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
     if (!target) {
       return next(new AppError('User not found', 404));
     }
-    if (isBootstrapWallet(target.walletAddress, immutableWallet)) {
+    if (isBootstrapWallet(target.walletAddress, bootstrapSet)) {
       return next(new AppError(IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR, 403));
     }
 
-    const bootstrapUser = await prisma.user.findUnique({
-      where: { walletAddress: immutableWallet },
+    const bootstrapUser = await prisma.user.findFirst({
+      where: { OR: bootstrapWalletWhereOr(bootstrapSet) },
       select: { id: true },
     });
     if (!bootstrapUser) {

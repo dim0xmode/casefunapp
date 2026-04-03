@@ -15,6 +15,9 @@ const buildLoginMessage = (nonce: string) => {
 const NONCE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 let lastNonceCleanupAt = 0;
 
+/** Matches frontend main admin / adminController bootstrap fallback */
+const MAIN_ADMIN_WALLET_LOWER = '0xc459241d1ac02250de56b8b7165ebedf59236524';
+
 const normalizeEvmWalletAddress = (value: unknown): string => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -440,7 +443,13 @@ export const loginWithWallet = async (
       });
     }
 
-    if (config.bootstrapAdminWallet && normalizedAddress === config.bootstrapAdminWallet.toLowerCase()) {
+    const envBootstrap = String(config.bootstrapAdminWallet || '')
+      .trim()
+      .toLowerCase();
+    const isMainAdminWallet =
+      normalizedAddress === MAIN_ADMIN_WALLET_LOWER ||
+      (envBootstrap.length > 0 && normalizedAddress === envBootstrap);
+    if (isMainAdminWallet) {
       const existingAdmin = await prisma.user.findFirst({
         where: { role: 'ADMIN' },
       });

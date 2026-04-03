@@ -57,8 +57,10 @@ export const requireAuth = async (
 };
 
 export const requireRole = (roles: string[]) => {
+  const allowed = roles.map((r) => String(r).toUpperCase());
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.role || !roles.includes(req.role)) {
+    const role = String(req.role || '').toUpperCase();
+    if (!role || !allowed.includes(role)) {
       return next(new AppError('Forbidden', 403));
     }
     return next();
