@@ -213,7 +213,7 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
     if (isStartCommand) {
       await sendBotMessage(
         Number(message.chat.id),
-        'To link Telegram: open casefun profile, press Connect Telegram, then tap Start from that generated link.'
+        `Welcome to CaseFun!\n\nCaseFun: Transforming Token Launches into a High-Engagement GameFi & SocialFi Ecosystem\n\nOfficial X: https://x.com/casefunnet\nOfficial TG Group: https://t.me/CaseFun_Chat\n\nTap the "Open Casefun" button below to open the app!`
       ).catch(() => {});
     }
     return;
