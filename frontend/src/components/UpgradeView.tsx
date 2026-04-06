@@ -1041,8 +1041,8 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
       </div>
 
       {isPresetSettingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-          <div className="w-full max-w-md rounded-xl border border-white/[0.14] bg-[#0F1014] p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4 overflow-y-auto py-4">
+          <div className="w-full max-w-md rounded-xl border border-white/[0.14] bg-[#0F1014] p-5 shadow-2xl my-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm uppercase tracking-widest text-gray-300">Preset Settings</div>
               <button

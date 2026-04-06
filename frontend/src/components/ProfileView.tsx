@@ -1449,8 +1449,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       {isEditable && isSettingsOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 animate-fade-in">
-          <div className="w-[92%] max-w-md bg-web3-card/95 border border-white/[0.12] rounded-3xl px-8 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)] animate-scale-in">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 animate-fade-in overflow-y-auto py-4">
+          <div className="w-[92%] max-w-md bg-web3-card/95 border border-white/[0.12] rounded-3xl px-8 py-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)] animate-scale-in my-auto">
             <div className="text-xs uppercase tracking-widest text-gray-500">Profile Settings</div>
             <div className="text-2xl font-black text-white mt-1">Edit Profile</div>
 

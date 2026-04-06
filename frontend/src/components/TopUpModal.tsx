@@ -254,9 +254,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const canSubmit = isAuthenticated && hasProvider && Number.isFinite(parsedEth) && parsedEth > 0 && !isSubmitting;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 animate-fade-in" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 animate-fade-in overflow-y-auto py-4" onMouseDown={onClose}>
       <div
-        className="bg-web3-card/95 border border-white/[0.12] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] px-8 py-6 max-w-md w-[92%] animate-scale-in"
+        className="bg-web3-card/95 border border-white/[0.12] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] px-8 py-6 max-w-md w-[92%] animate-scale-in my-auto"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="text-xs uppercase tracking-widest text-gray-400 mb-4">Top up balance</div>

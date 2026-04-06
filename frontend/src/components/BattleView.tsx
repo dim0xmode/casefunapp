@@ -1752,8 +1752,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
         </div>
 
         {startConfirm && !battleStarted && opponent.type && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)]">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 overflow-y-auto py-4">
+            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)] my-auto">
               <div className="text-[10px] uppercase tracking-widest text-gray-500">Confirm battle</div>
               <h3 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">
                 JOIN
@@ -1797,8 +1797,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
         )}
 
         {isWaitingForOwner && !battleStarted && opponent.type && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
-            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)] text-center">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 overflow-y-auto py-4">
+            <div className="w-full max-w-md rounded-2xl border border-white/[0.16] bg-[#0E1016]/95 p-6 shadow-[0_25px_70px_rgba(0,0,0,0.55)] text-center my-auto">
               <div className="text-[10px] uppercase tracking-widest text-gray-500">Lobby status</div>
               <h3 className="mt-1 text-2xl font-black uppercase tracking-tight text-white">
                 Waiting

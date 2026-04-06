@@ -16,6 +16,7 @@ import { ImageWithMeta } from './components/ui/ImageWithMeta';
 import { INITIAL_USER } from './constants';
 import { User, Item, Case } from './types';
 import { useWallet } from './hooks/useWallet';
+import { useWakeLock } from './hooks/useWakeLock';
 import { BrowserProvider, getAddress, hexlify, toUtf8Bytes } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
 import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
@@ -191,6 +192,8 @@ const App = () => {
       window.history.replaceState(window.history.state, '', nextUrl);
     }
   }, []);
+
+  useWakeLock();
 
   const {
     address: walletAddress,

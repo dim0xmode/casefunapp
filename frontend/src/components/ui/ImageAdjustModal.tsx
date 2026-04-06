@@ -82,8 +82,8 @@ export const ImageAdjustModal: React.FC<ImageAdjustModalProps> = ({
   const scale = draftMeta.scale ?? 1;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-[92%] max-w-3xl bg-black/60 border border-white/[0.12] rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm overflow-y-auto py-4">
+      <div className="w-[92%] max-w-3xl bg-black/60 border border-white/[0.12] rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)] my-auto">
         <div className="flex items-center justify-between mb-4">
           <div className="text-xs uppercase tracking-widest text-gray-400">{title}</div>
           <button

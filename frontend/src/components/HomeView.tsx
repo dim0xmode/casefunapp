@@ -606,11 +606,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {isEarlyAccessOpen && (
         <div
-          className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
           onClick={closeEarlyAccessModal}
         >
           <div
-            className="w-full max-w-lg rounded-3xl border border-white/[0.12] bg-web3-card/95 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+            className="w-full max-w-lg rounded-3xl border border-white/[0.12] bg-web3-card/95 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)] my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
