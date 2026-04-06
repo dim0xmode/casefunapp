@@ -248,9 +248,57 @@ export const withRelayNudge = async <T>(provider: any, fn: () => Promise<T>): Pr
     nudgeRelay(provider);
   };
   document.addEventListener('visibilitychange', handler);
+
+  const POLL_INTERVAL_MS = 3_000;
+  const poll = setInterval(() => nudgeRelay(provider), POLL_INTERVAL_MS);
   try {
     return await fn();
   } finally {
+    clearInterval(poll);
     document.removeEventListener('visibilitychange', handler);
   }
+};
+
+const WC_SIGN_TIMEOUT_MS = 120_000;
+
+/**
+ * personal_sign via WalletConnect with timeout + aggressive relay polling.
+ * In Telegram WebView the relay often doesn't deliver the response after
+ * the user signs and returns — periodic nudging + a hard timeout prevent
+ * the UI from hanging indefinitely.
+ */
+export const wcPersonalSign = async (
+  provider: any,
+  msgHex: string,
+  address: string,
+  timeoutMs: number = WC_SIGN_TIMEOUT_MS,
+): Promise<string> => {
+  const eip1193 = provider as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+  if (typeof eip1193?.request !== 'function') {
+    throw new Error('Wallet provider is not ready. Try linking again.');
+  }
+
+  return withRelayNudge(provider, () => {
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('Signature timed out. Open the wallet app, sign the message, and try again.')),
+        timeoutMs,
+      );
+
+      eip1193
+        .request({ method: 'personal_sign', params: [msgHex, address] })
+        .then((sig) => {
+          clearTimeout(timer);
+          if (typeof sig !== 'string' || !sig) {
+            reject(new Error('Wallet did not return a signature.'));
+          } else {
+            resolve(sig);
+          }
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  });
 };
