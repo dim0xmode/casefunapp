@@ -1368,8 +1368,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
     const isResult = gameState === 'RESULT';
     const finalUserTotal = sumUsdt(battleOutcomes.map(r => r.userItem));
     const finalBotTotal = sumUsdt(battleOutcomes.map(r => r.botItem));
+    const finalUserTokens = battleOutcomes.reduce((s, r) => s + Number(r.userItem.value || 0), 0);
+    const finalBotTokens = battleOutcomes.reduce((s, r) => s + Number(r.botItem.value || 0), 0);
     const leftTotal = leftIsUser ? finalUserTotal : finalBotTotal;
     const rightTotal = leftIsUser ? finalBotTotal : finalUserTotal;
+    const leftTokens = leftIsUser ? finalUserTokens : finalBotTokens;
+    const rightTokens = leftIsUser ? finalBotTokens : finalUserTokens;
     const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
     const leftWon = forcedWinnerName
       ? forcedWinnerName.toLowerCase() === leftName.toLowerCase()
@@ -1844,18 +1848,20 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-green-400">{format2(leftTotal)} USDT</div>
+                      <div className="text-sm font-bold text-gray-300">{format2(leftTokens)} tokens</div>
+                      <div className="text-lg font-black text-green-400">{format2(leftTotal)} ₮</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} USDT</div>
+                      <div className="text-sm font-bold text-gray-300">{format2(rightTokens)} tokens</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} ₮</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Winnings</div>
                     <div className="text-center mb-2">
-                      <span className="text-web3-accent font-mono text-lg font-black">{format2(winningsUsdt)} USDT</span>
+                      <span className="text-web3-accent font-mono text-lg font-black">{format2(winningsUsdt)} ₮</span>
                     </div>
                     <div className="flex flex-wrap justify-center gap-3">
                   {Object.keys(winningsByToken).length === 0 ? (
@@ -1893,12 +1899,14 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)} USDT</div>
+                      <div className="text-sm font-bold text-gray-300">{format2(leftTokens)} tokens</div>
+                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)} ₮</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} USDT</div>
+                      <div className="text-sm font-bold text-gray-300">{format2(rightTokens)} tokens</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} ₮</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">

@@ -273,10 +273,16 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
           </div>
         </div>
 
+        {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
+          <div className="text-center mb-2">
+            <span className="text-[11px] text-gray-500">1 ${caseData.tokenTicker || caseData.currency} = {caseData.tokenPrice} ₮</span>
+          </div>
+        )}
+
         {/* Open Button and Side Controls */}
         <div className={`${isTelegramMiniApp ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'} max-w-6xl mx-auto`}>
           {/* Left Side: Price and RTU */}
-          <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'} flex-wrap`}>
+          <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
               <span className="text-xs font-bold text-gray-300">{cost} ₮</span>
             </div>
@@ -284,12 +290,6 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
               <span className="text-xs font-bold text-gray-400">RTU</span>
               <span className="text-xs font-bold text-gray-300">{caseData.rtu}%</span>
             </div>
-            {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
-                <span className="text-xs font-bold text-gray-400">1 ${caseData.tokenTicker || caseData.currency}</span>
-                <span className="text-xs font-bold text-web3-accent">= {caseData.tokenPrice} USDT</span>
-              </div>
-            )}
           </div>
 
           {/* Center: Open Button */}
