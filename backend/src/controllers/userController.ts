@@ -116,6 +116,8 @@ type BattleProofDrop = {
   rarity: string;
   color: string;
   image: string | null;
+  tokenPrice: number;
+  valueUsdt: number;
 };
 
 type BattleProofPayload = {
@@ -137,16 +139,22 @@ const normalizeCaseIds = (raw: any): string[] =>
     .filter(Boolean)
     .slice(0, 25);
 
-const toBattleProofDrop = (drop: any): BattleProofDrop => ({
-  id: String(drop?.id || ''),
-  caseId: String(drop?.caseId || ''),
-  name: String(drop?.name || 'Reward'),
-  value: roundToTwo(Number(drop?.value || 0)),
-  currency: String(drop?.currency || ''),
-  rarity: String(drop?.rarity || 'COMMON'),
-  color: String(drop?.color || '#9CA3AF'),
-  image: drop?.image ? String(drop.image) : null,
-});
+const toBattleProofDrop = (drop: any): BattleProofDrop => {
+  const value = roundToTwo(Number(drop?.value || 0));
+  const tokenPrice = Number(drop?.tokenPrice || 0);
+  return {
+    id: String(drop?.id || ''),
+    caseId: String(drop?.caseId || ''),
+    name: String(drop?.name || 'Reward'),
+    value,
+    currency: String(drop?.currency || ''),
+    rarity: String(drop?.rarity || 'COMMON'),
+    color: String(drop?.color || '#9CA3AF'),
+    image: drop?.image ? String(drop.image) : null,
+    tokenPrice,
+    valueUsdt: roundToTwo(value * tokenPrice),
+  };
+};
 
 type BattleProofCorePayload = {
   userId: string;
@@ -157,16 +165,22 @@ type BattleProofCorePayload = {
 };
 
 const normalizeProofDrops = (drops: BattleProofDrop[]) =>
-  (Array.isArray(drops) ? drops : []).map((drop) => ({
-    id: String(drop?.id || ''),
-    caseId: String(drop?.caseId || '').trim(),
-    name: String(drop?.name || 'Reward'),
-    value: roundToTwo(Number(drop?.value || 0)),
-    currency: String(drop?.currency || ''),
-    rarity: String(drop?.rarity || 'COMMON').toUpperCase(),
-    color: String(drop?.color || '#9CA3AF'),
-    image: drop?.image ? String(drop.image) : null,
-  }));
+  (Array.isArray(drops) ? drops : []).map((drop) => {
+    const value = roundToTwo(Number(drop?.value || 0));
+    const tokenPrice = Number(drop?.tokenPrice || 0);
+    return {
+      id: String(drop?.id || ''),
+      caseId: String(drop?.caseId || '').trim(),
+      name: String(drop?.name || 'Reward'),
+      value,
+      currency: String(drop?.currency || ''),
+      rarity: String(drop?.rarity || 'COMMON').toUpperCase(),
+      color: String(drop?.color || '#9CA3AF'),
+      image: drop?.image ? String(drop.image) : null,
+      tokenPrice,
+      valueUsdt: roundToTwo(value * tokenPrice),
+    };
+  });
 
 const toProofCorePayload = (payload: BattleProofCorePayload): BattleProofCorePayload => ({
   userId: String(payload.userId || '').trim(),
@@ -1124,29 +1138,33 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
     const totalCost = await getBattleCostByCaseIds(prisma, parsedProof.payload.caseIds, { requireActive: false });
     const normalizeDrop = (drop: BattleProofDrop) => {
       const rarity = String(drop.rarity || 'COMMON').toUpperCase();
+      const value = roundToTwo(Number(drop.value || 0));
+      const tokenPrice = Number(drop.tokenPrice || 0);
       return {
         id: String(drop.id || ''),
         caseId: String(drop.caseId || ''),
         name: String(drop.name || 'Reward'),
-        value: roundToTwo(Number(drop.value || 0)),
+        value,
         currency: String(drop.currency || ''),
         rarity,
         color: String(drop.color || (RARITY_COLORS as Record<string, string>)[rarity] || '#9CA3AF'),
         image: drop.image ? String(drop.image) : null,
+        tokenPrice,
+        valueUsdt: roundToTwo(value * tokenPrice),
       };
     };
 
     const userDrops = parsedProof.payload.userDrops.map(normalizeDrop);
     const opponentDrops = parsedProof.payload.opponentDrops.map(normalizeDrop);
-    const finalUserTotal = userDrops.reduce((sum, item) => sum + Number(item.value || 0), 0);
-    const finalOpponentTotal = opponentDrops.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const finalUserTotalUsdt = userDrops.reduce((sum, item) => sum + Number(item.valueUsdt || 0), 0);
+    const finalOpponentTotalUsdt = opponentDrops.reduce((sum, item) => sum + Number(item.valueUsdt || 0), 0);
     const userWon =
-      finalUserTotal > finalOpponentTotal ||
-      (finalUserTotal === finalOpponentTotal && parsedProof.payload.tieWinner === 'USER');
+      finalUserTotalUsdt > finalOpponentTotalUsdt ||
+      (finalUserTotalUsdt === finalOpponentTotalUsdt && parsedProof.payload.tieWinner === 'USER');
 
     const wonItems = userWon ? [...userDrops, ...opponentDrops] : [];
     const reserveItems = !userWon && parsedProof.payload.mode === 'BOT' ? userDrops : [];
-    const wonValue = wonItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const wonValue = wonItems.reduce((sum, item) => sum + Number(item.valueUsdt || 0), 0);
 
     const createdItems: any[] = [];
     const chargeWindowStart = new Date(Date.now() - BATTLE_CHARGE_WINDOW_MS);

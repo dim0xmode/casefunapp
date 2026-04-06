@@ -105,6 +105,7 @@ export const resolveBattleDrops = async (caseIds: string[], mode: ResolveMode) =
     caseId: string;
     caseName: string;
     token: string;
+    tokenPrice: number;
     userDrop: any;
     opponentDrop: any;
     userDebug: PickDebug;
@@ -149,19 +150,28 @@ export const resolveBattleDrops = async (caseIds: string[], mode: ResolveMode) =
     state.spent += opponentPriceDelta;
     state.issued += Number(opponentPick.drop.value || 0);
 
+    const tp = Number(caseItem.tokenPrice || 0);
+    const userVal = round2(Number(userPick.drop.value || 0));
+    const oppVal = round2(Number(opponentPick.drop.value || 0));
+
     rounds.push({
       caseId: caseItem.id,
       caseName: caseItem.name,
       token: tokenSymbol,
+      tokenPrice: tp,
       userDrop: {
         ...userPick.drop,
-        value: round2(Number(userPick.drop.value || 0)),
+        value: userVal,
         caseId: caseItem.id,
+        tokenPrice: tp,
+        valueUsdt: round2(userVal * tp),
       },
       opponentDrop: {
         ...opponentPick.drop,
-        value: round2(Number(opponentPick.drop.value || 0)),
+        value: oppVal,
         caseId: caseItem.id,
+        tokenPrice: tp,
+        valueUsdt: round2(oppVal * tp),
       },
       userDebug: userPick.debug,
       opponentDebug: opponentPick.debug,

@@ -376,8 +376,11 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
               <div className={`mb-2 flex items-center justify-center ${openMode !== 'instant' ? 'animate-bounce-in' : ''}`}>
                 {renderTokenLogo(winner, 'lg')}
               </div>
-              <div className={`flex items-center justify-center gap-2 bg-gradient-to-r from-web3-accent/30 to-web3-success/30 px-4 py-1.5 rounded-lg border border-web3-accent/40 ${openMode !== 'instant' ? 'animate-fade-in' : ''}`} style={openMode !== 'instant' ? { animationDelay: '0.2s', animationFillMode: 'both' } : {}}>
+              <div className={`flex flex-col items-center gap-1 bg-gradient-to-r from-web3-accent/30 to-web3-success/30 px-4 py-1.5 rounded-lg border border-web3-accent/40 ${openMode !== 'instant' ? 'animate-fade-in' : ''}`} style={openMode !== 'instant' ? { animationDelay: '0.2s', animationFillMode: 'both' } : {}}>
                 <span className="text-lg font-black text-white">{winner.value} ${winner.currency}</span>
+                {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
+                  <span className="text-xs font-bold text-web3-accent/80">≈ {(winner.value * caseData.tokenPrice).toFixed(2)} USDT</span>
+                )}
               </div>
             </div>
           </div>

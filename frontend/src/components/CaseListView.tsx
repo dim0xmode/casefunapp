@@ -163,6 +163,9 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             <h3 className="text-xs font-black truncate">{caseData.name}</h3>
             <div className="text-[10px] uppercase tracking-wider text-gray-400">
               ${caseData.tokenTicker || caseData.currency}
+              {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
+                <span className="text-web3-accent/70 ml-1">({caseData.tokenPrice} USDT)</span>
+              )}
             </div>
             <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-between gap-1.5">
               <span className="font-black text-xs text-white">{caseData.price} ₮</span>

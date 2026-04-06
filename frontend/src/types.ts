@@ -19,6 +19,8 @@ export interface Item {
   status?: 'ACTIVE' | 'BURNT';
   claimedAt?: string;
   claimedTxHash?: string;
+  tokenPrice?: number;
+  valueUsdt?: number;
 }
 
 export interface Case {

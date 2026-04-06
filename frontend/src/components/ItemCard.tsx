@@ -111,6 +111,8 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   const isInteractive = Boolean(onClick) && !disabled;
   const isImage = item.image?.startsWith('http') || item.image?.startsWith('/') || item.image?.startsWith('data:');
   const displayValue = Number.isFinite(Number(item.value)) ? Number(item.value).toFixed(2) : '0.00';
+  const usdtVal = Number(item.valueUsdt || 0) || Number(item.value || 0) * Number(item.tokenPrice || 0);
+  const showUsdt = usdtVal > 0 && Number(item.tokenPrice || 0) > 0;
 
   return (
     <div
@@ -166,6 +168,9 @@ export const ItemCard: React.FC<ItemCardProps> = ({
         <div className={`relative z-10 ${styles.valueGap} text-center`}>
           <div className={`font-bold text-white ${styles.value}`}>{displayValue}</div>
           <div className={`text-gray-400 ${styles.currency}`}>{currencyPrefix}{item.currency}</div>
+          {showUsdt && (
+            <div className={`text-web3-accent/70 ${styles.currency} mt-0.5`}>≈ {usdtVal.toFixed(2)} USDT</div>
+          )}
         </div>
       )}
     </div>

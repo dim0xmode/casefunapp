@@ -55,6 +55,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
   isTelegramMiniApp = false,
 }) => {
   const format2 = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
+  const itemUsdt = (item: Item) => Number(item.valueUsdt || 0) || Number(item.value || 0) * Number(item.tokenPrice || 0);
+  const sumUsdt = (items: Item[]) => items.reduce((s, i) => s + itemUsdt(i), 0);
   type BattleEntry = {
     id: string;
     host: string;
@@ -861,8 +863,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
   };
 
   const finishGame = () => {
-    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
-    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
+    const finalUserTotal = sumUsdt(battleOutcomes.map(r => r.userItem));
+    const finalBotTotal = sumUsdt(battleOutcomes.map(r => r.botItem));
     const isTie = finalUserTotal === finalBotTotal;
 
     if (isTie) {
@@ -1353,8 +1355,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
   // BATTLE Screen
   const currentCase = selectedCases[currentRound];
-  const userTotal = userDrops.reduce((acc, item) => acc + item.value, 0);
-  const botTotal = botDrops.reduce((acc, item) => acc + item.value, 0);
+  const userTotal = sumUsdt(userDrops);
+  const botTotal = sumUsdt(botDrops);
   const isUserWinning = userTotal >= botTotal;
   const canStartBattleNow = isSpectator ? false : isOwnBattle || canAffordBattle;
   const hasOpponent = opponent.type !== null;
@@ -1364,8 +1366,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
   if (gameState !== 'SETUP') {
     const isResult = gameState === 'RESULT';
-    const finalUserTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.userItem.value || 0), 0);
-    const finalBotTotal = battleOutcomes.reduce((sum, r) => sum + Number(r.botItem.value || 0), 0);
+    const finalUserTotal = sumUsdt(battleOutcomes.map(r => r.userItem));
+    const finalBotTotal = sumUsdt(battleOutcomes.map(r => r.botItem));
     const leftTotal = leftIsUser ? finalUserTotal : finalBotTotal;
     const rightTotal = leftIsUser ? finalBotTotal : finalUserTotal;
     const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
@@ -1376,7 +1378,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
     const wonItems = userWon
       ? [...battleOutcomes.map(o => o.userItem), ...battleOutcomes.map(o => o.botItem)]
       : [];
-    const winningsByCurrency = wonItems.reduce((acc, item) => {
+    const winningsUsdt = wonItems.reduce((s, item) => s + itemUsdt(item), 0);
+    const winningsByToken = wonItems.reduce((acc, item) => {
       acc[item.currency] = (acc[item.currency] || 0) + item.value;
       return acc;
     }, {} as Record<string, number>);
@@ -1396,8 +1399,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
         {/* Tiebreaker Wheel Overlay */}
         {showTiebreaker && (() => {
           const tieUserWon = resolveUserWon(
-            battleOutcomes.reduce((s, r) => s + Number(r.userItem.value || 0), 0),
-            battleOutcomes.reduce((s, r) => s + Number(r.botItem.value || 0), 0)
+            sumUsdt(battleOutcomes.map(r => r.userItem)),
+            sumUsdt(battleOutcomes.map(r => r.botItem))
           );
           const tieLeftWon = isOwnBattle ? tieUserWon : !tieUserWon;
           const winnerColor = tieLeftWon ? '#66FCF1' : '#EF4444';
@@ -1841,21 +1844,24 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-green-400">{format2(leftTotal)}</div>
+                      <div className="text-lg font-black text-green-400">{format2(leftTotal)} USDT</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)}</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} USDT</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Winnings</div>
+                    <div className="text-center mb-2">
+                      <span className="text-web3-accent font-mono text-lg font-black">{format2(winningsUsdt)} USDT</span>
+                    </div>
                     <div className="flex flex-wrap justify-center gap-3">
-                  {Object.keys(winningsByCurrency).length === 0 ? (
+                  {Object.keys(winningsByToken).length === 0 ? (
                         <span className="text-gray-500 text-sm">No tokens won</span>
                   ) : (
-                    Object.entries(winningsByCurrency).map(([currency, amount]) => (
+                    Object.entries(winningsByToken).map(([currency, amount]) => (
                           <div key={currency} className="bg-black/40 px-3 py-1.5 rounded border border-white/[0.12] flex items-center gap-2">
                             <span className="text-white font-mono text-sm font-bold">{format2(Number(amount || 0))} ${currency}</span>
                       </div>
@@ -1887,12 +1893,12 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)}</div>
+                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)} USDT</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)}</div>
+                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} USDT</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
