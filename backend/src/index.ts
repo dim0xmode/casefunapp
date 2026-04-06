@@ -13,7 +13,7 @@ import walletRoutes from './routes/walletRoutes.js';
 import tokenRoutes from './routes/tokenRoutes.js';
 import prisma from './config/database.js';
 import { startCaseExpiryWorker } from './workers/caseExpiryWorker.js';
-import { syncTelegramMiniAppMenuButton } from './services/telegramLinkBotService.js';
+import { syncTelegramMiniAppMenuButton, ensureTelegramBotLinkPolling } from './services/telegramLinkBotService.js';
 
 const app = express();
 
@@ -135,6 +135,13 @@ app.listen(config.port, async () => {
         const reason = error instanceof Error ? error.message : String(error);
         console.warn(`⚠️  Telegram Mini App menu sync skipped: ${reason}`);
       });
+    try {
+      ensureTelegramBotLinkPolling();
+      console.log('✅ Telegram bot polling started');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️  Telegram bot polling skipped: ${reason}`);
+    }
   }
 
   startCaseExpiryWorker();
