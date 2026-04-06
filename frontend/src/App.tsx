@@ -979,8 +979,10 @@ const App = () => {
     await loadProfile();
   };
 
-  const loginWithWalletAddress = async (address: string) => {
-    if (!address || !hasInjectedEthereumProvider() || !window.ethereum) return false;
+  const loginWithWalletAddress = async (address: string, externalProvider?: any) => {
+    if (!address) return false;
+    const signingProvider = externalProvider || (window as any).ethereum;
+    if (!signingProvider) return false;
     if (isAuthLoading) return false;
     setIsAuthLoading(true);
     try {
@@ -993,9 +995,20 @@ const App = () => {
       const message = nonceResponse.data?.message;
       if (!message) return false;
 
-      const provider = new BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const signature = await signer.signMessage(message);
+      let signature: string;
+      if (externalProvider && typeof externalProvider.request === 'function') {
+        const msgHex = hexlify(toUtf8Bytes(message));
+        const addressParam = getAddress(address);
+        const sig = await externalProvider.request({
+          method: 'personal_sign',
+          params: [msgHex, addressParam],
+        });
+        signature = String(sig);
+      } else {
+        const provider = new BrowserProvider(signingProvider);
+        const signer = await provider.getSigner();
+        signature = await signer.signMessage(message);
+      }
 
       const loginResponse = await api.loginWithWallet(
         address,
@@ -1032,8 +1045,8 @@ const App = () => {
     }
   };
 
-  const handleWalletConnect = async (address: string) => {
-    return loginWithWalletAddress(address);
+  const handleWalletConnect = async (result: { address: string; provider?: any; disconnect?: () => Promise<void> }) => {
+    return loginWithWalletAddress(result.address, result.provider);
   };
 
   useEffect(() => {
@@ -2173,12 +2186,12 @@ const App = () => {
         isOpen={isWalletConnectOpen}
         onClose={() => setIsWalletConnectOpen(false)}
         onConnect={handleWalletConnect}
-        connectWallet={connectWallet}
         connectWithProvider={connectWithProvider}
         isConnecting={isWalletConnecting}
         error={walletError}
         isAuthLoading={isAuthLoading}
         discoveredWallets={discoveredWallets}
+        walletConnectConfig={getWalletConnectRuntimeConfig()}
       />
 
       <TopUpModal
