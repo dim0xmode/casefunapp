@@ -273,12 +273,6 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
           </div>
         </div>
 
-        {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
-          <div className="text-center mb-2">
-            <span className="text-[11px] text-gray-500">1 ${caseData.tokenTicker || caseData.currency} = {caseData.tokenPrice} ₮</span>
-          </div>
-        )}
-
         {/* Open Button and Side Controls */}
         <div className={`${isTelegramMiniApp ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'} max-w-6xl mx-auto`}>
           {/* Left Side: Price and RTU */}
@@ -349,6 +343,11 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
             </button>
           </div>
         </div>
+        {caseData.tokenPrice != null && caseData.tokenPrice > 0 && (
+          <div className="text-center mt-2">
+            <span className="text-[11px] text-gray-500">1 ${caseData.tokenTicker || caseData.currency} = {caseData.tokenPrice} ₮</span>
+          </div>
+        )}
         </div>
       )}
 

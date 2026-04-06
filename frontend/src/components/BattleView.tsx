@@ -1368,12 +1368,14 @@ export const BattleView: React.FC<BattleViewProps> = ({
     const isResult = gameState === 'RESULT';
     const finalUserTotal = sumUsdt(battleOutcomes.map(r => r.userItem));
     const finalBotTotal = sumUsdt(battleOutcomes.map(r => r.botItem));
-    const finalUserTokens = battleOutcomes.reduce((s, r) => s + Number(r.userItem.value || 0), 0);
-    const finalBotTokens = battleOutcomes.reduce((s, r) => s + Number(r.botItem.value || 0), 0);
+    const groupByCurrency = (items: Item[]) =>
+      items.reduce((acc, item) => { acc[item.currency] = (acc[item.currency] || 0) + item.value; return acc; }, {} as Record<string, number>);
+    const userTokensByCurrency = groupByCurrency(battleOutcomes.map(r => r.userItem));
+    const botTokensByCurrency = groupByCurrency(battleOutcomes.map(r => r.botItem));
     const leftTotal = leftIsUser ? finalUserTotal : finalBotTotal;
     const rightTotal = leftIsUser ? finalBotTotal : finalUserTotal;
-    const leftTokens = leftIsUser ? finalUserTokens : finalBotTokens;
-    const rightTokens = leftIsUser ? finalBotTokens : finalUserTokens;
+    const leftTokensByCurrency = leftIsUser ? userTokensByCurrency : botTokensByCurrency;
+    const rightTokensByCurrency = leftIsUser ? botTokensByCurrency : userTokensByCurrency;
     const userWon = resolveUserWon(finalUserTotal, finalBotTotal);
     const leftWon = forcedWinnerName
       ? forcedWinnerName.toLowerCase() === leftName.toLowerCase()
@@ -1848,21 +1850,22 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-sm font-bold text-gray-300">{format2(leftTokens)} tokens</div>
-                      <div className="text-lg font-black text-green-400">{format2(leftTotal)} ₮</div>
+                      {Object.entries(leftTokensByCurrency).map(([cur, amt]) => (
+                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                      ))}
+                      <div className="text-xs text-green-400">~ {format2(leftTotal)} ₮</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-sm font-bold text-gray-300">{format2(rightTokens)} tokens</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} ₮</div>
+                      {Object.entries(rightTokensByCurrency).map(([cur, amt]) => (
+                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                      ))}
+                      <div className="text-xs text-red-400">~ {format2(rightTotal)} ₮</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Winnings</div>
-                    <div className="text-center mb-2">
-                      <span className="text-web3-accent font-mono text-lg font-black">{format2(winningsUsdt)} ₮</span>
-                    </div>
                     <div className="flex flex-wrap justify-center gap-3">
                   {Object.keys(winningsByToken).length === 0 ? (
                         <span className="text-gray-500 text-sm">No tokens won</span>
@@ -1874,6 +1877,9 @@ export const BattleView: React.FC<BattleViewProps> = ({
                     ))
                   )}
                 </div>
+                    <div className="text-center mt-2">
+                      <span className="text-web3-accent font-mono text-sm font-bold">~ {format2(winningsUsdt)} ₮</span>
+                    </div>
               </div>
             </div>
           ) : (
@@ -1899,14 +1905,18 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   <div className="flex items-center gap-6 w-full justify-center mt-4">
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
-                      <div className="text-sm font-bold text-gray-300">{format2(leftTokens)} tokens</div>
-                      <div className="text-lg font-black text-gray-400">{format2(leftTotal)} ₮</div>
+                      {Object.entries(leftTokensByCurrency).map(([cur, amt]) => (
+                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                      ))}
+                      <div className="text-xs text-gray-400">~ {format2(leftTotal)} ₮</div>
                 </div>
                     <div className="text-xs font-bold text-gray-600">VS</div>
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
-                      <div className="text-sm font-bold text-gray-300">{format2(rightTokens)} tokens</div>
-                      <div className="text-lg font-black text-red-400">{format2(rightTotal)} ₮</div>
+                      {Object.entries(rightTokensByCurrency).map(([cur, amt]) => (
+                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                      ))}
+                      <div className="text-xs text-red-400">~ {format2(rightTotal)} ₮</div>
                 </div>
               </div>
                   <div className="bg-black/30 p-4 rounded-xl border border-white/[0.08] w-full mt-5 mb-5 animate-fade-in">
