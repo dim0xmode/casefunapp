@@ -822,7 +822,14 @@ const App = () => {
     try {
       let linkedAddress = walletAddress || '';
 
-      if (hasInjectedEthereumProvider() && window.ethereum) {
+      // In Telegram's WebView, some builds expose window.ethereum even though the real flow is
+      // WalletConnect → MetaMask app. Using the injected path there often skips the server link step.
+      const canUseInjectedWallet =
+        hasInjectedEthereumProvider() &&
+        Boolean(window.ethereum) &&
+        (!isTelegramWebViewContext() || isWalletLinkBridgeMode());
+
+      if (canUseInjectedWallet) {
         // Browser with injected wallet — use the old signature-based flow
         if (!linkedAddress) {
           linkedAddress = (await connectWallet()) || '';
@@ -852,7 +859,7 @@ const App = () => {
 
       // Telegram Mini App — standard WalletConnect.
       // WC Modal handles wallet selection, deep linking, and session management.
-      const { connectWallet: wcConnect } = await import('./utils/walletConnect');
+      const { connectWallet: wcConnect, withRelayNudge, nudgeRelay } = await import('./utils/walletConnect');
       const config = getWalletConnectRuntimeConfig();
 
       const session = await wcConnect({
@@ -875,7 +882,12 @@ const App = () => {
       if (!message) throw new Error('Failed to get nonce for wallet linking.');
       const wcSignerProvider = new BrowserProvider(session.provider);
       const wcSigner = await wcSignerProvider.getSigner();
-      const signature = await wcSigner.signMessage(message);
+
+      // connect() removes WC's visibility handler in finally; the next RPC is personal_sign after
+      // the user returns from MetaMask — without relay nudge the response often never arrives.
+      setTelegramAuthError('Approve the signature in your wallet to finish linking.');
+      nudgeRelay(session.provider);
+      const signature = await withRelayNudge(session.provider, () => wcSigner.signMessage(message));
 
       const response = await api.linkWalletFromTelegram(normalizedAddress, signature, message);
       const nextUser = response.data?.user;
