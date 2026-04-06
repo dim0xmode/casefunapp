@@ -20,11 +20,23 @@ const app = express();
 // Middleware
 app.set('trust proxy', 1);
 
-const allowedOrigins = new Set([config.frontendUrl, 'http://localhost:5174']);
+const trimSlash = (value: string) => value.replace(/\/$/, '');
+const frontendBase = trimSlash(String(config.frontendUrl || '').trim());
+const allowedOrigins = new Set<string>(['http://localhost:5174']);
+if (frontendBase) {
+  allowedOrigins.add(frontendBase);
+  if (frontendBase.startsWith('https://') && !frontendBase.includes('://www.')) {
+    allowedOrigins.add(frontendBase.replace('https://', 'https://www.'));
+  }
+  if (frontendBase.startsWith('http://') && !frontendBase.includes('://www.')) {
+    allowedOrigins.add(frontendBase.replace('http://', 'http://www.'));
+  }
+}
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.has(origin)) return callback(null, true);
+    const norm = trimSlash(origin);
+    if (allowedOrigins.has(norm)) return callback(null, true);
     if (config.nodeEnv === 'development' && origin.startsWith('http://localhost:')) {
       return callback(null, true);
     }
@@ -34,6 +46,16 @@ app.use(cors({
 }));
 
 app.use(apiRateLimit);
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/auth')) return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    const pathOnly = String(req.originalUrl || req.url || '').split('?')[0];
+    console.log(`[auth] ${req.method} ${pathOnly} -> ${res.statusCode} (${Date.now() - start}ms)`);
+  });
+  next();
+});
 
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: true, limit: '256kb' }));

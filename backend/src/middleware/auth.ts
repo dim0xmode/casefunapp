@@ -42,10 +42,13 @@ export const requireAuth = async (
       return next(new AppError('Account is banned', 403));
     }
 
-    await prisma.session.update({
-      where: { id: session.id },
+    const touched = await prisma.session.updateMany({
+      where: { id: session.id, token: sessionToken },
       data: { lastSeenAt: new Date() },
     });
+    if (touched.count === 0) {
+      return next(new AppError('Invalid or expired session', 401));
+    }
 
     req.userId = session.userId;
     req.walletAddress = session.user.walletAddress;

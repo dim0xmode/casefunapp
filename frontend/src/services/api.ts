@@ -150,7 +150,7 @@ class ApiClient {
   }
 
   async getProfile() {
-    return this.request<{ user: any }>('/auth/profile');
+    return this.request<{ user: any }>('/auth/profile', { cache: 'no-store' });
   }
 
   async logout() {

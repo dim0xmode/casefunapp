@@ -88,7 +88,7 @@ export const MOCK_CASES: Case[] = [
 export const INITIAL_USER: User = {
   username: 'CryptoKing',
   walletAddress: '0x71C...3a2',
-  hasLinkedWallet: true,
+  hasLinkedWallet: false,
   walletLinkedAt: null,
   balance: 0,
   role: 'USER',

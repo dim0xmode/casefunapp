@@ -1109,6 +1109,12 @@ export const getProfile = async (
   next: NextFunction
 ) => {
   try {
+    // Avoid Express 304 + empty body breaking fetch().json() on repeat profile loads.
+    delete req.headers['if-none-match'];
+    delete req.headers['if-modified-since'];
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+
     const userId = (req as any).userId;
 
     const user = await prisma.user.findUnique({
