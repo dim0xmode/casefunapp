@@ -16,7 +16,7 @@ import { ImageWithMeta } from './components/ui/ImageWithMeta';
 import { INITIAL_USER } from './constants';
 import { User, Item, Case } from './types';
 import { useWallet } from './hooks/useWallet';
-import { BrowserProvider } from 'ethers';
+import { BrowserProvider, getAddress, hexlify, toUtf8Bytes } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
 import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
 import { playCaseCreatedCelebration, playDullClick } from './utils/audio';
@@ -859,7 +859,7 @@ const App = () => {
 
       // Telegram Mini App — standard WalletConnect.
       // WC Modal handles wallet selection, deep linking, and session management.
-      const { connectWallet: wcConnect, withRelayNudge, nudgeRelay } = await import('./utils/walletConnect');
+      const { connectWallet: wcConnect, withRelayNudge } = await import('./utils/walletConnect');
       const config = getWalletConnectRuntimeConfig();
 
       const session = await wcConnect({
@@ -880,14 +880,28 @@ const App = () => {
       const nonceResponse = await api.getNonce(normalizedAddress);
       const message = nonceResponse.data?.message;
       if (!message) throw new Error('Failed to get nonce for wallet linking.');
-      const wcSignerProvider = new BrowserProvider(session.provider);
-      const wcSigner = await wcSignerProvider.getSigner();
+      const wcEip1193 = session.provider as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      if (typeof wcEip1193?.request !== 'function') {
+        throw new Error('Wallet provider is not ready. Try linking again.');
+      }
+      const msgHex = hexlify(toUtf8Bytes(message));
+      const addressParam = getAddress(normalizedAddress);
 
-      // connect() removes WC's visibility handler in finally; the next RPC is personal_sign after
-      // the user returns from MetaMask — without relay nudge the response often never arrives.
+      // Avoid BrowserProvider.getSigner().signMessage here: with WalletConnect + MetaMask that path
+      // can hit an undefined internal and throw "undefined is not a function" inside the wallet.
+      // connect() removes WC's visibility handler in finally; personal_sign after returning from the
+      // wallet app needs relay nudge so the response is delivered.
       setTelegramAuthError('Approve the signature in your wallet to finish linking.');
-      nudgeRelay(session.provider);
-      const signature = await withRelayNudge(session.provider, () => wcSigner.signMessage(message));
+      const signature = await withRelayNudge(session.provider, async () => {
+        const sig = await wcEip1193.request({
+          method: 'personal_sign',
+          params: [msgHex, addressParam],
+        });
+        if (typeof sig !== 'string' || !sig) {
+          throw new Error('Wallet did not return a signature.');
+        }
+        return sig;
+      });
 
       const response = await api.linkWalletFromTelegram(normalizedAddress, signature, message);
       const nextUser = response.data?.user;
