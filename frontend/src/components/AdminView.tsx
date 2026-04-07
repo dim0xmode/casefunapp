@@ -85,11 +85,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   });
   const [newRewardTask, setNewRewardTask] = useState({
     type: 'LIKE_TWEET',
-    title: '',
-    description: '',
     targetUrl: '',
     reward: 1,
-    sortOrder: 100,
   });
   const [filters, setFilters] = useState({
     userRole: 'all',
@@ -1415,21 +1412,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           {!loading && !error && activeTab === 'rewards' && (
             <div className="space-y-4">
               {/* Create task form */}
+              {(() => {
+                const needsUrl = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(newRewardTask.type);
+                const canCreate = saving === null && (!needsUrl || newRewardTask.targetUrl.trim());
+                return (
               <div className="rounded-xl border border-white/[0.08] bg-black/20 p-4 space-y-3">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Create Reward Task</div>
                 <div className="grid grid-cols-2 gap-3">
                   <select
                     value={newRewardTask.type}
-                    onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value }))}
+                    onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '' }))}
                     className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
                   >
-                    <option value="LIKE_TWEET">Like Tweet</option>
-                    <option value="REPOST_TWEET">Repost Tweet</option>
-                    <option value="COMMENT_TWEET">Comment Tweet</option>
-                    <option value="FOLLOW_TWITTER">Follow Twitter</option>
-                    <option value="SUBSCRIBE_TELEGRAM">Subscribe Telegram</option>
-                    <option value="LINK_TWITTER">Link Twitter</option>
-                    <option value="LINK_TELEGRAM">Link Telegram</option>
+                    <option value="LIKE_TWEET">Like post</option>
+                    <option value="REPOST_TWEET">Repost</option>
+                    <option value="COMMENT_TWEET">Comment on post</option>
+                    <option value="FOLLOW_TWITTER">Follow @casefunnet</option>
+                    <option value="SUBSCRIBE_TELEGRAM">Join Telegram</option>
                   </select>
                   <input
                     value={newRewardTask.reward}
@@ -1438,50 +1437,33 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     }
                     type="number"
                     min={1}
-                    placeholder="CFP reward"
+                    placeholder="CFP"
                     className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
                   />
                 </div>
-                <input
-                  value={newRewardTask.title}
-                  onChange={(e) => setNewRewardTask((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="Task title"
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                />
-                <input
-                  value={newRewardTask.description}
-                  onChange={(e) => setNewRewardTask((p) => ({ ...p, description: e.target.value }))}
-                  placeholder="Description"
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                />
-                <input
-                  value={newRewardTask.targetUrl}
-                  onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
-                  placeholder="Target URL (tweet link)"
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                />
+                {needsUrl && (
+                  <input
+                    value={newRewardTask.targetUrl}
+                    onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
+                    placeholder="Link to the post (x.com/…/status/…)"
+                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  />
+                )}
                 <button
                   type="button"
-                  disabled={saving !== null || !newRewardTask.title || !newRewardTask.description}
+                  disabled={!canCreate}
                   onClick={async () => {
                     setSaving('new-reward');
                     try {
                       await api.createAdminRewardTask({
                         type: newRewardTask.type,
-                        title: newRewardTask.title,
-                        description: newRewardTask.description,
-                        targetUrl: newRewardTask.targetUrl || undefined,
-                        reward: newRewardTask.reward,
-                        sortOrder: newRewardTask.sortOrder,
-                      });
-                      setNewRewardTask({
-                        type: 'LIKE_TWEET',
                         title: '',
                         description: '',
-                        targetUrl: '',
-                        reward: 1,
+                        targetUrl: newRewardTask.targetUrl || undefined,
+                        reward: newRewardTask.reward,
                         sortOrder: 100,
                       });
+                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1 });
                       await load();
                     } catch (err: any) {
                       window.alert(err?.message || 'Failed to create task');
@@ -1494,6 +1476,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   {saving === 'new-reward' ? 'Creating…' : 'Create Task'}
                 </button>
               </div>
+                );
+              })()}
 
               {/* Task list */}
               <div className="space-y-2">
@@ -1504,9 +1488,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-white font-medium">{task.title}</div>
+                      <div className="text-xs text-white font-medium">
+                        {{ LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment on post', FOLLOW_TWITTER: 'Follow @casefunnet', SUBSCRIBE_TELEGRAM: 'Join Telegram', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram' }[task.type as string] || task.title}
+                      </div>
                       <div className="text-[10px] text-gray-500">
-                        {task.type} · +{task.reward} CFP · {task.claimCount ?? 0} claims{' '}
+                        +{task.reward} CFP · {task.claimCount ?? 0} claims{' '}
                         {task.isDefault ? '· Default' : ''}
                       </div>
                       {task.targetUrl && (

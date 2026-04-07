@@ -547,20 +547,18 @@ export const adminCreateRewardTask = async (
     const { type, title, description, targetUrl, reward, sortOrder } =
       req.body || {};
 
-    const validTypes = [
-      'LINK_TWITTER',
-      'LINK_TELEGRAM',
-      'FOLLOW_TWITTER',
-      'SUBSCRIBE_TELEGRAM',
-      'LIKE_TWEET',
-      'REPOST_TWEET',
-      'COMMENT_TWEET',
-    ];
-    if (!validTypes.includes(type)) {
+    const TASK_PRESETS: Record<string, { title: string; description: string }> = {
+      LINK_TWITTER: { title: 'Link Twitter', description: 'Connect your X account' },
+      LINK_TELEGRAM: { title: 'Link Telegram', description: 'Connect your Telegram account' },
+      FOLLOW_TWITTER: { title: 'Follow @casefunnet', description: 'Follow our official X account' },
+      SUBSCRIBE_TELEGRAM: { title: 'Join Telegram channel', description: 'Subscribe to our Telegram community' },
+      LIKE_TWEET: { title: 'Like this post', description: 'Like the post on X' },
+      REPOST_TWEET: { title: 'Repost this post', description: 'Repost on X' },
+      COMMENT_TWEET: { title: 'Comment on this post', description: 'Leave a comment on the post' },
+    };
+
+    if (!TASK_PRESETS[type]) {
       return next(new AppError('Invalid task type', 400));
-    }
-    if (!title || !description) {
-      return next(new AppError('Title and description are required', 400));
     }
     if (
       ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(type) &&
@@ -569,11 +567,15 @@ export const adminCreateRewardTask = async (
       return next(new AppError('Target URL is required for tweet tasks', 400));
     }
 
+    const preset = TASK_PRESETS[type];
+    const finalTitle = title ? String(title).trim() : preset.title;
+    const finalDescription = description ? String(description).trim() : preset.description;
+
     const task = await prisma.rewardTask.create({
       data: {
         type,
-        title: String(title).trim(),
-        description: String(description).trim(),
+        title: finalTitle,
+        description: finalDescription,
         targetUrl: targetUrl ? String(targetUrl).trim() : null,
         reward: Math.max(1, Number(reward) || 1),
         isDefault: false,

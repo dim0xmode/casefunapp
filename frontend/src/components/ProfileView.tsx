@@ -196,25 +196,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
 
   const getTaskActionUrl = (task: RewardTask): string | null => {
-    const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
-    if (task.targetUrl && tweetTypes.includes(task.type)) return task.targetUrl;
+    if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
     if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return 'https://t.me/CaseFun_Chat';
     return task.targetUrl || null;
   };
 
   const renderTaskTitle = (task: RewardTask) => {
-    const handleActionClick = (url: string) => { markTaskActivated(task.id); };
     const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
     if (task.targetUrl && tweetTypes.includes(task.type)) {
       const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
-      return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" onClick={() => handleActionClick(task.targetUrl!)} className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
+      return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
     }
     if (task.type === 'FOLLOW_TWITTER') {
-      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" onClick={() => handleActionClick('https://x.com/casefunnet')} className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
+      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
     }
     if (task.type === 'SUBSCRIBE_TELEGRAM') {
-      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" onClick={() => handleActionClick('https://t.me/CaseFun_Chat')} className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
+      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
     }
     return task.title;
   };
@@ -1024,16 +1022,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               {(() => {
                 const nextTask = rewardTasks.find((t) => !t.claimed);
-                if (!nextTask) return null;
                 return (
                   <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
                     <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-1.5">
-                      <Gift size={11} /> Next Quest
+                      <Gift size={11} /> {nextTask ? 'Next Quest' : 'Quests'}
                     </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] text-gray-400">{nextTask.title} <span className="text-web3-accent font-mono">+{nextTask.reward} CFP</span></div>
-                      <button type="button" onClick={() => setSocialRewardsTab('rewards')} className="text-[10px] text-web3-accent hover:underline">View</button>
-                    </div>
+                    {nextTask ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] text-gray-400">{nextTask.title} <span className="text-web3-accent font-mono">+{nextTask.reward} CFP</span></div>
+                        <button type="button" onClick={() => setSocialRewardsTab('rewards')} className="text-[10px] text-web3-accent hover:underline">View</button>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-gray-500">All tasks completed! More coming soon</div>
+                    )}
                   </div>
                 );
               })()}
@@ -1082,9 +1083,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         <div className="text-[11px] text-white font-medium">
                           {renderTaskTitle(task)}
                         </div>
-                        <div className="text-[10px] text-gray-500 mt-0.5">
-                          {task.locked ? 'Link Twitter & Telegram first' : task.description}
-                        </div>
+                        {task.locked && (
+                          <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
