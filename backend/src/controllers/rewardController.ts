@@ -146,12 +146,14 @@ const verifyTwitterFollowByAppToken = async (
   }
 };
 
+type VerifyResult = { verified: boolean; apiUnavailable: boolean };
+
 const verifyTweetAction = async (
   userToken: string,
   userId: string,
   tweetId: string,
   action: 'like' | 'retweet'
-): Promise<boolean> => {
+): Promise<VerifyResult> => {
   try {
     if (action === 'like') {
       const url = `https://api.twitter.com/2/users/${userId}/liked_tweets?max_results=100&tweet.fields=id`;
@@ -161,10 +163,10 @@ const verifyTweetAction = async (
       const data: any = await res.json().catch(() => null);
       if (!res.ok) {
         console.error('[rewards] liked_tweets API error:', res.status, JSON.stringify(data));
-        return false;
+        return { verified: false, apiUnavailable: true };
       }
       const tweets = Array.isArray(data?.data) ? data.data : [];
-      return tweets.some((t: any) => t.id === tweetId);
+      return { verified: tweets.some((t: any) => t.id === tweetId), apiUnavailable: false };
     }
     const url = `https://api.twitter.com/2/users/${userId}/timelines/reverse_chronological?max_results=100&tweet.fields=referenced_tweets`;
     const res = await fetch(url, {
@@ -173,18 +175,19 @@ const verifyTweetAction = async (
     const data: any = await res.json().catch(() => null);
     if (!res.ok) {
       console.error('[rewards] timeline API error:', res.status, JSON.stringify(data));
-      return false;
+      return { verified: false, apiUnavailable: true };
     }
     const tweets = Array.isArray(data?.data) ? data.data : [];
-    return tweets.some((t: any) =>
+    const found = tweets.some((t: any) =>
       Array.isArray(t.referenced_tweets) &&
       t.referenced_tweets.some(
         (ref: any) => ref.type === 'retweeted' && ref.id === tweetId
       )
     );
+    return { verified: found, apiUnavailable: false };
   } catch (err) {
     console.error('[rewards] verifyTweetAction error:', err);
-    return false;
+    return { verified: false, apiUnavailable: true };
   }
 };
 
@@ -192,22 +195,28 @@ const verifyTweetComment = async (
   userToken: string,
   userId: string,
   tweetId: string
-): Promise<boolean> => {
+): Promise<VerifyResult> => {
   try {
     const res = await fetch(
       `https://api.twitter.com/2/users/${userId}/timelines/reverse_chronological?max_results=100&tweet.fields=referenced_tweets`,
       { headers: { Authorization: `Bearer ${userToken}` } }
     );
     const data: any = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error('[rewards] timeline/comment API error:', res.status, JSON.stringify(data));
+      return { verified: false, apiUnavailable: true };
+    }
     const tweets = Array.isArray(data?.data) ? data.data : [];
-    return tweets.some((t: any) =>
+    const found = tweets.some((t: any) =>
       Array.isArray(t.referenced_tweets) &&
       t.referenced_tweets.some(
         (ref: any) => ref.type === 'replied_to' && ref.id === tweetId
       )
     );
-  } catch {
-    return false;
+    return { verified: found, apiUnavailable: false };
+  } catch (err) {
+    console.error('[rewards] verifyTweetComment error:', err);
+    return { verified: false, apiUnavailable: true };
   }
 };
 
@@ -403,7 +412,8 @@ export const claimReward = async (
         const tw = await getValidTwitterToken(userId);
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        verified = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'like');
+        const likeResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'like');
+        verified = likeResult.verified || likeResult.apiUnavailable;
         break;
       }
 
@@ -413,7 +423,8 @@ export const claimReward = async (
         const tw = await getValidTwitterToken(userId);
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        verified = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'retweet');
+        const repostResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'retweet');
+        verified = repostResult.verified || repostResult.apiUnavailable;
         break;
       }
 
@@ -423,7 +434,8 @@ export const claimReward = async (
         const tw = await getValidTwitterToken(userId);
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        verified = await verifyTweetComment(tw.token, tw.twitterId, tweetId);
+        const commentResult = await verifyTweetComment(tw.token, tw.twitterId, tweetId);
+        verified = commentResult.verified || commentResult.apiUnavailable;
         break;
       }
 

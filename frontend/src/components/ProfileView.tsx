@@ -132,6 +132,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [rewardsLoading, setRewardsLoading] = useState(false);
   const [claimingTaskId, setClaimingTaskId] = useState<string | null>(null);
   const [rewardError, setRewardError] = useState<string | null>(null);
+  const [activatedTasks, setActivatedTasks] = useState<Set<string>>(() => {
+    try {
+      const stored = sessionStorage.getItem('cf_activated_tasks');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const markTaskActivated = useCallback((taskId: string) => {
+    setActivatedTasks((prev) => {
+      const next = new Set(prev);
+      next.add(taskId);
+      try { sessionStorage.setItem('cf_activated_tasks', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   useEffect(() => { setRewardPoints(user?.rewardPoints ?? 0); }, [user?.rewardPoints]);
 
@@ -157,6 +172,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
+  useEffect(() => {
+    const onFocus = () => { loadRewardTasks(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadRewardTasks]);
+
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);
     setRewardError(null);
@@ -171,17 +192,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  const taskNeedsAction = (task: RewardTask) =>
+    !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
+
+  const getTaskActionUrl = (task: RewardTask): string | null => {
+    const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
+    if (task.targetUrl && tweetTypes.includes(task.type)) return task.targetUrl;
+    if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
+    if (task.type === 'SUBSCRIBE_TELEGRAM') return 'https://t.me/CaseFun_Chat';
+    return task.targetUrl || null;
+  };
+
   const renderTaskTitle = (task: RewardTask) => {
+    const handleActionClick = (url: string) => { markTaskActivated(task.id); };
     const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
     if (task.targetUrl && tweetTypes.includes(task.type)) {
       const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
-      return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
+      return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" onClick={() => handleActionClick(task.targetUrl!)} className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
     }
     if (task.type === 'FOLLOW_TWITTER') {
-      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
+      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" onClick={() => handleActionClick('https://x.com/casefunnet')} className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
     }
     if (task.type === 'SUBSCRIBE_TELEGRAM') {
-      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
+      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" onClick={() => handleActionClick('https://t.me/CaseFun_Chat')} className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
     }
     return task.title;
   };
@@ -1034,9 +1067,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
                     </div>
                   )}
-                  {unclaimedTasks.map((task) => (
+                  {unclaimedTasks.map((task) => {
+                    const needsAction = taskNeedsAction(task);
+                    const isActivated = activatedTasks.has(task.id);
+                    const showClaim = isEditable && task.completed && !task.locked && (!needsAction || isActivated);
+                    const showGo = isEditable && task.completed && !task.locked && needsAction && !isActivated;
+                    const actionUrl = getTaskActionUrl(task);
+                    return (
                     <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
-                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : task.completed ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
+                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : isActivated ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
                         {task.locked ? <Lock size={10} /> : <Gift size={11} />}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1049,14 +1088,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
-                        {isEditable && task.completed && !task.locked && (
+                        {showGo && actionUrl && (
+                          <a href={actionUrl} target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10 active:scale-[0.97] transition flex items-center gap-1">
+                            Go <ExternalLink size={10} />
+                          </a>
+                        )}
+                        {showClaim && (
                           <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
                             {claimingTaskId === task.id ? '…' : 'Claim'}
                           </button>
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
                 </div>
                 );
