@@ -3,7 +3,7 @@ import { Case, Rarity } from '../types';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api } from '../services/api';
 
-const MAX_ITEMS = 100;
+const MAX_ITEMS = 30;
 const SPOILER_DELAY_MS = 8_000;
 
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -80,11 +80,16 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
     const c = pick(cs);
 
     if (type === 'BATTLE_WIN' || type === 'BATTLE_LOSS') {
+      const drops = c.possibleDrops?.length ? c.possibleDrops : [];
+      const drop = drops.length ? pick(drops) : null;
+      const val = drop ? drop.value : Math.max(1, Math.floor(c.price));
       return {
         id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         type,
         user: pick(BOT_NAMES),
-        value: type === 'BATTLE_WIN' ? +(Math.random() * 50 + 1).toFixed(1) : 0,
+        caseName: c.name,
+        currency: (c as any).tokenTicker || c.currency,
+        value: val,
         cost: +(Math.random() * 30 + 1).toFixed(1),
         timestamp: new Date(),
         isReal: false,
@@ -111,7 +116,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   useEffect(() => {
     if (!cases.length || initialized.current) return;
     initialized.current = true;
-    const initial = Array.from({ length: 40 }, () => makeBotActivity()).filter(Boolean) as Activity[];
+    const initial = Array.from({ length: MAX_ITEMS }, () => makeBotActivity()).filter(Boolean) as Activity[];
     setActivities(initial);
   }, [cases.length, makeBotActivity]);
 
@@ -171,7 +176,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
       setActivities(prev => [bot, ...prev].slice(0, MAX_ITEMS));
     };
 
-    const id = setInterval(tick, 2500 + Math.random() * 2500);
+    const id = setInterval(tick, 3000 + Math.random() * 3000);
     return () => clearInterval(id);
   }, [cases.length, makeBotActivity]);
 
@@ -206,13 +211,13 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
       case 'CASE_CREATE':
         return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/60">{a.caseName}</span></>;
       case 'BATTLE_WIN':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? ` ${a.value} ₮` : ''}</>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? <span className="text-web3-success font-bold"> {a.value} {a.currency}</span> : ''}</>;
       case 'BATTLE_LOSS':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.cost ? ` ${a.cost} ₮` : ''}</>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.caseName ? <span className="text-white/50"> {a.caseName}</span> : ''}</>;
       case 'UPGRADE_SUCCESS':
         return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-web3-success font-bold">{a.value} {a.currency}</span></>;
       case 'UPGRADE_FAIL':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-red-400">{a.value} {a.currency}</span></>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.caseName ? <span className="text-white/50"> {a.caseName}</span> : ''}</>;
       default:
         return null;
     }
@@ -229,7 +234,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+      <div className="flex-1 overflow-hidden">
         {activities.map((a, i) => (
           <div
             key={a.id}

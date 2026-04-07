@@ -634,7 +634,7 @@ export const getActivityFeed = async (
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [openings, battles, newCases] = await Promise.all([
+    const [openings, battles, newCases, upgrades] = await Promise.all([
       prisma.caseOpening.findMany({
         where: { timestamp: { gte: since } },
         orderBy: { timestamp: 'desc' },
@@ -659,7 +659,7 @@ export const getActivityFeed = async (
       prisma.battle.findMany({
         where: { timestamp: { gte: since } },
         orderBy: { timestamp: 'desc' },
-        take: 20,
+        take: 30,
         select: {
           id: true,
           result: true,
@@ -683,6 +683,27 @@ export const getActivityFeed = async (
           imageMeta: true,
           createdAt: true,
           createdBy: { select: { username: true, avatarUrl: true, avatarMeta: true } },
+        },
+      }),
+      prisma.rtuEvent.findMany({
+        where: { createdAt: { gte: since }, type: 'UPGRADE' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          deltaToken: true,
+          createdAt: true,
+          metadata: true,
+          user: { select: { username: true, avatarUrl: true, avatarMeta: true } },
+          case: {
+            select: {
+              name: true,
+              currency: true,
+              tokenTicker: true,
+              imageUrl: true,
+              imageMeta: true,
+            },
+          },
         },
       }),
     ]);
@@ -731,6 +752,25 @@ export const getActivityFeed = async (
         image: c.imageUrl,
         imageMeta: c.imageMeta,
         timestamp: c.createdAt,
+      });
+    }
+
+    for (const u of upgrades) {
+      if (!u.user) continue;
+      const meta = u.metadata as any;
+      const won = u.deltaToken > 0;
+      events.push({
+        id: `upgrade-${u.id}`,
+        type: won ? 'UPGRADE_SUCCESS' : 'UPGRADE_FAIL',
+        user: u.user.username || 'Anon',
+        avatar: u.user.avatarUrl || null,
+        avatarMeta: u.user.avatarMeta || null,
+        caseName: u.case?.name || meta?.caseName || '',
+        currency: u.case?.tokenTicker || u.case?.currency || meta?.currency || '',
+        value: Math.abs(u.deltaToken),
+        image: u.case?.imageUrl || null,
+        imageMeta: u.case?.imageMeta || null,
+        timestamp: u.createdAt,
       });
     }
 
