@@ -22,6 +22,7 @@ export const config = {
   twitterClientId: process.env.TWITTER_CLIENT_ID || '',
   twitterClientSecret: process.env.TWITTER_CLIENT_SECRET || '',
   twitterRedirectUri: process.env.TWITTER_REDIRECT_URI || '',
+  twitterBearerToken: process.env.TWITTER_BEARER_TOKEN || '',
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramAuthClientId: process.env.TELEGRAM_AUTH_CLIENT_ID || '',
   telegramAuthClientSecret: process.env.TELEGRAM_AUTH_CLIENT_SECRET || '',
