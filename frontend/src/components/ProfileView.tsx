@@ -902,7 +902,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         <div
           className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl flex flex-col ${
-            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-auto min-h-[440px]'
+            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
           }`}
         >
           <div className="flex items-center gap-1 mb-3">
@@ -932,7 +932,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           {socialRewardsTab === 'social' && (
-            <>
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
               <div className="space-y-2">
                 {/* Twitter / X row */}
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
@@ -1044,11 +1044,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               {isEditable && twitterError && <div className="mt-2 text-[10px] text-red-400">{twitterError}</div>}
               {isEditable && telegramError && <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>}
-            </>
+            </div>
           )}
 
           {socialRewardsTab === 'rewards' && (
-            <div className="flex flex-col gap-2 overflow-y-auto flex-1">
+            <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[11px] text-gray-400">
                   Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
