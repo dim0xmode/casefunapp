@@ -172,11 +172,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const renderTaskTitle = (task: RewardTask) => {
-    if (!task.targetUrl) return task.title;
     const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
-    if (tweetTypes.includes(task.type)) {
+    if (task.targetUrl && tweetTypes.includes(task.type)) {
       const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
       return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
+    }
+    if (task.type === 'FOLLOW_TWITTER') {
+      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
+    }
+    if (task.type === 'SUBSCRIBE_TELEGRAM') {
+      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
     }
     return task.title;
   };

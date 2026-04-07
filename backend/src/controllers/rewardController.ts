@@ -217,7 +217,7 @@ export const listRewardTasks = async (
             completed = Boolean(user.telegramId);
             break;
           default:
-            completed = claimed;
+            completed = claimed || Boolean(user.twitterId && user.telegramId);
             break;
         }
       }
