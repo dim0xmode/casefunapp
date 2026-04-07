@@ -348,6 +348,7 @@ const buildPublicUser = (user: any) => ({
   twitterUsername: user.twitterUsername,
   twitterName: user.twitterName,
   twitterLinkedAt: user.twitterLinkedAt,
+  rewardPoints: user.rewardPoints ?? 0,
 });
 
 const exchangeTwitterCode = async (code: string, verifier: string) => {
@@ -374,7 +375,10 @@ const exchangeTwitterCode = async (code: string, verifier: string) => {
     const reason = payload?.error_description || payload?.error || 'Twitter token exchange failed';
     throw new AppError(String(reason), 400);
   }
-  return String(payload.access_token);
+  return {
+    accessToken: String(payload.access_token),
+    refreshToken: payload.refresh_token ? String(payload.refresh_token) : null,
+  };
 };
 
 const fetchTwitterProfile = async (accessToken: string) => {
@@ -1056,8 +1060,8 @@ export const linkTwitterAccount = async (req: Request, res: Response, next: Next
       return next(new AppError('Invalid or expired Twitter state', 400));
     }
 
-    const accessToken = await exchangeTwitterCode(code, parsedState.verifier);
-    const twitterProfile = await fetchTwitterProfile(accessToken);
+    const twitterTokens = await exchangeTwitterCode(code, parsedState.verifier);
+    const twitterProfile = await fetchTwitterProfile(twitterTokens.accessToken);
 
     const existing = await prisma.user.findFirst({
       where: {
@@ -1077,6 +1081,8 @@ export const linkTwitterAccount = async (req: Request, res: Response, next: Next
         twitterUsername: twitterProfile.username,
         twitterName: twitterProfile.name,
         twitterLinkedAt: new Date(),
+        twitterAccessToken: twitterTokens.accessToken,
+        twitterRefreshToken: twitterTokens.refreshToken,
       },
     });
 

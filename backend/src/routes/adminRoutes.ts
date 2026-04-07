@@ -26,6 +26,13 @@ import {
   previewBattleResolve,
 } from '../controllers/adminController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import {
+  adminListRewardTasks,
+  adminCreateRewardTask,
+  adminUpdateRewardTask,
+  adminDeleteRewardTask,
+  adminListRewardClaims,
+} from '../controllers/rewardController.js';
 
 const router = express.Router();
 
@@ -60,5 +67,11 @@ router.get('/feedback/unread-count', getFeedbackUnreadCount);
 router.patch('/feedback/:id/read', updateFeedbackReadStatus);
 router.patch('/feedback/:id/status', updateFeedbackStatus);
 router.post('/battles/preview-resolve', previewBattleResolve);
+
+router.get('/rewards/tasks', adminListRewardTasks);
+router.post('/rewards/tasks', adminCreateRewardTask);
+router.patch('/rewards/tasks/:id', adminUpdateRewardTask);
+router.delete('/rewards/tasks/:id', adminDeleteRewardTask);
+router.get('/rewards/claims', adminListRewardClaims);
 
 export default router;

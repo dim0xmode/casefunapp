@@ -29,6 +29,11 @@ import {
   unlinkTwitterAccount,
 } from '../controllers/userController.js';
 import { getReferralCode } from '../controllers/referralController.js';
+import {
+  listRewardTasks,
+  claimReward,
+  getRewardHistory,
+} from '../controllers/rewardController.js';
 
 const router = express.Router();
 const upload = multer({
@@ -64,5 +69,8 @@ router.delete('/twitter/link', unlinkTwitterAccount);
 router.post('/feedback', createFeedbackMessage);
 router.get('/feedback/early-access/status', getEarlyAccessRequestStatus);
 router.get('/referral/code', getReferralCode);
+router.get('/rewards/tasks', listRewardTasks);
+router.post('/rewards/claim/:taskId', claimReward);
+router.get('/rewards/history', getRewardHistory);
 
 export default router;

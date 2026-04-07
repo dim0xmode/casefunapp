@@ -107,6 +107,7 @@ const toPublicUser = (user: any) => ({
         ? user.referralConfirmedAt.toISOString()
         : user.referralConfirmedAt)
     : null,
+  rewardPoints: user.rewardPoints ?? 0,
 });
 
 const getCookieValue = (cookieHeader: string, key: string) => {

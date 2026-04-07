@@ -31,6 +31,16 @@ enum FeedbackStatus {
   REJECTED
 }
 
+enum RewardTaskType {
+  LINK_TWITTER
+  LINK_TELEGRAM
+  FOLLOW_TWITTER
+  SUBSCRIBE_TELEGRAM
+  LIKE_TWEET
+  REPOST_TWEET
+  COMMENT_TWEET
+}
+
 enum BattleLobbyStatus {
   OPEN
   IN_PROGRESS
@@ -56,6 +66,9 @@ model User {
   twitterUsername String?
   twitterName   String?
   twitterLinkedAt DateTime?
+  twitterAccessToken  String?
+  twitterRefreshToken String?
+  rewardPoints  Int      @default(0)
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?
@@ -82,6 +95,8 @@ model User {
   feedbacks     FeedbackMessage[]
   hostedBattleLobbies BattleLobby[] @relation("BattleLobbyHost")
   joinedBattleLobbies BattleLobby[] @relation("BattleLobbyJoiner")
+  rewardClaims        RewardClaim[]
+  createdRewardTasks  RewardTask[]  @relation("RewardTaskCreator")
   
   @@index([walletAddress])
   @@index([referredById])
@@ -408,4 +423,43 @@ model BattleLobby {
   @@index([status])
   @@index([createdAt])
   @@map("battle_lobbies")
+}
+
+model RewardTask {
+  id          String          @id @default(cuid())
+  type        RewardTaskType
+  title       String
+  description String
+  targetUrl   String?
+  reward      Int             @default(1)
+  isDefault   Boolean         @default(false)
+  isActive    Boolean         @default(true)
+  sortOrder   Int             @default(0)
+  createdById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  createdBy   User?           @relation("RewardTaskCreator", fields: [createdById], references: [id])
+  claims      RewardClaim[]
+
+  @@index([isActive])
+  @@index([type])
+  @@index([createdById])
+  @@map("reward_tasks")
+}
+
+model RewardClaim {
+  id        String      @id @default(cuid())
+  userId    String
+  taskId    String
+  reward    Int
+  claimedAt DateTime    @default(now())
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      RewardTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+  @@index([userId])
+  @@index([taskId])
+  @@map("reward_claims")
 }

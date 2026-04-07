@@ -109,6 +109,7 @@ export interface User {
   referredById?: string | null;
   /** When referral qualification was met (first confirmed on-chain deposit) */
   referralConfirmedAt?: string | null;
+  rewardPoints?: number;
   transactions: Transaction[];
   battleHistory: BattleRecord[];
   stats: {
@@ -117,6 +118,36 @@ export interface User {
     upgradesAttempted: number;
     upgradeSuccessCount: number;
   }
+}
+
+export type RewardTaskType =
+  | 'LINK_TWITTER'
+  | 'LINK_TELEGRAM'
+  | 'FOLLOW_TWITTER'
+  | 'SUBSCRIBE_TELEGRAM'
+  | 'LIKE_TWEET'
+  | 'REPOST_TWEET'
+  | 'COMMENT_TWEET';
+
+export interface RewardTask {
+  id: string;
+  type: RewardTaskType;
+  title: string;
+  description: string;
+  targetUrl?: string | null;
+  reward: number;
+  isDefault: boolean;
+  completed: boolean;
+  claimed: boolean;
+  locked: boolean;
+}
+
+export interface RewardClaimRecord {
+  id: string;
+  taskTitle: string;
+  taskType: RewardTaskType;
+  reward: number;
+  claimedAt: string;
 }
 
 export interface FeedItem {

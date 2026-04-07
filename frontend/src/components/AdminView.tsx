@@ -15,6 +15,7 @@ type TabKey =
   | 'settings'
   | 'audit'
   | 'feedback'
+  | 'rewards'
   | 'reports'
   | 'cms';
 
@@ -29,6 +30,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'settings', label: 'Settings' },
   { key: 'audit', label: 'Audit' },
   { key: 'feedback', label: 'Feedback' },
+  { key: 'rewards', label: 'Rewards' },
   { key: 'reports', label: 'Reports' },
   { key: 'cms', label: 'CMS' },
 ];
@@ -80,6 +82,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     deltaToken: '',
     deltaSpentUsdt: '',
     reason: '',
+  });
+  const [newRewardTask, setNewRewardTask] = useState({
+    type: 'LIKE_TWEET',
+    title: '',
+    description: '',
+    targetUrl: '',
+    reward: 1,
+    sortOrder: 100,
   });
   const [filters, setFilters] = useState({
     userRole: 'all',
@@ -191,6 +201,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           const response = await api.getAdminFeedback();
           setData(response.data?.messages ?? []);
           setFeedbackUnreadCount(Number(response.data?.unreadCount || 0));
+          break;
+        }
+        case 'rewards': {
+          const [tasksRes, claimsRes] = await Promise.all([
+            api.getAdminRewardTasks(),
+            api.getAdminRewardClaims(),
+          ]);
+          setData({ tasks: tasksRes.data?.tasks || [], claims: claimsRes.data?.claims || [] });
           break;
         }
         case 'reports':
@@ -1391,6 +1409,182 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               {!feedbackMessages.length && (
                 <div className="text-sm text-gray-500">No feedback yet.</div>
               )}
+            </div>
+          )}
+
+          {!loading && !error && activeTab === 'rewards' && (
+            <div className="space-y-4">
+              {/* Create task form */}
+              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-4 space-y-3">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Create Reward Task</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    value={newRewardTask.type}
+                    onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value }))}
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  >
+                    <option value="LIKE_TWEET">Like Tweet</option>
+                    <option value="REPOST_TWEET">Repost Tweet</option>
+                    <option value="COMMENT_TWEET">Comment Tweet</option>
+                    <option value="FOLLOW_TWITTER">Follow Twitter</option>
+                    <option value="SUBSCRIBE_TELEGRAM">Subscribe Telegram</option>
+                    <option value="LINK_TWITTER">Link Twitter</option>
+                    <option value="LINK_TELEGRAM">Link Telegram</option>
+                  </select>
+                  <input
+                    value={newRewardTask.reward}
+                    onChange={(e) =>
+                      setNewRewardTask((p) => ({ ...p, reward: Math.max(1, Number(e.target.value) || 1) }))
+                    }
+                    type="number"
+                    min={1}
+                    placeholder="CFP reward"
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  />
+                </div>
+                <input
+                  value={newRewardTask.title}
+                  onChange={(e) => setNewRewardTask((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="Task title"
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                />
+                <input
+                  value={newRewardTask.description}
+                  onChange={(e) => setNewRewardTask((p) => ({ ...p, description: e.target.value }))}
+                  placeholder="Description"
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                />
+                <input
+                  value={newRewardTask.targetUrl}
+                  onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
+                  placeholder="Target URL (tweet link)"
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                />
+                <button
+                  type="button"
+                  disabled={saving !== null || !newRewardTask.title || !newRewardTask.description}
+                  onClick={async () => {
+                    setSaving('new-reward');
+                    try {
+                      await api.createAdminRewardTask({
+                        type: newRewardTask.type,
+                        title: newRewardTask.title,
+                        description: newRewardTask.description,
+                        targetUrl: newRewardTask.targetUrl || undefined,
+                        reward: newRewardTask.reward,
+                        sortOrder: newRewardTask.sortOrder,
+                      });
+                      setNewRewardTask({
+                        type: 'LIKE_TWEET',
+                        title: '',
+                        description: '',
+                        targetUrl: '',
+                        reward: 1,
+                        sortOrder: 100,
+                      });
+                      await load();
+                    } catch (err: any) {
+                      window.alert(err?.message || 'Failed to create task');
+                    } finally {
+                      setSaving(null);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
+                >
+                  {saving === 'new-reward' ? 'Creating…' : 'Create Task'}
+                </button>
+              </div>
+
+              {/* Task list */}
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
+                {((data as any)?.tasks || []).map((task: any) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-white font-medium">{task.title}</div>
+                      <div className="text-[10px] text-gray-500">
+                        {task.type} · +{task.reward} CFP · {task.claimCount ?? 0} claims{' '}
+                        {task.isDefault ? '· Default' : ''}
+                      </div>
+                      {task.targetUrl && (
+                        <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setSaving(task.id);
+                          try {
+                            await api.updateAdminRewardTask(task.id, { isActive: !task.isActive });
+                            await load();
+                          } catch (err: any) {
+                            window.alert(err?.message || 'Failed');
+                          } finally {
+                            setSaving(null);
+                          }
+                        }}
+                        disabled={saving === task.id}
+                        className={`text-[10px] px-2 py-1 rounded-lg border ${
+                          task.isActive
+                            ? 'border-web3-success/30 text-web3-success'
+                            : 'border-gray-600 text-gray-500'
+                        }`}
+                      >
+                        {task.isActive ? 'Active' : 'Inactive'}
+                      </button>
+                      {!task.isDefault && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!window.confirm('Delete this task?')) return;
+                            setSaving(task.id);
+                            try {
+                              await api.deleteAdminRewardTask(task.id);
+                              await load();
+                            } catch (err: any) {
+                              window.alert(err?.message || 'Failed');
+                            } finally {
+                              setSaving(null);
+                            }
+                          }}
+                          disabled={saving === task.id}
+                          className="text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Claims history */}
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Recent Claims</div>
+                {((data as any)?.claims || []).length === 0 && (
+                  <div className="text-xs text-gray-600">No claims yet</div>
+                )}
+                {((data as any)?.claims || []).slice(0, 50).map((claim: any) => (
+                  <div
+                    key={claim.id}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/[0.06] bg-black/15"
+                  >
+                    <div>
+                      <div className="text-[11px] text-white">
+                        {claim.username} — {claim.taskTitle}
+                      </div>
+                      <div className="text-[10px] text-gray-600">
+                        {new Date(claim.claimedAt).toLocaleString('ru-RU')}
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono text-web3-accent font-bold">+{claim.reward} CFP</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -652,6 +652,48 @@ class ApiClient {
       body: JSON.stringify({ status }),
     });
   }
+
+  async getRewardTasks() {
+    return this.request<{ tasks: any[]; totalPoints: number }>('/user/rewards/tasks');
+  }
+
+  async claimReward(taskId: string) {
+    return this.request<{ claimId: string; reward: number; totalPoints: number }>(`/user/rewards/claim/${taskId}`, {
+      method: 'POST',
+    });
+  }
+
+  async getRewardHistory() {
+    return this.request<{ claims: any[] }>('/user/rewards/history');
+  }
+
+  async getAdminRewardTasks() {
+    return this.request<{ tasks: any[] }>('/admin/rewards/tasks');
+  }
+
+  async createAdminRewardTask(payload: { type: string; title: string; description: string; targetUrl?: string; reward?: number; sortOrder?: number }) {
+    return this.request<{ task: any }>('/admin/rewards/tasks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateAdminRewardTask(id: string, payload: Record<string, any>) {
+    return this.request<{ task: any }>(`/admin/rewards/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteAdminRewardTask(id: string) {
+    return this.request<void>(`/admin/rewards/tasks/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAdminRewardClaims() {
+    return this.request<{ claims: any[] }>('/admin/rewards/claims');
+  }
 }
 
 export const api = new ApiClient(API_URL);
