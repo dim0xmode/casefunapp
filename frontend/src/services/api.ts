@@ -467,6 +467,10 @@ class ApiClient {
     return this.request<{ case: any }>(`/cases/${id}`);
   }
 
+  async getActivityFeed() {
+    return this.request<{ events: any[] }>('/cases/feed');
+  }
+
   async createCase(caseData: any) {
     return this.request<{ case: any; balance?: number }>('/cases', {
       method: 'POST',

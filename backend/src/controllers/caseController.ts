@@ -5,9 +5,9 @@ import { recordRtuEvent } from '../services/rtuService.js';
 import { deployCaseToken } from '../services/tokenService.js';
 import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
 import { saveImage } from '../utils/upload.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 const CREATE_CASE_FEE = 1.5;
-import { AppError } from '../middleware/errorHandler.js';
 
 const normalizeParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
@@ -621,6 +621,117 @@ export const uploadCaseImage = async (
       status: 'success',
       data: { imageUrl },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getActivityFeed = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [openings, battles, newCases] = await Promise.all([
+      prisma.caseOpening.findMany({
+        where: { timestamp: { gte: since } },
+        orderBy: { timestamp: 'desc' },
+        take: 30,
+        select: {
+          id: true,
+          wonValue: true,
+          timestamp: true,
+          user: { select: { username: true } },
+          case: {
+            select: {
+              name: true,
+              currency: true,
+              tokenTicker: true,
+              tokenPrice: true,
+              imageUrl: true,
+              imageMeta: true,
+            },
+          },
+        },
+      }),
+      prisma.battle.findMany({
+        where: { timestamp: { gte: since } },
+        orderBy: { timestamp: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          result: true,
+          wonValue: true,
+          cost: true,
+          timestamp: true,
+          user: { select: { username: true } },
+        },
+      }),
+      prisma.case.findMany({
+        where: { createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          currency: true,
+          tokenTicker: true,
+          price: true,
+          imageUrl: true,
+          imageMeta: true,
+          createdAt: true,
+          createdBy: { select: { username: true } },
+        },
+      }),
+    ]);
+
+    const events: any[] = [];
+
+    for (const o of openings) {
+      events.push({
+        id: `open-${o.id}`,
+        type: 'CASE_OPEN',
+        user: o.user.username || 'Anon',
+        caseName: o.case.name,
+        value: o.wonValue,
+        currency: o.case.tokenTicker || o.case.currency,
+        tokenPrice: o.case.tokenPrice,
+        image: o.case.imageUrl,
+        imageMeta: o.case.imageMeta,
+        timestamp: o.timestamp,
+      });
+    }
+
+    for (const b of battles) {
+      events.push({
+        id: `battle-${b.id}`,
+        type: b.result === 'WIN' ? 'BATTLE_WIN' : 'BATTLE_LOSS',
+        user: b.user.username || 'Anon',
+        value: b.wonValue,
+        cost: b.cost,
+        timestamp: b.timestamp,
+      });
+    }
+
+    for (const c of newCases) {
+      events.push({
+        id: `case-${c.id}`,
+        type: 'CASE_CREATE',
+        user: c.createdBy.username || 'Anon',
+        caseName: c.name,
+        currency: c.tokenTicker || c.currency,
+        value: c.price,
+        image: c.imageUrl,
+        imageMeta: c.imageMeta,
+        timestamp: c.createdAt,
+      });
+    }
+
+    events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    res.json({ status: 'success', data: { events: events.slice(0, 50) } });
   } catch (error) {
     next(error);
   }

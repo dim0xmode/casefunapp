@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Case, Item, Rarity } from '../types';
-import { Package, TrendingUp, XCircle, Sparkles, User } from 'lucide-react';
+import { Package, Sparkles, XCircle, Swords, PlusCircle } from 'lucide-react';
 import { ImageWithMeta } from './ui/ImageWithMeta';
+import { api } from '../services/api';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -11,33 +12,39 @@ const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.MYTHIC]: '#EF4444',
 };
 
-type ActivityType = 'CASE_OPEN' | 'UPGRADE_SUCCESS' | 'UPGRADE_FAIL';
+type ActivityType = 'CASE_OPEN' | 'CASE_CREATE' | 'BATTLE_WIN' | 'BATTLE_LOSS' | 'UPGRADE_SUCCESS' | 'UPGRADE_FAIL';
 
 interface Activity {
   id: string;
   type: ActivityType;
   user: string;
-  item?: Item;
   caseName?: string;
+  currency?: string;
+  value?: number;
+  rarity?: string;
+  image?: string | null;
+  imageMeta?: any;
+  tokenPrice?: number;
+  rounds?: number;
+  cost?: number;
+  item?: Item;
   timestamp: Date;
-  multiplier?: number;
+  isReal?: boolean;
 }
 
-const ACTIVITY_ICONS: Record<ActivityType, React.ReactNode> = {
-  CASE_OPEN: <Package size={14} />,
-  UPGRADE_SUCCESS: <Sparkles size={14} />,
-  UPGRADE_FAIL: <XCircle size={14} />,
+const TYPE_META: Record<ActivityType, { icon: React.ReactNode; color: string; label: string }> = {
+  CASE_OPEN: { icon: <Package size={12} />, color: '#66FCF1', label: 'Opened' },
+  CASE_CREATE: { icon: <PlusCircle size={12} />, color: '#A78BFA', label: 'Created' },
+  BATTLE_WIN: { icon: <Swords size={12} />, color: '#10B981', label: 'Won battle' },
+  BATTLE_LOSS: { icon: <Swords size={12} />, color: '#EF4444', label: 'Lost battle' },
+  UPGRADE_SUCCESS: { icon: <Sparkles size={12} />, color: '#10B981', label: 'Upgraded' },
+  UPGRADE_FAIL: { icon: <XCircle size={12} />, color: '#EF4444', label: 'Failed upgrade' },
 };
 
-const ACTIVITY_COLORS: Record<ActivityType, string> = {
-  CASE_OPEN: '#66FCF1',
-  UPGRADE_SUCCESS: '#10B981',
-  UPGRADE_FAIL: '#EF4444',
-};
-
-const mockNames = [
+const MOCK_NAMES = [
   'Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova',
-  'Orion', 'Helix', 'Rogue', 'Cipher', 'Atlas', 'Zephyr'
+  'Orion', 'Helix', 'Rogue', 'Cipher', 'Atlas', 'Zephyr',
+  'Blaze', 'Storm', 'Venom', 'Phantom', 'Echo', 'Frost',
 ];
 
 const getRarityByValue = (value: number): Rarity => {
@@ -55,180 +62,193 @@ interface LiveFeedProps {
 
 export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [visibleCount, setVisibleCount] = useState(12);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const realEventsRef = useRef<Activity[]>([]);
+  const lastFetchRef = useRef<string | null>(null);
 
-  const renderTokenLogo = (item?: Item) => {
-    const value = item?.image || '';
-    if (!value) return <span className="text-[8px] uppercase tracking-widest text-gray-500">Logo</span>;
-    const isImage = value.startsWith('http') || value.startsWith('/') || value.startsWith('data:');
-    if (isImage) {
-      return (
-        <ImageWithMeta
-          src={value}
-          meta={item?.imageMeta}
-          className="w-full h-full rounded-full"
-          imgClassName="w-full h-full"
-        />
-      );
-    }
-    return <span className="text-sm">{value}</span>;
-  };
+  const calcVisibleCount = useCallback(() => {
+    if (!containerRef.current) return;
+    const h = containerRef.current.clientHeight;
+    const rowHeight = 44;
+    setVisibleCount(Math.max(6, Math.floor(h / rowHeight)));
+  }, []);
 
-  const generateMockActivity = (): Activity | null => {
+  useEffect(() => {
+    calcVisibleCount();
+    const observer = new ResizeObserver(calcVisibleCount);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [calcVisibleCount]);
+
+  const generateMock = useCallback((): Activity | null => {
     if (!cases.length) return null;
     const types: ActivityType[] = ['CASE_OPEN', 'UPGRADE_SUCCESS', 'UPGRADE_FAIL'];
     const type = types[Math.floor(Math.random() * types.length)];
-    const caseData = cases[Math.floor(Math.random() * cases.length)];
-    const drops = caseData.possibleDrops?.length ? caseData.possibleDrops : [];
-    const itemSource = drops.length > 0
-      ? drops[Math.floor(Math.random() * drops.length)]
-      : {
-          id: `item-${Date.now()}`,
-          name: caseData.name,
-          value: Math.max(1, Math.floor(caseData.price)),
-          currency: caseData.currency,
-          rarity: Rarity.COMMON,
-          image: caseData.image || '🪙',
-          color: RARITY_COLORS[Rarity.COMMON],
-        };
-    const normalizedRarity = getRarityByValue(itemSource.value);
-    const normalizedItem: Item = {
-      ...itemSource,
-      rarity: normalizedRarity,
-      color: RARITY_COLORS[normalizedRarity],
-    };
+    const c = cases[Math.floor(Math.random() * cases.length)];
+    const drops = c.possibleDrops?.length ? c.possibleDrops : [];
+    const drop = drops.length > 0 ? drops[Math.floor(Math.random() * drops.length)] : null;
+    const value = drop ? drop.value : Math.max(1, Math.floor(c.price));
+    const rarity = getRarityByValue(value);
 
     return {
-      id: `activity-${Date.now()}-${Math.random()}`,
+      id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
-      user: mockNames[Math.floor(Math.random() * mockNames.length)],
-      item: normalizedItem,
-      caseName: caseData.name,
-      timestamp: new Date(),
-      multiplier: type === 'UPGRADE_SUCCESS' ? Math.random() * 5 + 1.5 : undefined,
+      user: MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)],
+      caseName: c.name,
+      currency: (c as any).tokenTicker || c.currency,
+      value,
+      rarity,
+      image: drop?.image || c.image || null,
+      imageMeta: (c as any).imageMeta || null,
+      timestamp: new Date(Date.now() - Math.random() * 300_000),
+      isReal: false,
     };
-  };
-
-  useEffect(() => {
-    // Generate initial activities
-    const initial = Array.from({ length: 15 }, () => generateMockActivity()).filter(Boolean) as Activity[];
-    setActivities(initial);
-
-    // Add new activity every 3-8 seconds
-    const interval = setInterval(() => {
-      const newActivity = generateMockActivity();
-      if (!newActivity) return;
-      setActivities(prev => [newActivity, ...prev].slice(0, 30)); // Keep last 30
-    }, Math.random() * 5000 + 3000);
-
-    return () => clearInterval(interval);
   }, [cases]);
 
+  useEffect(() => {
+    const fetchReal = async () => {
+      try {
+        const res = await api.getActivityFeed();
+        const events: Activity[] = (res.data?.events || []).map((e: any) => ({
+          ...e,
+          timestamp: new Date(e.timestamp),
+          isReal: true,
+        }));
+        realEventsRef.current = events;
+        lastFetchRef.current = new Date().toISOString();
+      } catch { /* ignore */ }
+    };
+    fetchReal();
+    const poll = setInterval(fetchReal, 30_000);
+    return () => clearInterval(poll);
+  }, []);
+
+  useEffect(() => {
+    if (!cases.length) {
+      setActivities([]);
+      return;
+    }
+
+    const build = () => {
+      const real = realEventsRef.current.slice(0, visibleCount);
+      const needed = Math.max(0, visibleCount - real.length);
+      const mocks = Array.from({ length: needed }, () => generateMock()).filter(Boolean) as Activity[];
+      const merged = [...real, ...mocks];
+      merged.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      setActivities(merged.slice(0, visibleCount));
+    };
+
+    build();
+
+    const interval = setInterval(() => {
+      const real = realEventsRef.current;
+      setActivities(prev => {
+        const mock = generateMock();
+        if (!mock) return prev;
+        const next = [mock, ...prev];
+        const realIds = new Set(real.map(r => r.id));
+        const kept = next.filter(a => a.isReal ? realIds.has(a.id) : true);
+        const realInList = kept.filter(a => a.isReal);
+        const mocksInList = kept.filter(a => !a.isReal);
+        const combined = [...realInList, ...mocksInList].slice(0, visibleCount);
+        combined.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        return combined;
+      });
+    }, 4000 + Math.random() * 4000);
+
+    return () => clearInterval(interval);
+  }, [cases, visibleCount, generateMock]);
+
   const formatTimeAgo = (date: Date): string => {
-    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
+    const s = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (s < 60) return 'now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h`;
   };
 
-  const getActivityText = (activity: Activity): React.ReactNode => {
-    switch (activity.type) {
+  const getDescription = (a: Activity): React.ReactNode => {
+    switch (a.type) {
       case 'CASE_OPEN':
         return (
           <>
-            opened <span className="font-bold text-web3-accent">{activity.caseName}</span> and won{' '}
-            <span className="font-bold" style={{ color: RARITY_COLORS[activity.item?.rarity || Rarity.COMMON] }}>
-              {activity.item?.value} ${activity.item?.currency}
-            </span>
+            <span className="text-white/70">{a.caseName}</span>
+            {a.value != null && <> · <span className="font-bold" style={{ color: RARITY_COLORS[getRarityByValue(a.value)] }}>{a.value} {a.currency}</span></>}
           </>
         );
+      case 'CASE_CREATE':
+        return <><span className="text-[#A78BFA]">{a.caseName}</span> · {a.value} {a.currency}</>;
+      case 'BATTLE_WIN':
+        return <><span className="text-web3-success font-bold">Won</span> {a.value != null ? `${a.value.toFixed(1)} ₮` : ''}</>;
+      case 'BATTLE_LOSS':
+        return <><span className="text-red-400 font-bold">Lost</span> {a.cost != null ? `${a.cost.toFixed(1)} ₮` : ''}</>;
       case 'UPGRADE_SUCCESS':
-        return (
-          <>
-            upgraded to{' '}
-            <span className="font-bold text-web3-success">
-              {activity.item?.value} ${activity.item?.currency}
-            </span>{' '}
-            <span className="text-xs text-gray-500">({activity.multiplier?.toFixed(1)}x)</span>
-          </>
-        );
+        return <><span className="text-web3-success font-bold">{a.value} {a.currency}</span></>;
       case 'UPGRADE_FAIL':
-        return (
-          <>
-            failed upgrade, lost{' '}
-            <span className="font-bold text-red-400">
-              {activity.item?.value} ${activity.item?.currency}
-            </span>
-          </>
-        );
+        return <><span className="text-red-400">{a.value} {a.currency}</span></>;
       default:
         return null;
     }
   };
 
+  const renderIcon = (a: Activity) => {
+    const img = a.image;
+    if (img && (img.startsWith('http') || img.startsWith('/') || img.startsWith('data:'))) {
+      return (
+        <ImageWithMeta
+          src={img}
+          meta={a.imageMeta}
+          className="w-full h-full rounded-lg"
+          imgClassName="w-full h-full object-cover"
+        />
+      );
+    }
+    const meta = TYPE_META[a.type];
+    return <span style={{ color: meta.color }}>{meta.icon}</span>;
+  };
+
+  if (!cases.length) return null;
+
   return (
-    <div className="w-64 bg-web3-card/40 border-r border-white/[0.06] flex flex-col h-full shadow-2xl pt-20">
-      {/* Header */}
-      <div className="p-3 border-b border-white/[0.06] bg-black/20 backdrop-blur-2xl">
-        <div className="flex items-center gap-2 mb-0.5">
-          <div className="w-1.5 h-1.5 bg-web3-success rounded-full animate-pulse shadow-[0_0_6px_rgba(16,185,129,0.8)]"></div>
-          <h3 className="font-bold text-xs uppercase tracking-[0.12em] text-white">Live Feed</h3>
+    <div className="w-56 bg-black/40 border-r border-white/[0.06] flex flex-col h-full pt-20">
+      <div className="px-3 py-2.5 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 bg-web3-success rounded-full animate-pulse shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
+          <span className="font-bold text-[10px] uppercase tracking-[0.15em] text-gray-300">Live</span>
+          <span className="text-[9px] text-gray-600 ml-auto tabular-nums">{activities.filter(a => a.isReal).length} real</span>
         </div>
-        <p className="text-[9px] text-gray-500 uppercase tracking-wider">Real-time activity</p>
       </div>
 
-      {/* Activity List - Fixed height, no scroll */}
-      <div className="flex-1 overflow-hidden">
-        <div className="p-2 space-y-1 h-full">
-          {activities.slice(0, 12).map((activity, index) => (
-            <div 
-              key={activity.id}
-              onClick={() => onSelectUser(activity.user)}
-              className="bg-web3-card/40 hover:bg-web3-card/60 p-2 rounded-xl border border-white/[0.06] hover:border-white/[0.16] transition-all duration-200 animate-slide-in cursor-pointer group backdrop-blur-xl"
-              style={{ 
-                animationDelay: `${index * 0.05}s`,
-                borderLeftWidth: '2px',
-                borderLeftColor: ACTIVITY_COLORS[activity.type]
-              }}
+      <div ref={containerRef} className="flex-1 overflow-hidden px-1.5 py-1">
+        {activities.map((a, i) => {
+          const meta = TYPE_META[a.type];
+          return (
+            <div
+              key={a.id}
+              onClick={() => onSelectUser(a.user)}
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-200 hover:bg-white/[0.04] group ${i === 0 ? 'animate-slide-in' : ''}`}
             >
-              <div className="flex items-start gap-1.5">
-                {/* Icon */}
-                <div 
-                  className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 bg-black/20 border border-white/[0.06]"
-                  style={{ 
-                    color: ACTIVITY_COLORS[activity.type]
-                  }}
-                >
-                  {ACTIVITY_ICONS[activity.type]}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <User size={8} className="text-gray-600 flex-shrink-0" />
-                    <span className="font-bold text-[10px] text-white truncate">{activity.user}</span>
-                  </div>
-                  <p className="text-[9px] text-gray-400 leading-relaxed line-clamp-2">
-                    {getActivityText(activity)}
-                  </p>
-                </div>
-
-                {/* Item indicator */}
-                {activity.item && (
-                  <div 
-                    className="w-6 h-6 rounded-full border flex items-center justify-center flex-shrink-0 bg-black/30"
-                    style={{ borderColor: RARITY_COLORS[getRarityByValue(activity.item.value)] }}
-                  >
-                    {renderTokenLogo(activity.item)}
-                  </div>
-                )}
+              <div className="w-7 h-7 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center shrink-0 overflow-hidden">
+                {renderIcon(a)}
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-white truncate max-w-[60px]">{a.user}</span>
+                  <span className="text-[9px] shrink-0" style={{ color: meta.color }}>{meta.label}</span>
+                </div>
+                <div className="text-[9px] text-gray-500 truncate leading-tight">
+                  {getDescription(a)}
+                </div>
+              </div>
+
+              <span className="text-[8px] text-gray-600 tabular-nums shrink-0">{formatTimeAgo(a.timestamp)}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

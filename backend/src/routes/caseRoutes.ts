@@ -6,6 +6,7 @@ import {
   createCase,
   openCase,
   uploadCaseImage,
+  getActivityFeed,
 } from '../controllers/caseController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
@@ -15,6 +16,7 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 },
 });
 
+router.get('/feed', getActivityFeed);
 router.get('/', getAllCases);
 router.get('/:id', getCaseById);
 router.post('/upload', requireAuth, requireRole(['ADMIN', 'MODERATOR']), upload.single('file'), uploadCaseImage);
