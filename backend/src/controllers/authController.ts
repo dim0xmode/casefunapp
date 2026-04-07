@@ -1162,14 +1162,6 @@ export const getProfile = async (
       return next(new AppError('User not found', 404));
     }
 
-    if (user.referredById && user.referralConfirmedAt && user.role === 'USER') {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { role: 'MODERATOR' },
-      });
-      (user as { role: string }).role = 'MODERATOR';
-    }
-
     const [burntItems, claimedItems] = await Promise.all([
       prisma.inventoryItem.findMany({
         where: { userId, status: 'BURNT' },

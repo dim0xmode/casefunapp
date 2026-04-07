@@ -19,6 +19,6 @@ router.get('/', getAllCases);
 router.get('/:id', getCaseById);
 router.post('/upload', requireAuth, requireRole(['ADMIN', 'MODERATOR']), upload.single('file'), uploadCaseImage);
 router.post('/', requireAuth, requireRole(['ADMIN', 'MODERATOR']), createCase);
-router.post('/:caseId/open', requireAuth, requireRole(['ADMIN', 'MODERATOR']), openCase);
+router.post('/:caseId/open', requireAuth, openCase);
 
 export default router;

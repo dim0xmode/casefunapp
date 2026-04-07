@@ -15,9 +15,6 @@ export const useAdminAction = ({ isAuthenticated, isAdmin, balance, cost }: UseA
     if (!isAuthenticated) {
       return { state: 'connect' as ExtendedAdminActionState, shortfall: 0 };
     }
-    if (!isAdmin) {
-      return { state: 'restricted' as ExtendedAdminActionState, shortfall: 0 };
-    }
     if (balance < cost) {
       return { state: 'topup' as ExtendedAdminActionState, shortfall: Math.max(0, cost - balance) };
     }

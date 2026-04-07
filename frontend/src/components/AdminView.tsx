@@ -729,7 +729,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         className="w-full bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
                       >
                         <option value="USER">USER</option>
-                        <option value="MODERATOR">EARLY_ACCESS</option>
+                        <option value="MODERATOR">MODERATOR</option>
                         <option value="ADMIN">ADMIN</option>
                       </select>
                     </div>

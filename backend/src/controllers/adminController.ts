@@ -823,21 +823,6 @@ export const updateFeedbackStatus = async (req: Request, res: Response, next: Ne
       });
 
       let roleUpdatedTo: string | null = null;
-      // Early access approval grants MODERATOR role to regular users.
-      if (feedback.topic === 'EARLY_ACCESS' && status === 'APPROVED') {
-        const targetUser = await tx.user.findUnique({
-          where: { id: feedback.userId },
-          select: { id: true, role: true },
-        });
-        if (targetUser && targetUser.role === 'USER') {
-          await tx.user.update({
-            where: { id: targetUser.id },
-            data: { role: 'MODERATOR' },
-          });
-          roleUpdatedTo = 'MODERATOR';
-        }
-      }
-
       return { updatedMessage, roleUpdatedTo };
     });
 

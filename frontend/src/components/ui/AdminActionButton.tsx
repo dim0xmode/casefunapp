@@ -32,7 +32,7 @@ export const AdminActionButton: React.FC<AdminActionButtonProps> = ({
   readyLabel,
   connectLabel = 'Connect Wallet',
   topUpLabel = (shortfall) => `Need ${formatShortfallUp(shortfall)} ₮ more • Top up`,
-  restrictedLabel = 'Early Access Only',
+  restrictedLabel = '',
   labelOverride,
   forceLabel = false,
   className = '',

@@ -39,15 +39,15 @@ const upload = multer({
 router.use(requireAuth);
 
 router.post('/topup', requireRole(['ADMIN']), topUpBalance);
-router.post('/upgrade', requireRole(['ADMIN', 'MODERATOR']), upgradeItem);
-router.post('/battles/charge', requireRole(['ADMIN', 'MODERATOR']), chargeBattle);
-router.post('/battles/record', requireRole(['ADMIN', 'MODERATOR']), recordBattle);
-router.post('/battles/lobbies', requireRole(['ADMIN', 'MODERATOR']), createBattleLobby);
-router.get('/battles/lobbies', requireRole(['ADMIN', 'MODERATOR']), listBattleLobbies);
-router.post('/battles/lobbies/:lobbyId/join', requireRole(['ADMIN', 'MODERATOR']), joinBattleLobby);
-router.post('/battles/lobbies/:lobbyId/start', requireRole(['ADMIN', 'MODERATOR']), startBattleLobby);
-router.post('/battles/resolve', requireRole(['ADMIN', 'MODERATOR']), resolveBattle);
-router.post('/battles/lobbies/:lobbyId/finish', requireRole(['ADMIN', 'MODERATOR']), finishBattleLobby);
+router.post('/upgrade', upgradeItem);
+router.post('/battles/charge', chargeBattle);
+router.post('/battles/record', recordBattle);
+router.post('/battles/lobbies', createBattleLobby);
+router.get('/battles/lobbies', listBattleLobbies);
+router.post('/battles/lobbies/:lobbyId/join', joinBattleLobby);
+router.post('/battles/lobbies/:lobbyId/start', startBattleLobby);
+router.post('/battles/resolve', resolveBattle);
+router.post('/battles/lobbies/:lobbyId/finish', finishBattleLobby);
 router.patch('/profile', updateProfile);
 router.post('/avatar', upload.single('file'), uploadAvatar);
 router.patch('/avatar-meta', updateAvatarMeta);

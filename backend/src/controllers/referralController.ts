@@ -25,9 +25,15 @@ export const getReferralCode = async (
 
     const role = String(user.role || '').toUpperCase();
     if (role !== 'ADMIN' && role !== 'MODERATOR') {
-      return next(
-        new AppError('Referral link is available for early access members and staff only.', 403)
-      );
+      const hasDeposit = await prisma.transaction.findFirst({
+        where: { userId, amount: { gt: 0 } },
+        select: { id: true },
+      });
+      if (!hasDeposit) {
+        return next(
+          new AppError('Referral link unlocks after your first deposit.', 403)
+        );
+      }
     }
 
     if (!user.referralCode) {

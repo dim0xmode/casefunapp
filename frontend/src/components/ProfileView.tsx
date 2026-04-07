@@ -123,7 +123,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [referralInvited, setReferralInvited] = useState<number>(user?.referralConfirmedCount ?? 0);
   const [referralLoading, setReferralLoading] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
-  const canShowReferralLink = user.role === 'ADMIN' || user.role === 'MODERATOR';
+  const canShowReferralLink = true;
 
   const ITEMS_PER_PAGE = 36;
   const BATTLES_PER_PAGE = 10;

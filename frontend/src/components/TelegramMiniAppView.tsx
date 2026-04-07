@@ -4,9 +4,7 @@ import {
   ChevronLeft,
   Coins,
   ExternalLink,
-  MessageCircle,
   PlusCircle,
-  Sparkles,
   Swords,
   UserCircle2,
   Wallet,
@@ -33,28 +31,6 @@ interface BattleRecord {
   roundCount?: number;
 }
 
-type EarlyAccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
-interface EarlyAccessStatusPayload {
-  canSubmit: boolean;
-  blockReason:
-    | 'PENDING_REVIEW'
-    | 'ALREADY_APPROVED'
-    | 'ALREADY_EARLY_ACCESS'
-    | 'ADMIN_ACCOUNT'
-    | 'SUPPORT_ACCOUNT'
-    | 'REFERRAL_SIGNUP'
-    | null;
-  request: {
-    id: string;
-    topic: 'EARLY_ACCESS';
-    status: EarlyAccessRequestStatus;
-    contact: string;
-    message: string;
-    createdAt: string;
-    reviewedAt: string | null;
-  } | null;
-}
-
 interface TelegramMiniAppViewProps {
   user: User;
   isAuthenticated: boolean;
@@ -69,7 +45,6 @@ interface TelegramMiniAppViewProps {
   claimedItems: Item[];
   battleHistory: BattleRecord[];
   balance: number;
-  isActivitiesEnabled: boolean;
   onCreateCase: (caseData: Case) => void;
   onOpenCase: (caseId: string, count: number) => Promise<Item[]>;
   onUpgrade: (originalItems: Item[], multiplier: number) => Promise<{ success: boolean; targetValue: number }>;
@@ -107,9 +82,6 @@ interface TelegramMiniAppViewProps {
   telegramError?: string | null;
   isBackgroundAnimated?: boolean;
   onToggleBackgroundAnimation?: () => void;
-  onSubmitEarlyAccess: (payload: { contact: string; message: string }) => Promise<void>;
-  earlyAccessSubmitting: boolean;
-  earlyAccessStatus: EarlyAccessStatusPayload | null;
   onAuthenticate: () => Promise<void> | void;
   onDevAuthenticate?: () => Promise<void> | void;
   onOpenTelegramBot?: () => Promise<void> | void;
@@ -120,9 +92,13 @@ interface TelegramMiniAppViewProps {
   onConnectWalletForTopUp?: () => Promise<any>;
 }
 
-type MiniTab = 'cases' | 'create' | 'upgrade' | 'battle' | 'profile' | 'topup' | 'early';
+type MiniTab = 'cases' | 'create' | 'upgrade' | 'battle' | 'profile' | 'topup';
 
-type TabDef = { id: MiniTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> };
+type TabDef = {
+  id: MiniTab;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+};
 
 const BASE_TABS: TabDef[] = [
   { id: 'cases', label: 'Cases', icon: Boxes },
@@ -132,24 +108,8 @@ const BASE_TABS: TabDef[] = [
   { id: 'profile', label: 'Profile', icon: UserCircle2 },
 ];
 
-const EARLY_TAB: TabDef = { id: 'early', label: 'Access', icon: Sparkles };
-
 const SECONDARY_TITLES: Partial<Record<MiniTab, string>> = {
   topup: 'Top Up',
-  early: 'Early Access',
-};
-
-const getEarlyBlockMessage = (reason: EarlyAccessStatusPayload['blockReason']) => {
-  switch (reason) {
-    case 'PENDING_REVIEW': return 'Your request is currently under review.';
-    case 'ALREADY_APPROVED': return 'Your request has already been approved.';
-    case 'ALREADY_EARLY_ACCESS': return 'You already have early access.';
-    case 'ADMIN_ACCOUNT': return 'Administrators cannot submit early access requests.';
-    case 'SUPPORT_ACCOUNT': return 'Support accounts cannot submit early access requests.';
-    case 'REFERRAL_SIGNUP':
-      return 'Referral signups get early access automatically after the first confirmed on-chain deposit. No application is required.';
-    default: return 'Early access request is currently unavailable.';
-  }
 };
 
 const resolveCaseExpiresAt = (caseData?: Pick<Case, 'openDurationHours' | 'createdAt'> | null) => {
@@ -245,7 +205,6 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   claimedItems,
   battleHistory,
   balance,
-  isActivitiesEnabled,
   onCreateCase,
   onOpenCase,
   onUpgrade,
@@ -272,9 +231,6 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   telegramError = null,
   isBackgroundAnimated = true,
   onToggleBackgroundAnimation,
-  onSubmitEarlyAccess,
-  earlyAccessSubmitting,
-  earlyAccessStatus,
   onAuthenticate,
   onDevAuthenticate,
   onOpenTelegramBot,
@@ -287,15 +243,12 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [activeTab, setActiveTab] = useState<MiniTab>('cases');
   const [lastPrimaryTab, setLastPrimaryTab] = useState<MiniTab>('cases');
   const [successToast, setSuccessToast] = useState<string | null>(null);
-  const [earlyContact, setEarlyContact] = useState('');
   const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setSplashDone(true), 3400);
     return () => clearTimeout(timer);
   }, []);
-  const [earlyMessage, setEarlyMessage] = useState('');
-  const [earlyNotice, setEarlyNotice] = useState<string | null>(null);
   const [topUpUsdt, setTopUpUsdt] = useState('');
   const [topUpEth, setTopUpEth] = useState('');
   const [ethPrice, setEthPrice] = useState<number | null>(null);
@@ -308,7 +261,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   useEffect(() => { initTelegramApp(); }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !isActivitiesEnabled) return;
+    if (!isAuthenticated) return;
     let cancelled = false;
     const poll = async () => {
       if (cancelled) return;
@@ -336,7 +289,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     poll();
     const timer = setInterval(poll, 8000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [isAuthenticated, isActivitiesEnabled, user.id, activeTab]);
+  }, [isAuthenticated, user.id, activeTab]);
 
   useEffect(() => {
     if (!battleAlert) return;
@@ -361,18 +314,10 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     });
   }, [inventory, caseMap]);
 
-  const needsEarlyAccess = !isActivitiesEnabled
-    && earlyAccessStatus?.blockReason !== 'ALREADY_APPROVED'
-    && earlyAccessStatus?.blockReason !== 'ALREADY_EARLY_ACCESS';
-
-  const primaryTabs = useMemo(() => {
-    return needsEarlyAccess ? [...BASE_TABS, EARLY_TAB] : BASE_TABS;
-  }, [needsEarlyAccess]);
-
   const isSecondaryTab = activeTab === 'topup';
 
   const goToTab = (tab: MiniTab) => {
-    if (primaryTabs.find((t) => t.id === tab)) setLastPrimaryTab(tab);
+    if (BASE_TABS.find((t) => t.id === tab)) setLastPrimaryTab(tab);
     setActiveTab(tab);
   };
 
@@ -454,23 +399,6 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     document.addEventListener('visibilitychange', onReturn);
   };
 
-  // ── Early access ─────────────────────────────────────────────────────────────
-  const canSubmitEarly = Boolean(earlyAccessStatus?.canSubmit ?? true);
-  const earlyBlockMessage = canSubmitEarly ? null : getEarlyBlockMessage(earlyAccessStatus?.blockReason || null);
-
-  const submitEarlyAccess = async () => {
-    setEarlyNotice(null);
-    const contact = earlyContact.trim();
-    const message = earlyMessage.trim();
-    if (!contact) { setEarlyNotice('Telegram contact is required.'); return; }
-    if (!message || message.length > 200) { setEarlyNotice('Message must be 1–200 characters.'); return; }
-    try {
-      await onSubmitEarlyAccess({ contact, message });
-      setEarlyNotice('Request sent successfully.');
-      setEarlyMessage('');
-    } catch (err: any) { setEarlyNotice(err?.message || 'Failed to send request.'); }
-  };
-
   // ── Tab content ──────────────────────────────────────────────────────────────
   const renderTabContent = () => {
     if (activeTab === 'cases') return (
@@ -478,7 +406,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         cases={cases} onOpenCase={onOpenCase} balance={balance}
         onOpenTopUp={onOpenTopUp} userName={user.username}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
-        isAdmin={isActivitiesEnabled} isTelegramMiniApp
+        isAdmin isTelegramMiniApp
       />
     );
 
@@ -488,7 +416,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         creatorName={user.username} balance={balance}
         onOpenTopUp={() => goToTab('topup')} onBalanceUpdate={onBalanceUpdate}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
-        isAdmin={isActivitiesEnabled} cases={cases} isTelegramMiniApp
+        isAdmin cases={cases} isTelegramMiniApp
       />
     );
 
@@ -496,7 +424,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       <UpgradeView
         inventory={activeInventory} onUpgrade={onUpgrade}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
-        isAdmin={isActivitiesEnabled} isTelegramMiniApp
+        isAdmin isTelegramMiniApp
       />
     );
 
@@ -507,7 +435,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         onBattleFinish={onBattleFinish} balance={balance}
         onChargeBattle={onChargeBattle} onOpenTopUp={onOpenTopUp}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
-        isAdmin={isActivitiesEnabled} isTelegramMiniApp
+        isAdmin isTelegramMiniApp
       />
     );
 
@@ -627,39 +555,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       );
     }
 
-    // Early access
-    return (
-      <div className="space-y-3">
-        {!canSubmitEarly && (
-          <div className="px-4 py-3 rounded-xl border border-amber-400/25 bg-amber-400/5 text-amber-300 text-sm">
-            {earlyBlockMessage}
-          </div>
-        )}
-        <div className="rounded-2xl p-4 space-y-3 border border-white/[0.06] bg-black/20">
-          <input
-            value={earlyContact} onChange={(e) => setEarlyContact(e.target.value)}
-            placeholder="@telegram_username"
-            className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] text-sm text-white focus:outline-none focus:border-web3-accent/40"
-          />
-          <textarea
-            value={earlyMessage} onChange={(e) => setEarlyMessage(e.target.value.slice(0, 200))}
-            placeholder="Tell us why you need early access…" rows={4}
-            className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] text-sm text-white focus:outline-none focus:border-web3-accent/40 resize-none"
-          />
-          <div className="text-xs text-gray-500">
-            {200 - earlyMessage.length} chars remaining
-          </div>
-          {earlyNotice && <div className="text-sm text-gray-300">{earlyNotice}</div>}
-          <button
-            type="button" onClick={submitEarlyAccess}
-            disabled={earlyAccessSubmitting || !canSubmitEarly}
-            className="w-full py-3.5 rounded-xl text-sm font-black disabled:opacity-50 active:scale-[0.98] transition bg-gradient-to-r from-web3-accent to-web3-success text-black"
-          >
-            {earlyAccessSubmitting ? 'Sending…' : 'Submit Request'}
-          </button>
-        </div>
-      </div>
-    );
+    return null;
   };
 
   // ── Loading splash — show for at least 2.4 s so users notice it ─────────────
@@ -855,7 +751,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}
       >
         <div className="flex items-end px-1 pt-1 pb-1">
-          {primaryTabs.map((tab) => {
+          {BASE_TABS.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
