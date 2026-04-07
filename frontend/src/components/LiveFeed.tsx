@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Case, Rarity } from '../types';
-
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api } from '../services/api';
+
+const MAX_ITEMS = 100;
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -63,23 +64,7 @@ interface LiveFeedProps {
 
 export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [slots, setSlots] = useState(20);
-  const containerRef = useRef<HTMLDivElement>(null);
   const seenRealIds = useRef(new Set<string>());
-
-  const calcSlots = useCallback(() => {
-    if (!containerRef.current) return;
-    const ROW_H = 32;
-    setSlots(Math.max(8, Math.floor(containerRef.current.clientHeight / ROW_H)));
-  }, []);
-
-  useEffect(() => {
-    calcSlots();
-    window.addEventListener('resize', calcSlots);
-    const ro = new ResizeObserver(calcSlots);
-    if (containerRef.current) ro.observe(containerRef.current);
-    return () => { ro.disconnect(); window.removeEventListener('resize', calcSlots); };
-  }, [calcSlots]);
 
   const makeBotActivity = useCallback((): Activity | null => {
     if (!cases.length) return null;
@@ -118,9 +103,9 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
 
   useEffect(() => {
     if (!cases.length) { setActivities([]); return; }
-    const initial = Array.from({ length: slots }, () => makeBotActivity()).filter(Boolean) as Activity[];
+    const initial = Array.from({ length: 40 }, () => makeBotActivity()).filter(Boolean) as Activity[];
     setActivities(initial);
-  }, [cases.length, slots, makeBotActivity]);
+  }, [cases.length, makeBotActivity]);
 
   useEffect(() => {
     if (!cases.length) return;
@@ -138,10 +123,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
         for (const e of events) seenRealIds.current.add(e.id);
 
         if (newEvents.length > 0) {
-          setActivities(prev => {
-            const merged = [...newEvents, ...prev];
-            return merged.slice(0, slots);
-          });
+          setActivities(prev => [...newEvents, ...prev].slice(0, MAX_ITEMS));
         }
       } catch { /* */ }
     };
@@ -149,7 +131,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
     fetchAndMerge();
     const pollId = setInterval(fetchAndMerge, 15_000);
     return () => clearInterval(pollId);
-  }, [cases.length, slots]);
+  }, [cases.length]);
 
   useEffect(() => {
     if (!cases.length) return;
@@ -157,12 +139,12 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
     const tick = () => {
       const bot = makeBotActivity();
       if (!bot) return;
-      setActivities(prev => [bot, ...prev].slice(0, slots));
+      setActivities(prev => [bot, ...prev].slice(0, MAX_ITEMS));
     };
 
     const id = setInterval(tick, 2500 + Math.random() * 2500);
     return () => clearInterval(id);
-  }, [cases.length, slots, makeBotActivity]);
+  }, [cases.length, makeBotActivity]);
 
   const renderAvatar = (a: Activity) => {
     if (a.avatar && (a.avatar.startsWith('http') || a.avatar.startsWith('/') || a.avatar.startsWith('data:'))) {
@@ -176,7 +158,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
       );
     }
     const initial = (a.user?.[0] || '?').toUpperCase();
-    return <span className="text-[9px] font-bold text-gray-500">{initial}</span>;
+    return <span className="text-[10px] font-bold text-gray-400">{initial}</span>;
   };
 
   const getDetail = (a: Activity): React.ReactNode => {
@@ -186,14 +168,14 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
         return (
           <>
             <span style={{ color: meta.color }}>{meta.verb}</span>{' '}
-            <span className="text-white/50">{a.caseName}</span>
+            <span className="text-white/60">{a.caseName}</span>
             {a.value != null && (
               <span className="font-bold" style={{ color: RARITY_COLORS[getRarityByValue(a.value)] }}> {a.value} {a.currency}</span>
             )}
           </>
         );
       case 'CASE_CREATE':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/50">{a.caseName}</span></>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/60">{a.caseName}</span></>;
       case 'BATTLE_WIN':
         return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? ` ${a.value} ₮` : ''}</>;
       case 'BATTLE_LOSS':
@@ -210,27 +192,27 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   if (!cases.length) return null;
 
   return (
-    <div className="w-52 bg-black/40 border-r border-white/[0.06] flex flex-col h-full pt-20">
-      <div className="px-3 py-2 border-b border-white/[0.06]">
+    <div className="w-56 bg-black/40 border-r border-white/[0.06] flex flex-col h-full pt-20">
+      <div className="px-3 py-2.5 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 bg-web3-success rounded-full animate-pulse shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
-          <span className="font-bold text-[10px] uppercase tracking-[0.15em] text-gray-400">Live</span>
+          <span className="font-bold text-[11px] uppercase tracking-[0.15em] text-gray-400">Live Feed</span>
         </div>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
         {activities.map((a, i) => (
           <div
             key={a.id}
             onClick={() => onSelectUser(a.user)}
-            className={`flex items-center gap-2 px-2.5 py-[4px] cursor-pointer transition hover:bg-white/[0.03] ${i === 0 ? 'animate-slide-in' : ''}`}
+            className={`flex items-center gap-2.5 px-3 py-[6px] cursor-pointer transition hover:bg-white/[0.04] ${i === 0 ? 'animate-slide-in' : ''}`}
           >
-            <div className="w-5 h-5 rounded-full bg-black/40 border border-white/[0.08] flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-7 h-7 rounded-full bg-black/50 border border-white/[0.1] flex items-center justify-center shrink-0 overflow-hidden">
               {renderAvatar(a)}
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-bold text-white truncate block leading-none">{a.user}</span>
-              <span className="text-[9px] text-gray-500 truncate block leading-tight mt-[1px]">
+              <span className="text-[11px] font-semibold text-white truncate block leading-tight">{a.user}</span>
+              <span className="text-[10px] text-gray-400 truncate block leading-snug mt-[1px]">
                 {getDetail(a)}
               </span>
             </div>
