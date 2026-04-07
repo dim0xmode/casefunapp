@@ -861,6 +861,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <span className="font-mono text-sm font-bold text-white tabular-nums">
                 {balance.toLocaleString('en-US')}₮
               </span>
+              {rewardPoints > 0 && (
+                <>
+                  <span className="text-gray-600">·</span>
+                  <span className="font-mono text-sm font-bold text-web3-accent tabular-nums">{rewardPoints} CFP</span>
+                </>
+              )}
             </div>
 
             {user?.hasLinkedWallet && user?.walletAddress && (
@@ -922,9 +928,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <Gift size={11} />
               Rewards
-              {(user?.rewardPoints ?? rewardPoints) > 0 && (
-                <span className="text-[9px] font-mono text-web3-accent">{user?.rewardPoints ?? rewardPoints} CFP</span>
-              )}
             </button>
           </div>
 
