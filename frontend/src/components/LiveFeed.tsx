@@ -4,6 +4,7 @@ import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api } from '../services/api';
 
 const MAX_ITEMS = 100;
+const SPOILER_DELAY_MS = 8_000;
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -65,12 +66,18 @@ interface LiveFeedProps {
 export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const seenRealIds = useRef(new Set<string>());
+  const casesRef = useRef<Case[]>(cases);
+  const initialized = useRef(false);
+  const pendingTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  casesRef.current = cases;
 
   const makeBotActivity = useCallback((): Activity | null => {
-    if (!cases.length) return null;
+    const cs = casesRef.current;
+    if (!cs.length) return null;
     const types: ActivityType[] = ['CASE_OPEN', 'CASE_OPEN', 'CASE_OPEN', 'UPGRADE_SUCCESS', 'UPGRADE_FAIL', 'BATTLE_WIN', 'BATTLE_LOSS'];
     const type = pick(types);
-    const c = pick(cases);
+    const c = pick(cs);
 
     if (type === 'BATTLE_WIN' || type === 'BATTLE_LOSS') {
       return {
@@ -99,10 +106,11 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
       timestamp: new Date(),
       isReal: false,
     };
-  }, [cases]);
+  }, []);
 
   useEffect(() => {
-    if (!cases.length) { setActivities([]); return; }
+    if (!cases.length || initialized.current) return;
+    initialized.current = true;
     const initial = Array.from({ length: 40 }, () => makeBotActivity()).filter(Boolean) as Activity[];
     setActivities(initial);
   }, [cases.length, makeBotActivity]);
@@ -122,15 +130,36 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
         const newEvents = events.filter(e => !seenRealIds.current.has(e.id));
         for (const e of events) seenRealIds.current.add(e.id);
 
-        if (newEvents.length > 0) {
-          setActivities(prev => [...newEvents, ...prev].slice(0, MAX_ITEMS));
+        if (newEvents.length === 0) return;
+
+        const now = Date.now();
+        const ready: Activity[] = [];
+
+        for (const e of newEvents) {
+          const age = now - e.timestamp.getTime();
+          if (age >= SPOILER_DELAY_MS) {
+            ready.push(e);
+          } else {
+            const timer = setTimeout(() => {
+              setActivities(prev => [e, ...prev].slice(0, MAX_ITEMS));
+            }, SPOILER_DELAY_MS - age);
+            pendingTimers.current.push(timer);
+          }
+        }
+
+        if (ready.length > 0) {
+          setActivities(prev => [...ready, ...prev].slice(0, MAX_ITEMS));
         }
       } catch { /* */ }
     };
 
     fetchAndMerge();
-    const pollId = setInterval(fetchAndMerge, 15_000);
-    return () => clearInterval(pollId);
+    const pollId = setInterval(fetchAndMerge, 10_000);
+    return () => {
+      clearInterval(pollId);
+      pendingTimers.current.forEach(t => clearTimeout(t));
+      pendingTimers.current = [];
+    };
   }, [cases.length]);
 
   useEffect(() => {
