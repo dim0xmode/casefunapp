@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Case, Rarity } from '../types';
-import { Package, Sparkles, XCircle, Swords, PlusCircle } from 'lucide-react';
+
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api } from '../services/api';
 
@@ -30,19 +30,20 @@ interface Activity {
   isReal?: boolean;
 }
 
-const TYPE_META: Record<ActivityType, { icon: React.ReactNode; color: string; verb: string }> = {
-  CASE_OPEN: { icon: <Package size={11} />, color: '#66FCF1', verb: 'opened' },
-  CASE_CREATE: { icon: <PlusCircle size={11} />, color: '#A78BFA', verb: 'created' },
-  BATTLE_WIN: { icon: <Swords size={11} />, color: '#10B981', verb: 'won battle' },
-  BATTLE_LOSS: { icon: <Swords size={11} />, color: '#EF4444', verb: 'lost battle' },
-  UPGRADE_SUCCESS: { icon: <Sparkles size={11} />, color: '#10B981', verb: 'upgraded' },
-  UPGRADE_FAIL: { icon: <XCircle size={11} />, color: '#EF4444', verb: 'failed upgrade' },
+const TYPE_META: Record<ActivityType, { color: string; verb: string }> = {
+  CASE_OPEN: { color: '#66FCF1', verb: 'opened' },
+  CASE_CREATE: { color: '#A78BFA', verb: 'created' },
+  BATTLE_WIN: { color: '#10B981', verb: 'won battle' },
+  BATTLE_LOSS: { color: '#EF4444', verb: 'lost battle' },
+  UPGRADE_SUCCESS: { color: '#10B981', verb: 'upgraded' },
+  UPGRADE_FAIL: { color: '#EF4444', verb: 'failed upgrade' },
 };
 
-const MOCK_NAMES = [
+const BOT_NAMES = [
   'Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova',
   'Orion', 'Helix', 'Rogue', 'Cipher', 'Atlas', 'Zephyr',
   'Blaze', 'Storm', 'Venom', 'Phantom', 'Echo', 'Frost',
+  'Nyx', 'Reaper', 'Lynx', 'Spectre', 'Pulse', 'Viper',
 ];
 
 const getRarityByValue = (v: number): Rarity => {
@@ -53,6 +54,8 @@ const getRarityByValue = (v: number): Rarity => {
   return Rarity.MYTHIC;
 };
 
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
 interface LiveFeedProps {
   cases: Case[];
   onSelectUser: (username: string) => void;
@@ -60,86 +63,106 @@ interface LiveFeedProps {
 
 export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [slots, setSlots] = useState(14);
+  const [slots, setSlots] = useState(20);
   const containerRef = useRef<HTMLDivElement>(null);
-  const realRef = useRef<Activity[]>([]);
+  const seenRealIds = useRef(new Set<string>());
 
   const calcSlots = useCallback(() => {
     if (!containerRef.current) return;
-    const ROW_H = 38;
-    setSlots(Math.max(6, Math.floor(containerRef.current.clientHeight / ROW_H)));
+    const ROW_H = 32;
+    setSlots(Math.max(8, Math.floor(containerRef.current.clientHeight / ROW_H)));
   }, []);
 
   useEffect(() => {
     calcSlots();
+    window.addEventListener('resize', calcSlots);
     const ro = new ResizeObserver(calcSlots);
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
+    return () => { ro.disconnect(); window.removeEventListener('resize', calcSlots); };
   }, [calcSlots]);
 
-  const makeMock = useCallback((): Activity | null => {
+  const makeBotActivity = useCallback((): Activity | null => {
     if (!cases.length) return null;
-    const types: ActivityType[] = ['CASE_OPEN', 'UPGRADE_SUCCESS', 'UPGRADE_FAIL'];
-    const type = types[Math.floor(Math.random() * types.length)];
-    const c = cases[Math.floor(Math.random() * cases.length)];
+    const types: ActivityType[] = ['CASE_OPEN', 'CASE_OPEN', 'CASE_OPEN', 'UPGRADE_SUCCESS', 'UPGRADE_FAIL', 'BATTLE_WIN', 'BATTLE_LOSS'];
+    const type = pick(types);
+    const c = pick(cases);
+
+    if (type === 'BATTLE_WIN' || type === 'BATTLE_LOSS') {
+      return {
+        id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type,
+        user: pick(BOT_NAMES),
+        value: type === 'BATTLE_WIN' ? +(Math.random() * 50 + 1).toFixed(1) : 0,
+        cost: +(Math.random() * 30 + 1).toFixed(1),
+        timestamp: new Date(),
+        isReal: false,
+      };
+    }
+
     const drops = c.possibleDrops?.length ? c.possibleDrops : [];
-    const drop = drops.length ? drops[Math.floor(Math.random() * drops.length)] : null;
+    const drop = drops.length ? pick(drops) : null;
     const value = drop ? drop.value : Math.max(1, Math.floor(c.price));
     return {
-      id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type,
-      user: MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)],
+      user: pick(BOT_NAMES),
       caseName: c.name,
       currency: (c as any).tokenTicker || c.currency,
       value,
       image: drop?.image || c.image || null,
       imageMeta: (c as any).imageMeta || null,
-      timestamp: new Date(Date.now() - Math.random() * 300_000),
+      timestamp: new Date(),
       isReal: false,
     };
   }, [cases]);
 
   useEffect(() => {
-    const poll = async () => {
+    if (!cases.length) { setActivities([]); return; }
+    const initial = Array.from({ length: slots }, () => makeBotActivity()).filter(Boolean) as Activity[];
+    setActivities(initial);
+  }, [cases.length, slots, makeBotActivity]);
+
+  useEffect(() => {
+    if (!cases.length) return;
+
+    const fetchAndMerge = async () => {
       try {
         const res = await api.getActivityFeed();
-        realRef.current = (res.data?.events || []).map((e: any) => ({
+        const events: Activity[] = (res.data?.events || []).map((e: any) => ({
           ...e,
           timestamp: new Date(e.timestamp),
           isReal: true,
         }));
+
+        const newEvents = events.filter(e => !seenRealIds.current.has(e.id));
+        for (const e of events) seenRealIds.current.add(e.id);
+
+        if (newEvents.length > 0) {
+          setActivities(prev => {
+            const merged = [...newEvents, ...prev];
+            return merged.slice(0, slots);
+          });
+        }
       } catch { /* */ }
     };
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
-  }, []);
+
+    fetchAndMerge();
+    const pollId = setInterval(fetchAndMerge, 15_000);
+    return () => clearInterval(pollId);
+  }, [cases.length, slots]);
 
   useEffect(() => {
-    if (!cases.length) { setActivities([]); return; }
+    if (!cases.length) return;
 
-    const fill = () => {
-      const real = realRef.current.slice(0, slots);
-      const need = Math.max(0, slots - real.length);
-      const mocks = Array.from({ length: need }, () => makeMock()).filter(Boolean) as Activity[];
-      setActivities([...real, ...mocks].slice(0, slots));
+    const tick = () => {
+      const bot = makeBotActivity();
+      if (!bot) return;
+      setActivities(prev => [bot, ...prev].slice(0, slots));
     };
-    fill();
 
-    const id = setInterval(() => {
-      setActivities(prev => {
-        const m = makeMock();
-        if (!m) return prev;
-        const realIds = new Set(realRef.current.map(r => r.id));
-        const reals = prev.filter(a => a.isReal && realIds.has(a.id));
-        const mocks = prev.filter(a => !a.isReal);
-        mocks.unshift(m);
-        return [...reals, ...mocks].slice(0, slots);
-      });
-    }, 4000 + Math.random() * 3000);
-
+    const id = setInterval(tick, 2500 + Math.random() * 2500);
     return () => clearInterval(id);
-  }, [cases, slots, makeMock]);
+  }, [cases.length, slots, makeBotActivity]);
 
   const renderAvatar = (a: Activity) => {
     if (a.avatar && (a.avatar.startsWith('http') || a.avatar.startsWith('/') || a.avatar.startsWith('data:'))) {
@@ -161,24 +184,24 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
     switch (a.type) {
       case 'CASE_OPEN':
         return (
-          <span>
+          <>
             <span style={{ color: meta.color }}>{meta.verb}</span>{' '}
-            <span className="text-white/60">{a.caseName}</span>
+            <span className="text-white/50">{a.caseName}</span>
             {a.value != null && (
               <span className="font-bold" style={{ color: RARITY_COLORS[getRarityByValue(a.value)] }}> {a.value} {a.currency}</span>
             )}
-          </span>
+          </>
         );
       case 'CASE_CREATE':
-        return <span><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/60">{a.caseName}</span></span>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/50">{a.caseName}</span></>;
       case 'BATTLE_WIN':
-        return <span><span style={{ color: meta.color }}>{meta.verb}</span>{a.value != null ? ` ${a.value.toFixed(1)} ₮` : ''}</span>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? ` ${a.value} ₮` : ''}</>;
       case 'BATTLE_LOSS':
-        return <span><span style={{ color: meta.color }}>{meta.verb}</span>{a.cost != null ? ` ${a.cost.toFixed(1)} ₮` : ''}</span>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.cost ? ` ${a.cost} ₮` : ''}</>;
       case 'UPGRADE_SUCCESS':
-        return <span><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-web3-success font-bold">{a.value} {a.currency}</span></span>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-web3-success font-bold">{a.value} {a.currency}</span></>;
       case 'UPGRADE_FAIL':
-        return <span><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-red-400">{a.value} {a.currency}</span></span>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-red-400">{a.value} {a.currency}</span></>;
       default:
         return null;
     }
@@ -200,14 +223,14 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
           <div
             key={a.id}
             onClick={() => onSelectUser(a.user)}
-            className={`flex items-center gap-2 px-2.5 py-[5px] cursor-pointer transition hover:bg-white/[0.03] ${i === 0 ? 'animate-slide-in' : ''}`}
+            className={`flex items-center gap-2 px-2.5 py-[4px] cursor-pointer transition hover:bg-white/[0.03] ${i === 0 ? 'animate-slide-in' : ''}`}
           >
-            <div className="w-6 h-6 rounded-full bg-black/40 border border-white/[0.08] flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-5 h-5 rounded-full bg-black/40 border border-white/[0.08] flex items-center justify-center shrink-0 overflow-hidden">
               {renderAvatar(a)}
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-bold text-white truncate block">{a.user}</span>
-              <span className="text-[9px] text-gray-500 truncate block leading-tight">
+              <span className="text-[10px] font-bold text-white truncate block leading-none">{a.user}</span>
+              <span className="text-[9px] text-gray-500 truncate block leading-tight mt-[1px]">
                 {getDetail(a)}
               </span>
             </div>
