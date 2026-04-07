@@ -154,19 +154,27 @@ const verifyTweetAction = async (
 ): Promise<boolean> => {
   try {
     if (action === 'like') {
-      const res = await fetch(
-        `https://api.twitter.com/2/users/${userId}/liked_tweets?max_results=100&tweet.fields=id`,
-        { headers: { Authorization: `Bearer ${userToken}` } }
-      );
+      const url = `https://api.twitter.com/2/users/${userId}/liked_tweets?max_results=100&tweet.fields=id`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
       const data: any = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.error('[rewards] liked_tweets API error:', res.status, JSON.stringify(data));
+        return false;
+      }
       const tweets = Array.isArray(data?.data) ? data.data : [];
       return tweets.some((t: any) => t.id === tweetId);
     }
-    const res = await fetch(
-      `https://api.twitter.com/2/users/${userId}/timelines/reverse_chronological?max_results=100&tweet.fields=referenced_tweets`,
-      { headers: { Authorization: `Bearer ${userToken}` } }
-    );
+    const url = `https://api.twitter.com/2/users/${userId}/timelines/reverse_chronological?max_results=100&tweet.fields=referenced_tweets`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
     const data: any = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error('[rewards] timeline API error:', res.status, JSON.stringify(data));
+      return false;
+    }
     const tweets = Array.isArray(data?.data) ? data.data : [];
     return tweets.some((t: any) =>
       Array.isArray(t.referenced_tweets) &&
@@ -174,7 +182,8 @@ const verifyTweetAction = async (
         (ref: any) => ref.type === 'retweeted' && ref.id === tweetId
       )
     );
-  } catch {
+  } catch (err) {
+    console.error('[rewards] verifyTweetAction error:', err);
     return false;
   }
 };

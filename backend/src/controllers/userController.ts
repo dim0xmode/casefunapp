@@ -34,7 +34,7 @@ const TWITTER_AUTHORIZE_URL = 'https://twitter.com/i/oauth2/authorize';
 const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
 const TWITTER_ME_URL = 'https://api.twitter.com/2/users/me?user.fields=id,name,username';
 const TWITTER_STATE_TTL_MS = 10 * 60 * 1000;
-const TWITTER_SCOPE = 'users.read tweet.read offline.access';
+const TWITTER_SCOPE = 'users.read tweet.read like.read follows.read offline.access';
 
 const encodeBase64Url = (value: Buffer | string) => {
   const raw = Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf8');

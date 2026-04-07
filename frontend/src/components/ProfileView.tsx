@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Item, Case, ImageMeta, RewardTask, RewardClaimRecord } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Check } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -989,23 +989,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
 
-              {rewardTasks.length > 0 && (
-                <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
-                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-1.5">
-                    <Gift size={11} /> First Quest
+              {(() => {
+                const nextTask = rewardTasks.find((t) => !t.claimed);
+                if (!nextTask) return null;
+                return (
+                  <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-1.5">
+                      <Gift size={11} /> Next Quest
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-gray-400">{nextTask.title} <span className="text-web3-accent font-mono">+{nextTask.reward} CFP</span></div>
+                      <button type="button" onClick={() => setSocialRewardsTab('rewards')} className="text-[10px] text-web3-accent hover:underline">View</button>
+                    </div>
                   </div>
-                  {(() => {
-                    const first = rewardTasks.find((t) => !t.claimed);
-                    if (!first) return <div className="text-[11px] text-gray-500">All tasks completed!</div>;
-                    return (
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] text-gray-400">{first.title} <span className="text-web3-accent font-mono">+{first.reward} CFP</span></div>
-                        <button type="button" onClick={() => setSocialRewardsTab('rewards')} className="text-[10px] text-web3-accent hover:underline">View</button>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
+                );
+              })()}
 
               {isEditable && twitterError && <div className="mt-2 text-[10px] text-red-400">{twitterError}</div>}
               {isEditable && telegramError && <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>}
@@ -1024,37 +1022,45 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               </div>
 
-              {rewardsSubTab === 'tasks' && (
+              {rewardsSubTab === 'tasks' && (() => {
+                const unclaimedTasks = rewardTasks.filter((t) => !t.claimed);
+                return (
                 <div className="space-y-1.5">
                   {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-                  {!rewardsLoading && rewardTasks.length === 0 && <div className="text-xs text-gray-600">No tasks available</div>}
-                  {rewardTasks.map((task) => (
-                    <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.claimed ? 'border-web3-success/20' : task.locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
-                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.claimed ? 'border-web3-success/50 text-web3-success' : task.locked ? 'border-white/10 text-gray-600' : task.completed ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
-                        {task.claimed ? <Check size={12} /> : task.locked ? <Lock size={10} /> : <Gift size={11} />}
+                  {!rewardsLoading && unclaimedTasks.length === 0 && (
+                    <div className="text-center py-6">
+                      <Gift size={20} className="mx-auto text-gray-600 mb-2" />
+                      <div className="text-[11px] text-gray-500">All tasks completed!</div>
+                      <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
+                    </div>
+                  )}
+                  {unclaimedTasks.map((task) => (
+                    <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
+                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : task.completed ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
+                        {task.locked ? <Lock size={10} /> : <Gift size={11} />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] text-white font-medium">
                           {renderTaskTitle(task)}
                         </div>
                         <div className="text-[10px] text-gray-500 mt-0.5">
-                          {task.claimed ? 'Claimed' : task.locked ? 'Link Twitter & Telegram first' : task.description}
+                          {task.locked ? 'Link Twitter & Telegram first' : task.description}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
-                        {isEditable && !task.claimed && task.completed && !task.locked && (
+                        {isEditable && task.completed && !task.locked && (
                           <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
                             {claimingTaskId === task.id ? '…' : 'Claim'}
                           </button>
                         )}
-                        {task.claimed && <Check size={14} className="text-web3-success" />}
                       </div>
                     </div>
                   ))}
                   {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
                 </div>
-              )}
+                );
+              })()}
 
               {rewardsSubTab === 'history' && (
                 <div className="space-y-1">
