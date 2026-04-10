@@ -391,11 +391,9 @@ export const claimReward = async (
           verified = await verifyTwitterFollow(tw.token, tw.twitterId);
         } else {
           verified = await verifyTwitterFollowByAppToken(user.twitterId);
-          if (!verified) {
-            // Token-less fallback: trust linked account for follow task
-            verified = true;
-          }
         }
+        if (!verified)
+          return next(new AppError('Follow @casefunnet on Twitter first, then try again', 400));
         break;
       }
 
@@ -413,7 +411,9 @@ export const claimReward = async (
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
         const likeResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'like');
-        verified = likeResult.verified || likeResult.apiUnavailable;
+        if (likeResult.apiUnavailable)
+          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+        verified = likeResult.verified;
         break;
       }
 
@@ -424,7 +424,9 @@ export const claimReward = async (
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
         const repostResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'retweet');
-        verified = repostResult.verified || repostResult.apiUnavailable;
+        if (repostResult.apiUnavailable)
+          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+        verified = repostResult.verified;
         break;
       }
 
@@ -435,7 +437,9 @@ export const claimReward = async (
         if (!tw)
           return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
         const commentResult = await verifyTweetComment(tw.token, tw.twitterId, tweetId);
-        verified = commentResult.verified || commentResult.apiUnavailable;
+        if (commentResult.apiUnavailable)
+          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+        verified = commentResult.verified;
         break;
       }
 

@@ -111,7 +111,7 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(config.port, async () => {
+const server = app.listen(config.port, async () => {
   console.log(`🚀 Server running on http://localhost:${config.port}`);
   console.log(`📝 Environment: ${config.nodeEnv}`);
   console.log(`🌐 Frontend URL: ${config.frontendUrl}`);
@@ -146,5 +146,12 @@ app.listen(config.port, async () => {
 
   startCaseExpiryWorker();
 });
+
+// Cloudflare keeps connections to origin alive for ~100s.
+// Node.js default keepAliveTimeout is 5s — causes Caddy to hit dead connections
+// and retry, which is what creates the 30s hang after idle.
+// Set to 120s so connections outlive Cloudflare's keepalive window.
+server.keepAliveTimeout = 120_000;
+server.headersTimeout = 125_000;
 
 export default app;
