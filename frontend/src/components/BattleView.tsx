@@ -1588,7 +1588,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
         <div className={`border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-hidden ${
           isTelegramMiniApp ? 'h-14' : 'px-6 py-3 h-[72px]'
         }`}>
-          {!isTelegramMiniApp && (
+          {false && !isTelegramMiniApp && (
             <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
               Total Cost <span className="text-web3-accent font-bold">{format2(totalCost)} ₮</span>
             </div>
