@@ -1591,7 +1591,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
 
         {/* Cases Strip */}
         <div className={`border-b border-white/[0.06] bg-black/20 backdrop-blur-sm relative overflow-hidden ${
-          isTelegramMiniApp ? 'h-14' : 'px-6 py-4'
+          isTelegramMiniApp ? 'h-14' : 'px-6 py-3 h-[72px]'
         }`}>
           {!isTelegramMiniApp && (
             <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500">
@@ -1600,13 +1600,11 @@ export const BattleView: React.FC<BattleViewProps> = ({
           )}
           <div className="absolute inset-y-0 left-0 right-0 flex items-center pointer-events-none">
             <div
-              className={`flex items-center transition-transform duration-700 ease-out ${isTelegramMiniApp ? 'gap-2' : 'gap-1.5'}`}
+              className="flex items-center gap-2 transition-transform duration-700 ease-out"
               style={{
                 position: 'absolute',
                 left: '50%',
-                transform: isTelegramMiniApp
-                  ? `translateX(calc(-${currentRound * 48}px - 20px))`
-                  : `translateX(calc(-${currentRound * 38}px - 14px))`,
+                transform: `translateX(calc(-${currentRound * 48}px - 20px))`,
               }}
             >
               {selectedCases.map((caseData, idx) => {
@@ -1617,12 +1615,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
                     key={`${caseData.id}-${idx}-strip`}
                     className={`shrink-0 rounded-full border bg-black/30 flex items-center justify-center transition-all duration-500 ${
                       isActive
-                        ? isTelegramMiniApp
-                          ? 'w-10 h-10 border-web3-accent scale-125'
-                          : 'w-7 h-7 border-web3-accent scale-110'
-                        : isTelegramMiniApp
-                          ? `w-10 h-10 border-white/[0.12] ${isPast ? 'opacity-40' : 'opacity-70'}`
-                          : `w-7 h-7 border-white/[0.12] ${isPast ? 'opacity-40' : 'opacity-70'}`
+                        ? 'w-10 h-10 border-web3-accent scale-125'
+                        : `w-10 h-10 border-white/[0.12] ${isPast ? 'opacity-40' : 'opacity-70'}`
                     }`}
                   >
                     <span className={isActive ? 'drop-shadow-[0_0_10px_rgba(102,252,241,0.9)]' : ''}>
