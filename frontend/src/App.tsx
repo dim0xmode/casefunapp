@@ -1627,15 +1627,45 @@ const App = () => {
   const handleConnectTwitter = async () => {
     setTwitterNotice(null);
     setTwitterError(null);
+    setTwitterBusy(true);
     try {
       const response = await api.getTwitterConnectUrl();
       const url = response.data?.url;
       if (!url) {
         throw new Error('Failed to start Twitter linking.');
       }
-      window.location.href = url;
+
+      const tg = (window as any)?.Telegram?.WebApp;
+      if (activeTab === 'tg' && tg) {
+        if (typeof tg.openLink === 'function') {
+          tg.openLink(url);
+        } else {
+          window.open(url, '_blank');
+        }
+        setTwitterNotice('Complete Twitter auth in the browser, then return here.');
+        const pollLinked = async () => {
+          for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+              const profile = await api.getProfile();
+              if (profile.data?.user?.twitterUsername) {
+                setUser(prev => ({ ...prev, ...profile.data.user }));
+                setTwitterNotice(null);
+                setTwitterBusy(false);
+                return;
+              }
+            } catch { /* retry */ }
+          }
+          setTwitterNotice(null);
+          setTwitterBusy(false);
+        };
+        void pollLinked();
+      } else {
+        window.location.href = url;
+      }
     } catch (error: any) {
       setTwitterError(error?.message || 'Failed to start Twitter linking.');
+      setTwitterBusy(false);
     }
   };
 

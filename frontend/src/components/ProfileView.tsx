@@ -175,7 +175,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   useEffect(() => {
     const onFocus = () => { loadRewardTasks(); };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
   }, [loadRewardTasks]);
 
   const handleClaimReward = async (taskId: string) => {
@@ -202,17 +204,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return task.targetUrl || null;
   };
 
+  const openExternalUrl = useCallback((url: string, taskId: string) => {
+    markTaskActivated(taskId);
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (isTelegramMiniApp && tg) {
+      const isTgLink = url.startsWith('https://t.me/');
+      if (isTgLink && typeof tg.openTelegramLink === 'function') {
+        tg.openTelegramLink(url);
+      } else if (typeof tg.openLink === 'function') {
+        tg.openLink(url);
+      } else {
+        window.open(url, '_blank');
+      }
+    } else {
+      window.open(url, '_blank');
+    }
+  }, [isTelegramMiniApp, markTaskActivated]);
+
   const renderTaskTitle = (task: RewardTask) => {
+    const linkClass = "text-web3-accent underline hover:text-web3-accent/80 cursor-pointer";
     const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
     if (task.targetUrl && tweetTypes.includes(task.type)) {
       const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
-      return <>{verb} <a href={task.targetUrl} target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">this post</a></>;
+      return <>{verb} <span onClick={() => openExternalUrl(task.targetUrl!, task.id)} className={linkClass}>this post</span></>;
     }
     if (task.type === 'FOLLOW_TWITTER') {
-      return <>Follow <a href="https://x.com/casefunnet" target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">@casefunnet</a></>;
+      return <>Follow <span onClick={() => openExternalUrl('https://x.com/casefunnet', task.id)} className={linkClass}>@casefunnet</span></>;
     }
     if (task.type === 'SUBSCRIBE_TELEGRAM') {
-      return <>Join <a href="https://t.me/CaseFun_Chat" target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-web3-accent underline hover:text-web3-accent/80">Telegram channel</a></>;
+      return <>Join <span onClick={() => openExternalUrl('https://t.me/CaseFun_Chat', task.id)} className={linkClass}>Telegram channel</span></>;
     }
     return task.title;
   };
@@ -1093,9 +1113,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
                         {showGo && actionUrl && (
-                          <a href={actionUrl} target="_blank" rel="noreferrer" onClick={() => markTaskActivated(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10 active:scale-[0.97] transition flex items-center gap-1">
+                          <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10 active:scale-[0.97] transition flex items-center gap-1">
                             Go <ExternalLink size={10} />
-                          </a>
+                          </button>
                         )}
                         {showClaim && (
                           <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">

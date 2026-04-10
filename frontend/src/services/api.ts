@@ -21,7 +21,8 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs = 15_000
   ): Promise<ApiResponse<T>> {
     const method = String(options.method || 'GET').toUpperCase();
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
@@ -32,11 +33,15 @@ class ApiClient {
         ? { ...options.headers }
         : { 'Content-Type': 'application/json', ...options.headers };
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         ...options,
         headers,
         credentials: 'include',
+        signal: controller.signal,
       });
 
       // Check if response is JSON
@@ -56,11 +61,15 @@ class ApiClient {
 
       return data;
     } catch (error) {
-      // Handle network errors
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timed out. Please check your connection and try again.');
+      }
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         throw new Error('Network error: Unable to connect to the server. Please check your connection.');
       }
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

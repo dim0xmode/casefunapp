@@ -6,7 +6,7 @@
       read_header 10s
       read_body 15s
       write 120s
-      idle 90s
+      idle 3m
     }
   }
 }
