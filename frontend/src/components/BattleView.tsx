@@ -1025,21 +1025,20 @@ export const BattleView: React.FC<BattleViewProps> = ({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 mb-3">
-                        {battle.cases.slice(0, 4).map((caseData, idx) => (
-                          <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                            <CaseIcon
-                              value={caseData.image || caseData.possibleDrops[0]?.image || ''}
-                              size="sm"
-                              meta={caseData.imageMeta}
-                              className="rounded-full"
-                            />
-              </div>
-            ))}
-                        {battle.cases.length > 4 && (
-                          <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>
-                        )}
-          </div>
+                      <div className="flex flex-col gap-1.5 mb-3 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+                        {battle.cases.map((caseData, idx) => (
+                          <div key={`${battle.id}-${caseData.id}-${idx}`} className="flex items-center gap-2.5 bg-black/30 rounded-lg border border-white/[0.06] px-2.5 py-1.5">
+                            <div className="w-8 h-8 rounded-full border border-white/[0.1] bg-black/40 flex items-center justify-center shrink-0 overflow-hidden">
+                              <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-bold text-white truncate">{caseData.name}</div>
+                              <div className="text-[9px] text-gray-500">${(caseData as any).tokenTicker || caseData.currency} · 1 = {(caseData as any).tokenPrice || '?'} ₮</div>
+                            </div>
+                            <div className="text-[11px] font-black text-web3-accent shrink-0">{format2(caseData.price)} ₮</div>
+                          </div>
+                        ))}
+                      </div>
 
                       <div className="flex items-center justify-between mb-4">
                         <div>
@@ -1051,7 +1050,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                         {!isTelegramMiniApp && (
                           <div className="text-xs text-gray-500">Rounds: {battle.cases.length}</div>
                         )}
-        </div>
+                      </div>
 
                       {battle.status && battle.status !== 'OPEN' ? (
                         <button
@@ -1094,26 +1093,29 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div
                   key={battle.id}
                   onClick={() => joinBattle(battle)}
-                  className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-black/20 p-3 active:scale-[0.98] transition"
+                  className="rounded-xl border border-white/[0.08] bg-black/20 p-3 active:scale-[0.98] transition"
                 >
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {battle.cases.slice(0, 3).map((caseData, idx) => (
-                      <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-9 h-9 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                        <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
-                      </div>
-                    ))}
-                    {battle.cases.length > 3 && <span className="text-[10px] text-gray-500">+{battle.cases.length - 3}</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1.5">
                       {isBotBattle ? <Bot size={12} className="text-web3-accent shrink-0" /> : battle.hostAvatar ? <div className="w-4 h-4 rounded-full overflow-hidden shrink-0"><ImageWithMeta src={battle.hostAvatar} meta={battle.hostAvatarMeta ?? undefined} className="w-full h-full rounded-full" /></div> : <UserIcon size={12} className="text-web3-accent shrink-0" />}
                       <span className="text-[11px] font-bold text-white truncate">{battle.host}</span>
                     </div>
-                    <div className="text-[10px] text-gray-500">{battle.cases.length} rounds</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500">{battle.cases.length} rounds</span>
+                      <span className="text-[11px] font-black text-web3-accent">{format2(battleCost)} ₮</span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-sm font-black text-web3-accent">{format2(battleCost)} ₮</div>
-                    <div className="text-[9px] text-gray-500 uppercase">Join</div>
+                  <div className="flex flex-col gap-1">
+                    {battle.cases.map((caseData, idx) => (
+                      <div key={`${battle.id}-${caseData.id}-${idx}`} className="flex items-center gap-2 bg-black/30 rounded-lg px-2 py-1">
+                        <div className="w-6 h-6 rounded-full border border-white/[0.1] bg-black/40 flex items-center justify-center shrink-0 overflow-hidden">
+                          <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                        </div>
+                        <span className="text-[10px] font-bold text-white truncate flex-1">{caseData.name}</span>
+                        <span className="text-[9px] text-gray-500 shrink-0">${(caseData as any).tokenTicker || caseData.currency}</span>
+                        <span className="text-[10px] font-bold text-web3-accent shrink-0">{format2(caseData.price)} ₮</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : (
@@ -1128,13 +1130,19 @@ export const BattleView: React.FC<BattleViewProps> = ({
                     </div>
                     <div className="text-xs font-bold text-web3-accent">{battle.cases.length} rounds</div>
                   </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    {battle.cases.slice(0, 4).map((caseData, idx) => (
-                      <div key={`${battle.id}-${caseData.id}-${idx}`} className="w-10 h-10 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center">
-                        <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                  <div className="flex flex-col gap-1.5 mb-3 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+                    {battle.cases.map((caseData, idx) => (
+                      <div key={`${battle.id}-${caseData.id}-${idx}`} className="flex items-center gap-2.5 bg-black/30 rounded-lg border border-white/[0.06] px-2.5 py-1.5">
+                        <div className="w-8 h-8 rounded-full border border-white/[0.1] bg-black/40 flex items-center justify-center shrink-0 overflow-hidden">
+                          <CaseIcon value={caseData.image || caseData.possibleDrops[0]?.image || ''} size="sm" meta={caseData.imageMeta} className="rounded-full" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-bold text-white truncate">{caseData.name}</div>
+                          <div className="text-[9px] text-gray-500">${(caseData as any).tokenTicker || caseData.currency} · 1 = {(caseData as any).tokenPrice || '?'} ₮</div>
+                        </div>
+                        <div className="text-[11px] font-black text-web3-accent shrink-0">{format2(caseData.price)} ₮</div>
                       </div>
                     ))}
-                    {battle.cases.length > 4 && <div className="text-xs text-gray-500">+{battle.cases.length - 4}</div>}
                   </div>
                   <div className="flex items-center justify-between mb-4">
                     <div>
