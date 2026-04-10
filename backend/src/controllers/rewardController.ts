@@ -163,7 +163,7 @@ const verifyTweetAction = async (
       const data: any = await res.json().catch(() => null);
       if (!res.ok) {
         console.error('[rewards] liked_tweets API error:', res.status, JSON.stringify(data));
-        if (res.status === 403) return { verified: false, tierLimited: true, serverError: false };
+        if (res.status === 402 || res.status === 403) return { verified: false, tierLimited: true, serverError: false };
         return { verified: false, tierLimited: false, serverError: true };
       }
       const tweets = Array.isArray(data?.data) ? data.data : [];
@@ -176,7 +176,7 @@ const verifyTweetAction = async (
     const data: any = await res.json().catch(() => null);
     if (!res.ok) {
       console.error('[rewards] timeline API error:', res.status, JSON.stringify(data));
-      if (res.status === 403) return { verified: false, tierLimited: true, serverError: false };
+      if (res.status === 402 || res.status === 403) return { verified: false, tierLimited: true, serverError: false };
       return { verified: false, tierLimited: false, serverError: true };
     }
     const tweets = Array.isArray(data?.data) ? data.data : [];
@@ -206,7 +206,7 @@ const verifyTweetComment = async (
     const data: any = await res.json().catch(() => null);
     if (!res.ok) {
       console.error('[rewards] timeline/comment API error:', res.status, JSON.stringify(data));
-      if (res.status === 403) return { verified: false, tierLimited: true, serverError: false };
+      if (res.status === 402 || res.status === 403) return { verified: false, tierLimited: true, serverError: false };
       return { verified: false, tierLimited: false, serverError: true };
     }
     const tweets = Array.isArray(data?.data) ? data.data : [];
