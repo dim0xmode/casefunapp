@@ -1602,8 +1602,9 @@ export const BattleView: React.FC<BattleViewProps> = ({
             <div
               className="flex items-center gap-2 transition-transform duration-700 ease-out"
               style={{
-                transform: `translateX(calc(50% - ${currentRound * 48}px - 20px))`,
-                position: 'relative',
+                position: 'absolute',
+                left: '50%',
+                transform: `translateX(calc(-${currentRound * 48}px - 20px))`,
               }}
             >
               {selectedCases.map((caseData, idx) => {
