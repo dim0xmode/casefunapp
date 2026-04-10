@@ -4,7 +4,7 @@ import { ArrowLeft, Package, ChevronRight, ChevronsRight, Zap } from 'lucide-rea
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { AdminActionButton } from './ui/AdminActionButton';
-import { formatShortfallUp } from '../utils/number';
+import { formatShortfallUp, formatTokenValue } from '../utils/number';
 
 // Open Modes
 type OpenMode = 'normal' | 'fast' | 'instant';
@@ -165,19 +165,19 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
                 </div>
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Opens</div>
-                  <div className="text-lg font-black">{caseData.stats.totalTokenFromOpens.toFixed(2)}</div>
+                  <div className="text-lg font-black">{formatTokenValue(caseData.stats.totalTokenFromOpens)}</div>
                 </div>
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Upgrades</div>
-                  <div className="text-lg font-black">{caseData.stats.totalTokenFromUpgrades.toFixed(2)}</div>
+                  <div className="text-lg font-black">{formatTokenValue(caseData.stats.totalTokenFromUpgrades)}</div>
                 </div>
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Tokens From Battles</div>
-                  <div className="text-lg font-black">{caseData.stats.totalTokenFromBattles.toFixed(2)}</div>
+                  <div className="text-lg font-black">{formatTokenValue(caseData.stats.totalTokenFromBattles)}</div>
                 </div>
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Tokens</div>
-                  <div className="text-lg font-black">{caseData.stats.totalTokenIssued.toFixed(2)}</div>
+                  <div className="text-lg font-black">{formatTokenValue(caseData.stats.totalTokenIssued)}</div>
                 </div>
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Upgrades Used</div>
@@ -219,7 +219,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
                   {caseData.stats.topHolders.map((holder) => (
                     <div key={holder.userId} className="bg-black/30 border border-white/[0.08] rounded-xl p-3 flex items-center justify-between text-xs">
                       <span className="truncate">{holder.username}</span>
-                      <span className="text-gray-200">{holder.total.toFixed(2)}</span>
+                      <span className="text-gray-200">{formatTokenValue(holder.total)}</span>
                     </div>
                   ))}
                 </div>

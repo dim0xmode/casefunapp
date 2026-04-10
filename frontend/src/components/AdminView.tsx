@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
+import { formatTokenValue } from '../utils/number';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
 import { StatCard } from './ui/StatCard';
@@ -1072,19 +1073,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-gray-500">User drop</div>
-                            <div>{Number(round.userDrop?.value || 0).toFixed(2)}</div>
+                            <div>{formatTokenValue(round.userDrop?.value || 0)}</div>
                           </div>
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-gray-500">Opponent drop</div>
-                            <div>{Number(round.opponentDrop?.value || 0).toFixed(2)}</div>
+                            <div>{formatTokenValue(round.opponentDrop?.value || 0)}</div>
                           </div>
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-gray-500">Ideal/Max safe</div>
-                            <div>{Number(round.userDebug?.idealDrop || 0).toFixed(2)} / {Number(round.userDebug?.maxSafeDrop || 0).toFixed(2)}</div>
+                            <div>{formatTokenValue(round.userDebug?.idealDrop || 0)} / {formatTokenValue(round.userDebug?.maxSafeDrop || 0)}</div>
                           </div>
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-gray-500">State after</div>
-                            <div>spent {Number(round.stateAfter?.spent || 0).toFixed(2)} / issued {Number(round.stateAfter?.issued || 0).toFixed(2)}</div>
+                            <div>spent {formatTokenValue(round.stateAfter?.spent || 0)} / issued {formatTokenValue(round.stateAfter?.issued || 0)}</div>
                           </div>
                         </div>
                       </div>

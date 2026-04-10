@@ -9,7 +9,7 @@ import { ConfirmModal } from './ui/ConfirmModal';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { CaseIcon } from './CaseIcon';
 import { ImageWithMeta } from './ui/ImageWithMeta';
-import { formatShortfallUp } from '../utils/number';
+import { formatShortfallUp, formatTokenValue } from '../utils/number';
 import { api } from '../services/api';
 
 const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Orion', 'Helix'];
@@ -1852,7 +1852,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
                       {Object.entries(leftTokensByCurrency).map(([cur, amt]) => (
-                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                        <div key={cur} className="text-sm font-bold text-white">{formatTokenValue(amt)} ${cur}</div>
                       ))}
                       <div className="text-xs text-green-400">~ {format2(leftTotal)} ₮</div>
                 </div>
@@ -1860,7 +1860,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
                       {Object.entries(rightTokensByCurrency).map(([cur, amt]) => (
-                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                        <div key={cur} className="text-sm font-bold text-white">{formatTokenValue(amt)} ${cur}</div>
                       ))}
                       <div className="text-xs text-red-400">~ {format2(rightTotal)} ₮</div>
                 </div>
@@ -1873,7 +1873,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   ) : (
                     Object.entries(winningsByToken).map(([currency, amount]) => (
                           <div key={currency} className="bg-black/40 px-3 py-1.5 rounded border border-white/[0.12] flex items-center gap-2">
-                            <span className="text-white font-mono text-sm font-bold">{format2(Number(amount || 0))} ${currency}</span>
+                            <span className="text-white font-mono text-sm font-bold">{formatTokenValue(amount || 0)} ${currency}</span>
                       </div>
                     ))
                   )}
@@ -1907,7 +1907,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{leftName}</div>
                       {Object.entries(leftTokensByCurrency).map(([cur, amt]) => (
-                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                        <div key={cur} className="text-sm font-bold text-white">{formatTokenValue(amt)} ${cur}</div>
                       ))}
                       <div className="text-xs text-gray-400">~ {format2(leftTotal)} ₮</div>
                 </div>
@@ -1915,7 +1915,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                 <div className="text-center">
                       <div className="text-[10px] text-gray-500 uppercase">{rightName}</div>
                       {Object.entries(rightTokensByCurrency).map(([cur, amt]) => (
-                        <div key={cur} className="text-sm font-bold text-white">{format2(Number(amt))} ${cur}</div>
+                        <div key={cur} className="text-sm font-bold text-white">{formatTokenValue(amt)} ${cur}</div>
                       ))}
                       <div className="text-xs text-red-400">~ {format2(rightTotal)} ₮</div>
                 </div>

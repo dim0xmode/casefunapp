@@ -1,6 +1,7 @@
 import React from 'react';
 import { Item } from '../types';
 import { ImageWithMeta } from './ui/ImageWithMeta';
+import { formatTokenValue } from '../utils/number';
 
 type ItemCardSize = 'sm' | 'md' | 'lg';
 
@@ -110,7 +111,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({
   const styles = compactContent ? compactStyles[size] : sizeStyles[size];
   const isInteractive = Boolean(onClick) && !disabled;
   const isImage = item.image?.startsWith('http') || item.image?.startsWith('/') || item.image?.startsWith('data:');
-  const displayValue = Number.isFinite(Number(item.value)) ? Number(item.value).toFixed(2) : '0.00';
+  const displayValue = Number.isFinite(Number(item.value)) ? formatTokenValue(item.value) : '0';
 
   return (
     <div

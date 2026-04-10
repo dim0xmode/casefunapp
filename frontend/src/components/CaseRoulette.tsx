@@ -4,6 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { playDullClick, playSoftWin } from '../utils/audio';
+import { formatTokenValue } from '../utils/number';
 
 // Rarity colors mapping
 const RARITY_COLORS: Record<Rarity, string> = {
@@ -377,7 +378,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
                 {renderTokenLogo(winner, 'lg')}
               </div>
               <div className={`flex items-center justify-center gap-2 bg-gradient-to-r from-web3-accent/30 to-web3-success/30 px-4 py-1.5 rounded-lg border border-web3-accent/40 ${openMode !== 'instant' ? 'animate-fade-in' : ''}`} style={openMode !== 'instant' ? { animationDelay: '0.2s', animationFillMode: 'both' } : {}}>
-                <span className="text-lg font-black text-white">{winner.value} ${winner.currency}</span>
+                <span className="text-lg font-black text-white">{formatTokenValue(winner.value)} ${winner.currency}</span>
               </div>
             </div>
           </div>

@@ -13,6 +13,7 @@ import { ImageWithMeta } from './ui/ImageWithMeta';
 import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { api } from '../services/api';
+import { formatTokenValue } from '../utils/number';
 
 const formatWalletAddress = (address: string): string => {
   if (!address) return '';
@@ -822,7 +823,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className={`w-2 h-2 rounded-full ${total > 0 ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}></div>
                   <span className="font-bold text-gray-300 text-sm">${currency}</span>
                 </div>
-                <span className="font-mono text-white font-bold">{Number(total || 0).toFixed(2)}</span>
+                <span className="font-mono text-white font-bold">{formatTokenValue(total || 0)}</span>
               </div>
             ))}
           </div>
@@ -1546,7 +1547,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                       <div className="flex flex-wrap gap-2">
                                         {Object.entries(winningsByCategory).map(([currency, amount]) => (
                                           <div key={currency} className="flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-web3-success/20">
-                                            <span className="text-xs font-mono font-bold text-white">{Number(amount).toFixed(2)}</span>
+                                            <span className="text-xs font-mono font-bold text-white">{formatTokenValue(amount)}</span>
                                             <span className="text-[10px] font-bold text-web3-accent">${currency}</span>
                                 </div>
                               ))}
@@ -1570,7 +1571,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                         <div className="flex flex-wrap gap-2">
                                           {Object.entries(opponentByCategory).map(([currency, amount]) => (
                                             <div key={currency} className="flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-red-500/20">
-                                              <span className="text-xs font-mono font-bold text-white">{Number(amount).toFixed(2)}</span>
+                                              <span className="text-xs font-mono font-bold text-white">{formatTokenValue(amount)}</span>
                                               <span className="text-[10px] font-bold text-red-300">${currency}</span>
                                             </div>
                                           ))}

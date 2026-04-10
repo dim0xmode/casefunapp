@@ -8,6 +8,7 @@ import { AdminActionButton } from './ui/AdminActionButton';
 import { Pagination } from './ui/Pagination';
 import { SearchInput } from './ui/SearchInput';
 import { playDullClick, playSoftLose, playSoftWin } from '../utils/audio';
+import { formatTokenValue } from '../utils/number';
 
 interface UpgradeViewProps {
   inventory: Item[];
@@ -472,7 +473,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                   Selected Item
                 </span>
                 <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                  {selectedItems.length}/9 • {selectedTotalValue.toFixed(2)}
+                  {selectedItems.length}/9 • {formatTokenValue(selectedTotalValue)}
                 </span>
               </div>
               
@@ -524,7 +525,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
               <div className="w-full max-w-[340px] grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-white/[0.12] bg-black/25 p-2.5">
                   <div className="text-[9px] uppercase tracking-[0.14em] text-gray-500">Selected</div>
-                  <div className="mt-1 text-base font-black text-web3-accent">{selectedTotalValue.toFixed(2)} total</div>
+                  <div className="mt-1 text-base font-black text-web3-accent">{formatTokenValue(selectedTotalValue)} total</div>
                   <div className="text-[10px] text-gray-500 mt-0.5">{selectedItems.length}/9 selected</div>
                 </div>
                 <div className="rounded-xl border border-white/[0.12] bg-black/25 p-2.5">
@@ -532,13 +533,13 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                   {lastResult ? (
                     <>
                       <div className={`mt-1 text-base font-black ${lastResult.success ? 'text-web3-success' : 'text-red-300'}`}>
-                        {Number(lastResult.value || 0).toFixed(2)}
+                        {formatTokenValue(lastResult.value || 0)}
                       </div>
                       <div className="text-[10px] text-gray-500 mt-0.5">{lastResult.success ? 'Win' : 'Lose'}</div>
                     </>
                   ) : displayItem ? (
                     <>
-                      <div className="mt-1 text-base font-black text-web3-accent">{displayTargetValue.toFixed(2)}</div>
+                      <div className="mt-1 text-base font-black text-web3-accent">{formatTokenValue(displayTargetValue)}</div>
                       <div className="text-[10px] text-gray-500 mt-0.5">Target</div>
                     </>
                   ) : (
