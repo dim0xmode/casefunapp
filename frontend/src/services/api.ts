@@ -191,10 +191,14 @@ class ApiClient {
   }
 
   async claimToken(caseId: string) {
-    return this.request<{ amount: number; txHash: string; tokenAddress: string }>('/token/claim', {
-      method: 'POST',
-      body: JSON.stringify({ caseId }),
-    });
+    return this.request<{ amount: number; txHash: string; tokenAddress: string }>(
+      '/token/claim',
+      {
+        method: 'POST',
+        body: JSON.stringify({ caseId }),
+      },
+      120_000
+    );
   }
 
   async upgradeItem(itemIds: string[], multiplier: number) {
