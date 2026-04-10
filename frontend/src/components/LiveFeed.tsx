@@ -5,6 +5,10 @@ import { api } from '../services/api';
 
 const MAX_ITEMS = 30;
 const SPOILER_DELAY_MS = 8_000;
+const POLL_INTERVAL_MS = 12_000;
+const BOT_INTERVAL_MIN = 3_000;
+const BOT_INTERVAL_MAX = 6_000;
+const REAL_SHOW_CHANCE = 0.5;
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -68,9 +72,14 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   const seenRealIds = useRef(new Set<string>());
   const casesRef = useRef<Case[]>(cases);
   const initialized = useRef(false);
+  const lastPollTs = useRef<string | undefined>(undefined);
   const pendingTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   casesRef.current = cases;
+
+  const pushActivity = useCallback((a: Activity) => {
+    setActivities(prev => [a, ...prev].slice(0, MAX_ITEMS));
+  }, []);
 
   const makeBotActivity = useCallback((): Activity | null => {
     const cs = casesRef.current;
@@ -123,62 +132,64 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
   useEffect(() => {
     if (!cases.length) return;
 
-    const fetchAndMerge = async () => {
+    const fetchNew = async () => {
       try {
-        const res = await api.getActivityFeed();
+        const res = await api.getActivityFeed(lastPollTs.current);
         const events: Activity[] = (res.data?.events || []).map((e: any) => ({
           ...e,
           timestamp: new Date(e.timestamp),
           isReal: true,
         }));
 
-        const newEvents = events.filter(e => !seenRealIds.current.has(e.id));
+        if (events.length > 0) {
+          const newest = events.reduce((a, b) =>
+            a.timestamp.getTime() > b.timestamp.getTime() ? a : b
+          );
+          lastPollTs.current = newest.timestamp.toISOString();
+        }
+
+        const fresh = events.filter(e => !seenRealIds.current.has(e.id));
         for (const e of events) seenRealIds.current.add(e.id);
 
-        if (newEvents.length === 0) return;
+        const selected = fresh.filter(() => Math.random() < REAL_SHOW_CHANCE);
+        if (selected.length === 0 && fresh.length > 0) {
+          selected.push(pick(fresh));
+        }
 
         const now = Date.now();
-        const ready: Activity[] = [];
-
-        for (const e of newEvents) {
+        for (const e of selected) {
           const age = now - e.timestamp.getTime();
           if (age >= SPOILER_DELAY_MS) {
-            ready.push(e);
+            pushActivity(e);
           } else {
-            const timer = setTimeout(() => {
-              setActivities(prev => [e, ...prev].slice(0, MAX_ITEMS));
-            }, SPOILER_DELAY_MS - age);
+            const timer = setTimeout(() => pushActivity(e), SPOILER_DELAY_MS - age);
             pendingTimers.current.push(timer);
           }
         }
-
-        if (ready.length > 0) {
-          setActivities(prev => [...ready, ...prev].slice(0, MAX_ITEMS));
-        }
-      } catch { /* */ }
+      } catch { /* network hiccup */ }
     };
 
-    fetchAndMerge();
-    const pollId = setInterval(fetchAndMerge, 10_000);
+    fetchNew();
+    const pollId = setInterval(fetchNew, POLL_INTERVAL_MS);
     return () => {
       clearInterval(pollId);
       pendingTimers.current.forEach(t => clearTimeout(t));
       pendingTimers.current = [];
     };
-  }, [cases.length]);
+  }, [cases.length, pushActivity]);
 
   useEffect(() => {
     if (!cases.length) return;
 
+    let timeoutId: ReturnType<typeof setTimeout>;
     const tick = () => {
       const bot = makeBotActivity();
-      if (!bot) return;
-      setActivities(prev => [bot, ...prev].slice(0, MAX_ITEMS));
+      if (bot) pushActivity(bot);
+      timeoutId = setTimeout(tick, BOT_INTERVAL_MIN + Math.random() * (BOT_INTERVAL_MAX - BOT_INTERVAL_MIN));
     };
-
-    const id = setInterval(tick, 3000 + Math.random() * 3000);
-    return () => clearInterval(id);
-  }, [cases.length, makeBotActivity]);
+    timeoutId = setTimeout(tick, BOT_INTERVAL_MIN + Math.random() * (BOT_INTERVAL_MAX - BOT_INTERVAL_MIN));
+    return () => clearTimeout(timeoutId);
+  }, [cases.length, makeBotActivity, pushActivity]);
 
   const renderAvatar = (a: Activity) => {
     if (a.avatar && (a.avatar.startsWith('http') || a.avatar.startsWith('/') || a.avatar.startsWith('data:'))) {

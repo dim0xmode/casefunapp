@@ -476,8 +476,9 @@ class ApiClient {
     return this.request<{ case: any }>(`/cases/${id}`);
   }
 
-  async getActivityFeed() {
-    return this.request<{ events: any[] }>('/cases/feed');
+  async getActivityFeed(since?: string) {
+    const qs = since ? `?since=${encodeURIComponent(since)}` : '';
+    return this.request<{ events: any[] }>(`/cases/feed${qs}`);
   }
 
   async createCase(caseData: any) {

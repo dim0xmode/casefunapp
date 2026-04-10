@@ -627,18 +627,25 @@ export const uploadCaseImage = async (
 };
 
 export const getActivityFeed = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sinceParam = req.query.since as string | undefined;
+    const defaultWindow = 2 * 60 * 1000;
+    const since = sinceParam ? new Date(sinceParam) : new Date(Date.now() - defaultWindow);
+    if (isNaN(since.getTime())) {
+      return res.json({ status: 'success', data: { events: [] } });
+    }
+
+    const limit = 8;
 
     const [openings, battles, newCases, upgrades] = await Promise.all([
       prisma.caseOpening.findMany({
-        where: { timestamp: { gte: since } },
+        where: { timestamp: { gt: since } },
         orderBy: { timestamp: 'desc' },
-        take: 30,
+        take: limit,
         select: {
           id: true,
           wonValue: true,
@@ -657,9 +664,9 @@ export const getActivityFeed = async (
         },
       }),
       prisma.battle.findMany({
-        where: { timestamp: { gte: since } },
+        where: { timestamp: { gt: since } },
         orderBy: { timestamp: 'desc' },
-        take: 30,
+        take: limit,
         select: {
           id: true,
           result: true,
@@ -670,9 +677,9 @@ export const getActivityFeed = async (
         },
       }),
       prisma.case.findMany({
-        where: { createdAt: { gte: since } },
+        where: { createdAt: { gt: since } },
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 4,
         select: {
           id: true,
           name: true,
@@ -686,9 +693,9 @@ export const getActivityFeed = async (
         },
       }),
       prisma.rtuEvent.findMany({
-        where: { createdAt: { gte: since }, type: 'UPGRADE' },
+        where: { createdAt: { gt: since }, type: 'UPGRADE' },
         orderBy: { createdAt: 'desc' },
-        take: 20,
+        take: limit,
         select: {
           id: true,
           deltaToken: true,
@@ -776,7 +783,7 @@ export const getActivityFeed = async (
 
     events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    res.json({ status: 'success', data: { events: events.slice(0, 50) } });
+    res.json({ status: 'success', data: { events: events.slice(0, 15) } });
   } catch (error) {
     next(error);
   }
