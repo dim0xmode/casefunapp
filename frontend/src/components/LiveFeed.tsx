@@ -215,18 +215,18 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ cases, onSelectUser }) => {
             <span style={{ color: meta.color }}>{meta.verb}</span>{' '}
             <span className="text-white/60">{a.caseName}</span>
             {a.value != null && (
-              <span className="font-bold" style={{ color: RARITY_COLORS[getRarityByValue(a.value)] }}> {a.value} {a.currency}</span>
+              <span className="font-bold" style={{ color: RARITY_COLORS[getRarityByValue(a.value)] }}> {a.value} ${a.currency}</span>
             )}
           </>
         );
       case 'CASE_CREATE':
         return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-white/60">{a.caseName}</span></>;
       case 'BATTLE_WIN':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? <span className="text-web3-success font-bold"> {a.value} {a.currency}</span> : ''}</>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.value ? <span className="text-web3-success font-bold"> {a.value} ${a.currency}</span> : ''}</>;
       case 'BATTLE_LOSS':
         return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.caseName ? <span className="text-white/50"> {a.caseName}</span> : ''}</>;
       case 'UPGRADE_SUCCESS':
-        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-web3-success font-bold">{a.value} {a.currency}</span></>;
+        return <><span style={{ color: meta.color }}>{meta.verb}</span> <span className="text-web3-success font-bold">{a.value} ${a.currency}</span></>;
       case 'UPGRADE_FAIL':
         return <><span style={{ color: meta.color }}>{meta.verb}</span>{a.caseName ? <span className="text-white/50"> {a.caseName}</span> : ''}</>;
       default:
