@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Case, Item, Rarity, ImageMeta } from '../types';
-import { Plus, Trash2, Sparkles, ChevronDown, UploadCloud, Smile } from 'lucide-react';
+import { Plus, Trash2, Sparkles, ChevronDown, UploadCloud, Smile, Rocket } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { ImageAdjustModal } from './ui/ImageAdjustModal';
@@ -88,7 +88,57 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   });
   const [isLogoAdjustOpen, setIsLogoAdjustOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [creationProgress, setCreationProgress] = useState(0);
+  const [creationStage, setCreationStage] = useState('');
+  const creationTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const CREATION_STAGES = [
+    { at: 0, text: 'Validating parameters...' },
+    { at: 8, text: 'Reserving case slot...' },
+    { at: 18, text: 'Setting up token economics...' },
+    { at: 30, text: 'Configuring drop rates...' },
+    { at: 45, text: 'Deploying token contract...' },
+    { at: 60, text: 'Waiting for confirmation...' },
+    { at: 75, text: 'Registering on-chain...' },
+    { at: 88, text: 'Finalizing...' },
+  ];
+
+  const startCreationProgress = useCallback(() => {
+    setCreationProgress(0);
+    setCreationStage(CREATION_STAGES[0].text);
+    creationTimers.current.forEach(t => clearTimeout(t));
+    creationTimers.current = [];
+
+    let current = 0;
+    const tick = () => {
+      current += 0.5 + Math.random() * 1.5;
+      if (current > 95) current = 95;
+      setCreationProgress(Math.round(current));
+
+      const stage = [...CREATION_STAGES].reverse().find(s => current >= s.at);
+      if (stage) setCreationStage(stage.text);
+
+      if (current < 95) {
+        const delay = current < 30 ? 200 + Math.random() * 300
+          : current < 70 ? 400 + Math.random() * 600
+          : 800 + Math.random() * 1200;
+        creationTimers.current.push(setTimeout(tick, delay));
+      }
+    };
+    creationTimers.current.push(setTimeout(tick, 300));
+  }, []);
+
+  const finishCreationProgress = useCallback(() => {
+    creationTimers.current.forEach(t => clearTimeout(t));
+    creationTimers.current = [];
+    setCreationProgress(100);
+    setCreationStage('Case created!');
+  }, []);
+
+  useEffect(() => {
+    return () => { creationTimers.current.forEach(t => clearTimeout(t)); };
+  }, []);
 
   const sanitizeCaseName = (value: string) =>
     value
@@ -400,6 +450,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
 
     try {
       setIsCreating(true);
+      startCreationProgress();
       const response = await api.createCase({
         name: normalizedName,
         currency: normalizedTicker,
@@ -453,11 +504,16 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
         onBalanceUpdate(nextBalance);
       }
 
+      finishCreationProgress();
+      await new Promise(r => setTimeout(r, 800));
       onCreate(mappedCase);
     } catch (error: any) {
+      creationTimers.current.forEach(t => clearTimeout(t));
+      creationTimers.current = [];
       setSubmitError(error?.message || 'Failed to create case. Try again.');
     } finally {
       setIsCreating(false);
+      setCreationProgress(0);
     }
   };
 
@@ -880,6 +936,47 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Case creation progress overlay */}
+      {isCreating && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="w-[320px] rounded-2xl border border-white/[0.08] bg-[#0B1018] p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-web3-accent/10 border border-web3-accent/20 flex items-center justify-center">
+                <Rocket size={20} className="text-web3-accent animate-pulse" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">Creating Case</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Please wait</div>
+              </div>
+            </div>
+
+            <div className="w-full h-2.5 rounded-full bg-white/[0.06] overflow-hidden mb-3">
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${creationProgress}%`,
+                  background: creationProgress === 100
+                    ? 'linear-gradient(90deg, #10B981, #66FCF1)'
+                    : 'linear-gradient(90deg, #66FCF1, #8B5CF6)',
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400 truncate">{creationStage}</span>
+              <span className="text-xs font-mono text-web3-accent tabular-nums ml-2">{creationProgress}%</span>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-web3-accent animate-pulse" />
+                <span className="text-[10px] text-gray-500">This may take up to a minute</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Upload progress overlay */}
       {isImageUploading && (
