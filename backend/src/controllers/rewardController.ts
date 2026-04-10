@@ -649,7 +649,7 @@ export const adminDeleteRewardTask = async (
       return next(new AppError('Cannot delete default tasks', 400));
     }
 
-    await prisma.rewardTask.delete({ where: { id } });
+    await prisma.rewardTask.update({ where: { id }, data: { isActive: false } });
     res.json({ status: 'success' });
   } catch (error) {
     next(error);
