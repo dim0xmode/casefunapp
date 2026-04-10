@@ -100,6 +100,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
+  const [portfolioTab, setPortfolioTab] = useState<'active' | 'claimed'>('active');
   const [portfolioSearch, setPortfolioSearch] = useState('');
   const [inventoryPage, setInventoryPage] = useState(0);
   const [burntPage, setBurntPage] = useState(0);
@@ -705,42 +706,66 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [user]);
 
-  const userHoldings = useMemo(() => {
-    return inventory.reduce((acc, item) => {
+  const activeHoldings = useMemo(() => {
+    if (!inventory || !Array.isArray(inventory)) return {} as Record<string, number>;
+    return inventory
+      .filter(item => item && !isCaseExpired(item.caseId) && !item.claimedAt)
+      .reduce((acc, item) => {
+        acc[item.currency] = (acc[item.currency] || 0) + item.value;
+        return acc;
+      }, {} as Record<string, number>);
+  }, [inventory, casesById]);
+
+  const claimedHoldings = useMemo(() => {
+    if (!claimedItems || !Array.isArray(claimedItems)) return {} as Record<string, number>;
+    return claimedItems.reduce((acc, item) => {
+      if (!item) return acc;
       acc[item.currency] = (acc[item.currency] || 0) + item.value;
       return acc;
     }, {} as Record<string, number>);
-  }, [inventory]);
+  }, [claimedItems]);
 
-  const platformCurrencies = useMemo(() => {
-    try {
-      if (!inventory || !Array.isArray(inventory)) return [];
-    const currencies = new Set<string>();
-      inventory.forEach(i => {
-        if (i && i.currency) currencies.add(i.currency);
-      });
-    return Array.from(currencies);
-    } catch (error) {
-      console.error('Error getting currencies:', error);
-      return [];
-    }
-  }, [inventory]);
+  const claimableHoldings = useMemo(() => {
+    if (!inventory || !Array.isArray(inventory)) return {} as Record<string, number>;
+    return inventory
+      .filter(item => item && isCaseExpired(item.caseId) && !item.claimedAt)
+      .reduce((acc, item) => {
+        acc[item.currency] = (acc[item.currency] || 0) + item.value;
+        return acc;
+      }, {} as Record<string, number>);
+  }, [inventory, casesById]);
 
-  const portfolioBaseEntries = useMemo(() => {
-    try {
-      if (!platformCurrencies || !Array.isArray(platformCurrencies)) return [];
-      return platformCurrencies.map((currency) => ({
-        currency: String(currency || ''),
-        total: Number(userHoldings[currency]) || 0,
-      }));
-    } catch (error) {
-      console.error('Error processing portfolio entries:', error);
-      return [];
+  const mergedClaimedEntries = useMemo(() => {
+    const merged: Record<string, { claimed: number; claimable: number }> = {};
+    for (const [cur, amt] of Object.entries(claimedHoldings)) {
+      if (!merged[cur]) merged[cur] = { claimed: 0, claimable: 0 };
+      merged[cur].claimed += amt;
     }
-  }, [platformCurrencies, userHoldings]);
+    for (const [cur, amt] of Object.entries(claimableHoldings)) {
+      if (!merged[cur]) merged[cur] = { claimed: 0, claimable: 0 };
+      merged[cur].claimable += amt;
+    }
+    return merged;
+  }, [claimedHoldings, claimableHoldings]);
+
+  const toEntries = (holdings: Record<string, number>) =>
+    Object.entries(holdings).map(([currency, total]) => ({ currency, total }));
+
+  const activeBaseEntries = useMemo(() => toEntries(activeHoldings), [activeHoldings]);
+
+  const claimedBaseEntries = useMemo(() =>
+    Object.entries(mergedClaimedEntries).map(([currency, { claimed, claimable }]) => ({
+      currency,
+      total: claimed + claimable,
+      claimed,
+      claimable,
+    })),
+  [mergedClaimedEntries]);
+
+  const currentPortfolioBase = portfolioTab === 'active' ? activeBaseEntries : claimedBaseEntries;
 
   const filteredPortfolioEntries = useSearchFilter(
-    portfolioBaseEntries,
+    currentPortfolioBase,
     portfolioSearch,
     (entry, query) => entry.currency.toLowerCase().includes(query)
   );
@@ -772,7 +797,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
           }`}
         >
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">
               Asset Portfolio
             </h3>
@@ -802,6 +827,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             )}
           </div>
 
+          <div className="flex items-center gap-1 mb-3">
+            <button
+              onClick={() => { setPortfolioTab('active'); setPortfolioSearch(''); }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition ${
+                portfolioTab === 'active'
+                  ? 'bg-web3-accent/15 text-web3-accent border-web3-accent/30'
+                  : 'text-gray-500 border-white/[0.08] hover:text-white'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => { setPortfolioTab('claimed'); setPortfolioSearch(''); }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition ${
+                portfolioTab === 'claimed'
+                  ? 'bg-web3-accent/15 text-web3-accent border-web3-accent/30'
+                  : 'text-gray-500 border-white/[0.08] hover:text-white'
+              }`}
+            >
+              Claimed
+            </button>
+          </div>
+
           {!isTelegramMiniApp && (
             <div className="mb-3">
               <SearchInput
@@ -815,15 +863,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
           <div className={`${isTelegramMiniApp ? 'grid grid-cols-2 gap-2' : 'space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-0'}`}>
             {portfolioEntries.length === 0 && (
-              <div className="text-gray-600 text-sm italic py-4 text-center">No tokens found.</div>
+              <div className="text-gray-600 text-sm italic py-4 text-center">
+                {portfolioTab === 'active' ? 'No active tokens.' : 'No claimed tokens yet.'}
+              </div>
             )}
-            {(isTelegramMiniApp ? portfolioEntries.slice(0, 6) : portfolioEntries).map(({ currency, total }) => (
-              <div key={currency} className={`bg-black/25 backdrop-blur-xl rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors ${isTelegramMiniApp ? 'px-3 py-2' : 'px-4 py-3'}`}>
+            {(isTelegramMiniApp ? portfolioEntries.slice(0, 6) : portfolioEntries).map((entry) => (
+              <div key={entry.currency} className={`bg-black/25 backdrop-blur-xl rounded-lg border border-white/[0.12] flex items-center justify-between group hover:border-web3-accent/30 transition-colors ${isTelegramMiniApp ? 'px-3 py-2' : 'px-4 py-3'}`}>
                 <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${total > 0 ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-700'}`}></div>
-                  <span className="font-bold text-gray-300 text-sm">${currency}</span>
+                  <div className={`w-2 h-2 rounded-full ${entry.total > 0 ? (portfolioTab === 'active' ? 'bg-web3-success shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-web3-accent shadow-[0_0_8px_rgba(102,252,241,0.5)]') : 'bg-gray-700'}`}></div>
+                  <span className="font-bold text-gray-300 text-sm">${entry.currency}</span>
                 </div>
-                <span className="font-mono text-white font-bold">{formatTokenValue(total || 0)}</span>
+                {portfolioTab === 'claimed' && 'claimable' in entry ? (
+                  <div className="text-right">
+                    <span className="font-mono text-white font-bold text-sm">{formatTokenValue(entry.total || 0)}</span>
+                    {(entry as any).claimable > 0 && (
+                      <div className="text-[9px] text-web3-success font-bold">{formatTokenValue((entry as any).claimable)} claimable</div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="font-mono text-white font-bold">{formatTokenValue(entry.total || 0)}</span>
+                )}
               </div>
             ))}
           </div>
