@@ -5,19 +5,21 @@ export const formatShortfallUp = (value: number): string => {
 };
 
 /**
- * Format a token value preserving all significant digits and stripping
- * trailing zeros.  0.0050 → "0.005", 0.000000000005 → "0.000000000005"
+ * Format a token value preserving all significant digits, stripping
+ * trailing zeros AND floating-point noise (e.g. 0.060000000000005 → "0.06").
  */
 export const formatTokenValue = (value: number | string): string => {
   const num = Number(value);
   if (!Number.isFinite(num) || num === 0) return '0';
 
-  if (Math.abs(num) < 1e-7) {
-    const str = num.toFixed(20);
+  const cleaned = parseFloat(num.toPrecision(12));
+
+  if (Math.abs(cleaned) < 1e-7) {
+    const str = cleaned.toFixed(20);
     return str.replace(/0+$/, '').replace(/\.$/, '');
   }
 
-  const str = String(num);
+  const str = String(cleaned);
   if (str.includes('.')) {
     return str.replace(/0+$/, '').replace(/\.$/, '');
   }
