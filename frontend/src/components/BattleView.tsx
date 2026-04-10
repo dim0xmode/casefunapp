@@ -1827,8 +1827,8 @@ export const BattleView: React.FC<BattleViewProps> = ({
         )}
 
         {isResult && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in">
-            <div className="bg-slate-800/70 border border-white/[0.20] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-sm">
+          <div className="absolute inset-0 z-50 flex items-center justify-center animate-fade-in" style={{ background: '#0B0C10' }}>
+            <div className="border border-white/[0.12] rounded-2xl p-6 text-center max-w-lg w-[90%] shadow-[0_18px_50px_rgba(0,0,0,0.55)]" style={{ background: '#131620' }}>
           {displayWin ? (
             <div className="flex flex-col items-center">
                   <div className="relative mb-2">
