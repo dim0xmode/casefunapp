@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Item, Case, ImageMeta, RewardTask, RewardClaimRecord } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Rocket } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -121,6 +121,58 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
   const [claimingCaseId, setClaimingCaseId] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimProgress, setClaimProgress] = useState(0);
+  const [claimStage, setClaimStage] = useState('');
+  const [showClaimOverlay, setShowClaimOverlay] = useState(false);
+  const claimTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const CLAIM_STAGES = [
+    { at: 0, text: 'Preparing claim request...' },
+    { at: 10, text: 'Verifying token ownership...' },
+    { at: 25, text: 'Connecting to blockchain...' },
+    { at: 40, text: 'Building transaction...' },
+    { at: 55, text: 'Submitting to network...' },
+    { at: 70, text: 'Waiting for confirmation...' },
+    { at: 85, text: 'Transferring tokens...' },
+    { at: 95, text: 'Finalizing...' },
+  ];
+
+  const startClaimProgress = useCallback(() => {
+    setClaimProgress(0);
+    setClaimStage(CLAIM_STAGES[0].text);
+    setShowClaimOverlay(true);
+    claimTimers.current.forEach(t => clearTimeout(t));
+    claimTimers.current = [];
+    let current = 0;
+    const tick = () => {
+      current += 0.8 + Math.random() * 2;
+      if (current > 95) current = 95;
+      setClaimProgress(Math.round(current));
+      const stage = [...CLAIM_STAGES].reverse().find(s => current >= s.at);
+      if (stage) setClaimStage(stage.text);
+      if (current < 95) {
+        const delay = current < 30 ? 150 + Math.random() * 250
+          : current < 60 ? 300 + Math.random() * 500
+          : 600 + Math.random() * 800;
+        claimTimers.current.push(setTimeout(tick, delay));
+      }
+    };
+    claimTimers.current.push(setTimeout(tick, 200));
+  }, []);
+
+  const finishClaimProgress = useCallback(async (success: boolean) => {
+    claimTimers.current.forEach(t => clearTimeout(t));
+    claimTimers.current = [];
+    setClaimProgress(100);
+    setClaimStage(success ? 'Tokens claimed!' : 'Claim failed');
+    await new Promise(r => setTimeout(r, 800));
+    setShowClaimOverlay(false);
+    setClaimProgress(0);
+  }, []);
+
+  useEffect(() => {
+    return () => { claimTimers.current.forEach(t => clearTimeout(t)); };
+  }, []);
   const [referralUrl, setReferralUrl] = useState<string | null>(null);
   const [referralInvited, setReferralInvited] = useState<number>(user?.referralConfirmedCount ?? 0);
   const [referralLoading, setReferralLoading] = useState(false);
@@ -423,9 +475,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (!caseId || !onClaimToken) return;
     setClaimError(null);
     setClaimingCaseId(caseId);
+    startClaimProgress();
     try {
       await onClaimToken(caseId);
+      await finishClaimProgress(true);
     } catch (error: any) {
+      await finishClaimProgress(false);
       setClaimError(error?.message || 'Claim failed');
     } finally {
       setClaimingCaseId(null);
@@ -1809,6 +1864,45 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+      {showClaimOverlay && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="w-[320px] rounded-2xl border border-white/[0.08] bg-[#0B1018] p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-web3-accent/10 border border-web3-accent/20 flex items-center justify-center">
+                <Rocket size={20} className="text-web3-accent animate-pulse" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">Claiming Tokens</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Please wait</div>
+              </div>
+            </div>
+
+            <div className="w-full h-2.5 rounded-full bg-white/[0.06] overflow-hidden mb-3">
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${claimProgress}%`,
+                  background: claimProgress === 100
+                    ? 'linear-gradient(90deg, #10B981, #66FCF1)'
+                    : 'linear-gradient(90deg, #66FCF1, #8B5CF6)',
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400 truncate">{claimStage}</span>
+              <span className="text-xs font-mono text-web3-accent tabular-nums ml-2">{claimProgress}%</span>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-web3-accent animate-pulse" />
+                <span className="text-[10px] text-gray-500">This may take a moment</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
