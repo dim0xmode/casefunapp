@@ -484,7 +484,7 @@ class ApiClient {
     return this.request<{ case: any; balance?: number }>('/cases', {
       method: 'POST',
       body: JSON.stringify(caseData),
-    });
+    }, 120_000);
   }
 
   async uploadCaseImage(file: File) {
