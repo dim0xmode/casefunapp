@@ -1176,7 +1176,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   setPromoLoading(true);
                   setPromoResult(null);
                   try {
-                    const res = await api.activatePromo(promoCode.trim());
+                    const res = await api.activatePromo(promoCode.trim().toUpperCase());
                     setPromoResult({ ok: true, msg: `+${res.data?.amount} ₮ added to your balance!` });
                     setPromoCode('');
                     if (onBalanceUpdate && typeof res.data?.balance === 'number') onBalanceUpdate(res.data.balance);
@@ -1188,7 +1188,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 }} className="flex gap-2">
                   <input
                     value={promoCode}
-                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    onChange={(e) => setPromoCode(e.target.value)}
                     placeholder="Enter code"
                     className="flex-1 min-w-0 bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/40 font-mono uppercase tracking-wider"
                   />
