@@ -722,7 +722,7 @@ class ApiClient {
   }
 
   async activatePromo(code: string) {
-    return this.request<{ balance: number; amount: number }>('/users/promo/activate', {
+    return this.request<{ balance: number; amount: number }>('/user/promo/activate', {
       method: 'POST',
       body: JSON.stringify({ code }),
     });
