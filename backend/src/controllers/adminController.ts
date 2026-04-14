@@ -1019,3 +1019,127 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+export const getAnalytics = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalUsers,
+      totalCases,
+      totalBattles,
+      totalDeposits,
+      totalOpenings,
+      totalClaims,
+      activeCases,
+      newUsersToday,
+      newUsers7d,
+      newUsers30d,
+      deposits30d,
+      openings30d,
+      battles30d,
+      rewardClaims30d,
+      allDepositsAgg,
+      activeUsers30d,
+      dailyActiveUsers,
+      dailyOpenings,
+      dailyBattles,
+      dailyDeposits,
+      dailyNewUsers,
+      inventoryActive,
+      inventoryClaimed,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.case.count(),
+      prisma.battle.count(),
+      prisma.deposit.count(),
+      prisma.caseOpening.count(),
+      prisma.claim.count(),
+      prisma.case.count({ where: { isActive: true } }),
+      prisma.user.count({ where: { createdAt: { gte: today } } }),
+      prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+      prisma.user.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      prisma.deposit.findMany({ where: { createdAt: { gte: thirtyDaysAgo } }, select: { amountUsdt: true, createdAt: true } }),
+      prisma.caseOpening.count({ where: { timestamp: { gte: thirtyDaysAgo } } }),
+      prisma.battle.count({ where: { timestamp: { gte: thirtyDaysAgo } } }),
+      prisma.rewardClaim.count({ where: { claimedAt: { gte: thirtyDaysAgo } } }),
+      prisma.deposit.aggregate({ _sum: { amountUsdt: true }, _count: true }),
+      prisma.user.count({
+        where: { openings: { some: { timestamp: { gte: thirtyDaysAgo } } } },
+      }),
+      prisma.$queryRawUnsafe<{ day: string; count: bigint }[]>(
+        `SELECT DATE("timestamp") as day, COUNT(DISTINCT "userId") as count FROM case_openings WHERE "timestamp" >= $1 GROUP BY DATE("timestamp") ORDER BY day`,
+        thirtyDaysAgo,
+      ).catch(() => []),
+      prisma.$queryRawUnsafe<{ day: string; count: bigint }[]>(
+        `SELECT DATE("timestamp") as day, COUNT(*) as count FROM case_openings WHERE "timestamp" >= $1 GROUP BY DATE("timestamp") ORDER BY day`,
+        thirtyDaysAgo,
+      ).catch(() => []),
+      prisma.$queryRawUnsafe<{ day: string; count: bigint }[]>(
+        `SELECT DATE("timestamp") as day, COUNT(*) as count FROM battles WHERE "timestamp" >= $1 GROUP BY DATE("timestamp") ORDER BY day`,
+        thirtyDaysAgo,
+      ).catch(() => []),
+      prisma.$queryRawUnsafe<{ day: string; total: number }[]>(
+        `SELECT DATE("createdAt") as day, SUM("amountUsdt") as total FROM deposits WHERE "createdAt" >= $1 GROUP BY DATE("createdAt") ORDER BY day`,
+        thirtyDaysAgo,
+      ).catch(() => []),
+      prisma.$queryRawUnsafe<{ day: string; count: bigint }[]>(
+        `SELECT DATE("createdAt") as day, COUNT(*) as count FROM users WHERE "createdAt" >= $1 GROUP BY DATE("createdAt") ORDER BY day`,
+        thirtyDaysAgo,
+      ).catch(() => []),
+      prisma.inventoryItem.aggregate({ where: { status: 'ACTIVE' }, _sum: { value: true }, _count: true }),
+      prisma.inventoryItem.aggregate({ where: { claimedAt: { not: null } }, _sum: { value: true }, _count: true }),
+    ]);
+
+    const totalDepositVolume = allDepositsAgg._sum?.amountUsdt || 0;
+    const deposit30dVolume = deposits30d.reduce((s, d) => s + (d.amountUsdt || 0), 0);
+
+    const formatDaily = (rows: { day: string | Date; count?: bigint; total?: number }[]) =>
+      rows.map((r) => ({
+        date: typeof r.day === 'string' ? r.day : new Date(r.day).toISOString().slice(0, 10),
+        value: r.count != null ? Number(r.count) : Number(r.total || 0),
+      }));
+
+    res.json({
+      status: 'success',
+      data: {
+        summary: {
+          totalUsers,
+          totalCases,
+          activeCases,
+          totalBattles,
+          totalDeposits: allDepositsAgg._count,
+          totalDepositVolume,
+          totalOpenings,
+          totalClaims,
+          inventoryActiveCount: inventoryActive._count,
+          inventoryActiveValue: inventoryActive._sum?.value || 0,
+          inventoryClaimedCount: inventoryClaimed._count,
+          inventoryClaimedValue: inventoryClaimed._sum?.value || 0,
+        },
+        growth: {
+          newUsersToday,
+          newUsers7d,
+          newUsers30d,
+          activeUsers30d,
+          openings30d,
+          battles30d,
+          deposit30dVolume,
+          rewardClaims30d,
+        },
+        charts: {
+          dailyActiveUsers: formatDaily(dailyActiveUsers),
+          dailyOpenings: formatDaily(dailyOpenings),
+          dailyBattles: formatDaily(dailyBattles),
+          dailyDeposits: formatDaily(dailyDeposits),
+          dailyNewUsers: formatDaily(dailyNewUsers),
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendMailingBatch } from '../controllers/mailingController.js';
 import {
   listUsers,
   getUserDetail,
@@ -18,6 +19,7 @@ import {
   upsertSetting,
   listAuditLogs,
   getOverview,
+  getAnalytics,
   adjustRtu,
   listFeedbackMessages,
   getFeedbackUnreadCount,
@@ -62,6 +64,7 @@ router.put('/settings/:key', upsertSetting);
 
 router.get('/audit', listAuditLogs);
 router.get('/overview', getOverview);
+router.get('/analytics', getAnalytics);
 router.get('/feedback', listFeedbackMessages);
 router.get('/feedback/unread-count', getFeedbackUnreadCount);
 router.patch('/feedback/:id/read', updateFeedbackReadStatus);
@@ -73,5 +76,7 @@ router.post('/rewards/tasks', adminCreateRewardTask);
 router.patch('/rewards/tasks/:id', adminUpdateRewardTask);
 router.delete('/rewards/tasks/:id', adminDeleteRewardTask);
 router.get('/rewards/claims', adminListRewardClaims);
+
+router.post('/mailing/batch', sendMailingBatch);
 
 export default router;

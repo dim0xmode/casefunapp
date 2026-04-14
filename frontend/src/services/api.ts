@@ -638,6 +638,10 @@ class ApiClient {
     return this.request<{ stats: any; recentTransactions: any[]; recentOpenings: any[] }>('/admin/overview');
   }
 
+  async getAdminAnalytics() {
+    return this.request<{ summary: any; growth: any; charts: any }>('/admin/analytics');
+  }
+
   async previewAdminBattleResolve(payload: { caseIds: string[]; mode: 'BOT' | 'PVP' }) {
     return this.request<{ mode: 'BOT' | 'PVP'; rounds: any[] }>('/admin/battles/preview-resolve', {
       method: 'POST',
@@ -707,6 +711,14 @@ class ApiClient {
 
   async getAdminRewardClaims() {
     return this.request<{ claims: any[] }>('/admin/rewards/claims');
+  }
+
+  async sendMailingBatch(payload: { emails: string[]; subject: string; text: string }) {
+    return this.request<{ sent: number; requested: number; skipped: number }>(
+      '/admin/mailing/batch',
+      { method: 'POST', body: JSON.stringify(payload) },
+      60_000
+    );
   }
 }
 

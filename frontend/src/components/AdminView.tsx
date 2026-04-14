@@ -7,6 +7,7 @@ import { StatCard } from './ui/StatCard';
 
 type TabKey =
   | 'overview'
+  | 'analytics'
   | 'users'
   | 'cases'
   | 'battles'
@@ -17,11 +18,11 @@ type TabKey =
   | 'audit'
   | 'feedback'
   | 'rewards'
-  | 'reports'
-  | 'cms';
+  | 'mailing';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'users', label: 'Users' },
   { key: 'cases', label: 'Cases' },
   { key: 'battles', label: 'Battles' },
@@ -32,8 +33,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'audit', label: 'Audit' },
   { key: 'feedback', label: 'Feedback' },
   { key: 'rewards', label: 'Rewards' },
-  { key: 'reports', label: 'Reports' },
-  { key: 'cms', label: 'CMS' },
+  { key: 'mailing', label: 'Mailing' },
 ];
 
 const IMMUTABLE_ADMIN_WALLET = '0xc459241D1AC02250dE56b8B7165ebEDF59236524';
@@ -77,6 +77,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   const [battlePreviewLoading, setBattlePreviewLoading] = useState(false);
   const [battlePreviewError, setBattlePreviewError] = useState<string | null>(null);
   const [battlePreview, setBattlePreview] = useState<any>(null);
+
+  const [mailingEmails, setMailingEmails] = useState('');
+  const [mailingSubject, setMailingSubject] = useState('');
+  const [mailingText, setMailingText] = useState('');
+  const [mailingProgress, setMailingProgress] = useState<{ done: number; total: number } | null>(null);
+  const [mailingResult, setMailingResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [mailingError, setMailingError] = useState<string | null>(null);
+  const [mailingRunning, setMailingRunning] = useState(false);
   const [rtuAdjust, setRtuAdjust] = useState({
     caseId: '',
     tokenSymbol: '',
@@ -163,6 +171,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
         case 'overview':
           setData((await api.getAdminOverview()).data ?? null);
           break;
+        case 'analytics':
+          setData((await api.getAdminAnalytics()).data ?? null);
+          break;
         case 'users':
           setData((await api.getAdminUsers()).data?.users ?? []);
           break;
@@ -209,8 +220,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           setData({ tasks: tasksRes.data?.tasks || [], claims: claimsRes.data?.claims || [] });
           break;
         }
-        case 'reports':
-        case 'cms':
+        case 'mailing':
           setData(null);
           break;
         default:
@@ -278,6 +288,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   }, [activeTab, data, search]);
   const overview = useMemo(
     () => (activeTab === 'overview' ? data : null),
+    [activeTab, data]
+  );
+  const analytics = useMemo(
+    () => (activeTab === 'analytics' ? data : null),
     [activeTab, data]
   );
   const battles = useMemo(() => {
@@ -393,7 +407,27 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
         <div className="bg-black/30 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-xs uppercase tracking-widest text-gray-500">{activeTab}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs uppercase tracking-widest text-gray-500">{activeTab}</div>
+              {activeTab === 'users' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{applyUserFilters.length} records</span>
+              )}
+              {activeTab === 'cases' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{cases.length} records</span>
+              )}
+              {activeTab === 'battles' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{sortedBattles.length} records</span>
+              )}
+              {activeTab === 'inventory' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{sortedInventory.length} records</span>
+              )}
+              {activeTab === 'transactions' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{sortedTransactions.length} records</span>
+              )}
+              {activeTab === 'audit' && Array.isArray(data) && (
+                <span className="text-[10px] text-gray-600">{audit.length} records</span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {(activeTab === 'users' || activeTab === 'cases' || activeTab === 'battles' || activeTab === 'inventory' || activeTab === 'transactions') && (
                 <SearchInput
@@ -559,16 +593,52 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               >
                 Refresh
               </button>
-              {(activeTab === 'transactions' || activeTab === 'battles' || activeTab === 'inventory') && (
+              {(['users', 'cases', 'battles', 'inventory', 'transactions', 'audit', 'analytics'] as TabKey[]).includes(activeTab) && (
                 <button
                   onClick={() => {
-                    const rows =
-                      activeTab === 'transactions'
-                        ? sortedTransactions
-                        : activeTab === 'battles'
-                          ? sortedBattles
-                          : sortedInventory;
-                    downloadCsv(activeTab, rows);
+                    if (activeTab === 'analytics' && analytics) {
+                      const s = analytics.summary || {};
+                      const g = analytics.growth || {};
+                      const summaryRows = [
+                        { metric: 'Total Users', value: s.totalUsers },
+                        { metric: 'Total Cases', value: s.totalCases },
+                        { metric: 'Active Cases', value: s.activeCases },
+                        { metric: 'Total Battles', value: s.totalBattles },
+                        { metric: 'Total Deposits', value: s.totalDeposits },
+                        { metric: 'Total Deposit Volume (USDT)', value: s.totalDepositVolume },
+                        { metric: 'Total Openings', value: s.totalOpenings },
+                        { metric: 'Total Claims', value: s.totalClaims },
+                        { metric: 'Active Inventory Count', value: s.inventoryActiveCount },
+                        { metric: 'Active Inventory Value', value: s.inventoryActiveValue },
+                        { metric: 'Claimed Inventory Count', value: s.inventoryClaimedCount },
+                        { metric: 'Claimed Inventory Value', value: s.inventoryClaimedValue },
+                        { metric: 'New Users Today', value: g.newUsersToday },
+                        { metric: 'New Users (7d)', value: g.newUsers7d },
+                        { metric: 'New Users (30d)', value: g.newUsers30d },
+                        { metric: 'Active Users (30d)', value: g.activeUsers30d },
+                        { metric: 'Openings (30d)', value: g.openings30d },
+                        { metric: 'Battles (30d)', value: g.battles30d },
+                        { metric: 'Deposit Volume (30d, USDT)', value: g.deposit30dVolume },
+                        { metric: 'Reward Claims (30d)', value: g.rewardClaims30d },
+                      ];
+                      downloadCsv('analytics_summary', summaryRows);
+                      const charts = analytics.charts || {};
+                      for (const [key, rows] of Object.entries(charts)) {
+                        if (Array.isArray(rows) && rows.length > 0) {
+                          downloadCsv(`analytics_${key}`, rows as Record<string, any>[]);
+                        }
+                      }
+                      return;
+                    }
+                    const rowsMap: Record<string, any[]> = {
+                      users: applyUserFilters,
+                      cases: cases,
+                      battles: sortedBattles,
+                      inventory: sortedInventory,
+                      transactions: sortedTransactions,
+                      audit: audit,
+                    };
+                    downloadCsv(activeTab, rowsMap[activeTab] || []);
                   }}
                   className="px-3 py-1.5 rounded-lg bg-web3-accent/20 border border-web3-accent/40 text-xs uppercase tracking-widest text-web3-accent hover:text-white"
                 >
@@ -955,60 +1025,112 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'battles' && (
             <div className="space-y-2">
+              <div className="hidden md:grid grid-cols-6 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                <div className="col-span-2">ID</div>
+                <div>User</div>
+                <div>Result</div>
+                <div>Cost</div>
+                <div>Date</div>
+              </div>
+              {sortedBattles.length === 0 && (
+                <div className="text-sm text-gray-500 py-8 text-center">No battles found.</div>
+              )}
               {paginate(sortedBattles, 'battles').map((battle: any) => (
                 <div key={battle.id} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
-                  <div className="md:col-span-2">{battle.id}</div>
-                  <div>{battle.userId}</div>
-                  <div>{battle.result}</div>
+                  <div className="md:col-span-2 font-mono truncate">{battle.id}</div>
+                  <div className="truncate">{battle.userId}</div>
+                  <div>
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${battle.result === 'WIN' ? 'bg-web3-success/20 text-web3-success' : 'bg-red-500/15 text-red-300'}`}>
+                      {battle.result}
+                    </span>
+                  </div>
                   <div>{battle.cost} ₮</div>
                   <div>{formatDate(battle.timestamp)}</div>
                 </div>
               ))}
-              <Pagination
-                currentPage={pages.battles}
-                totalPages={totalPages(sortedBattles)}
-                onPageChange={(next) => setPages((prev) => ({ ...prev, battles: next }))}
-              />
+              {sortedBattles.length > 0 && (
+                <Pagination
+                  currentPage={pages.battles}
+                  totalPages={totalPages(sortedBattles)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, battles: next }))}
+                />
+              )}
             </div>
           )}
 
           {!loading && !error && activeTab === 'inventory' && (
             <div className="space-y-2">
+              <div className="hidden md:grid grid-cols-7 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                <div className="col-span-2">ID</div>
+                <div>User</div>
+                <div>Name</div>
+                <div>Value</div>
+                <div>Status</div>
+                <div>Date</div>
+              </div>
+              {sortedInventory.length === 0 && (
+                <div className="text-sm text-gray-500 py-8 text-center">No inventory items found.</div>
+              )}
               {paginate(sortedInventory, 'inventory').map((item: any) => (
                 <div key={item.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
-                  <div className="md:col-span-2">{item.id}</div>
-                  <div>{item.userId}</div>
+                  <div className="md:col-span-2 font-mono truncate">{item.id}</div>
+                  <div className="truncate">{item.userId}</div>
                   <div>{item.name}</div>
                   <div>{item.value} {item.currency}</div>
-                  <div>{item.status}</div>
+                  <div>
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${item.status === 'ACTIVE' ? 'bg-web3-success/20 text-web3-success' : 'bg-gray-500/20 text-gray-400'}`}>
+                      {item.status}
+                    </span>
+                  </div>
                   <div>{formatDate(item.createdAt)}</div>
                 </div>
               ))}
-              <Pagination
-                currentPage={pages.inventory}
-                totalPages={totalPages(sortedInventory)}
-                onPageChange={(next) => setPages((prev) => ({ ...prev, inventory: next }))}
-              />
+              {sortedInventory.length > 0 && (
+                <Pagination
+                  currentPage={pages.inventory}
+                  totalPages={totalPages(sortedInventory)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, inventory: next }))}
+                />
+              )}
             </div>
           )}
 
           {!loading && !error && activeTab === 'transactions' && (
             <div className="space-y-2">
+              <div className="hidden md:grid grid-cols-7 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                <div className="col-span-2">ID</div>
+                <div>User</div>
+                <div>Type</div>
+                <div>Amount</div>
+                <div>Status</div>
+                <div>Date</div>
+              </div>
+              {sortedTransactions.length === 0 && (
+                <div className="text-sm text-gray-500 py-8 text-center">No transactions found.</div>
+              )}
               {paginate(sortedTransactions, 'transactions').map((tx: any) => (
                 <div key={tx.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
-                  <div className="md:col-span-2">{tx.id}</div>
-                  <div>{tx.userId}</div>
-                  <div>{tx.type}</div>
+                  <div className="md:col-span-2 font-mono truncate">{tx.id}</div>
+                  <div className="truncate">{tx.userId}</div>
+                  <div>
+                    <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{tx.type}</span>
+                  </div>
                   <div>{tx.amount} {tx.currency}</div>
-                  <div>{tx.status}</div>
+                  <div>
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${tx.status === 'completed' ? 'bg-web3-success/20 text-web3-success' : tx.status === 'failed' ? 'bg-red-500/15 text-red-300' : 'bg-yellow-400/15 text-yellow-300'}`}>
+                      {tx.status}
+                    </span>
+                  </div>
                   <div>{formatDate(tx.timestamp)}</div>
                 </div>
               ))}
-              <Pagination
-                currentPage={pages.transactions}
-                totalPages={totalPages(sortedTransactions)}
-                onPageChange={(next) => setPages((prev) => ({ ...prev, transactions: next }))}
-              />
+              {sortedTransactions.length > 0 && (
+                <Pagination
+                  currentPage={pages.transactions}
+                  totalPages={totalPages(sortedTransactions)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, transactions: next }))}
+                />
+              )}
             </div>
           )}
 
@@ -1154,6 +1276,18 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Ledgers</div>
                 <div className="space-y-2">
+                  <div className="hidden md:grid grid-cols-8 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                    <div className="col-span-2">Case ID</div>
+                    <div>Token</div>
+                    <div>Price (USDT)</div>
+                    <div>RTU %</div>
+                    <div>Spent (USDT)</div>
+                    <div>Issued</div>
+                    <div>Buffer Debt</div>
+                  </div>
+                  {rtuLedgers.length === 0 && (
+                    <div className="text-sm text-gray-500 py-4 text-center">No ledgers.</div>
+                  )}
                   {paginate(rtuLedgers, 'rtuLedgers').map((ledger: any) => {
                     const alert =
                       rtuAlertThreshold > 0 &&
@@ -1161,47 +1295,64 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     return (
                     <div
                       key={ledger.id}
-                      className={`grid grid-cols-1 md:grid-cols-7 gap-3 items-center rounded-xl p-3 text-xs ${
+                      className={`grid grid-cols-1 md:grid-cols-8 gap-3 items-center rounded-xl p-3 text-xs ${
                         alert
                           ? 'bg-red-500/10 border border-red-500/40 text-red-300'
                           : 'bg-black/30 border border-white/[0.08] text-gray-400'
                       }`}
                     >
-                      <div className="md:col-span-2">{ledger.caseId}</div>
+                      <div className="md:col-span-2 font-mono truncate">{ledger.caseId}</div>
                       <div>{ledger.tokenSymbol}</div>
                       <div>{ledger.tokenPriceUsdt}</div>
                       <div>{ledger.rtuPercent}%</div>
-                      <div>{ledger.totalSpentUsdt}</div>
-                      <div>{ledger.totalTokenIssued}</div>
-                      <div>{ledger.bufferDebtToken}</div>
+                      <div>{formatTokenValue(ledger.totalSpentUsdt)}</div>
+                      <div>{formatTokenValue(ledger.totalTokenIssued)}</div>
+                      <div className={alert ? 'font-bold' : ''}>{formatTokenValue(ledger.bufferDebtToken)}</div>
                     </div>
                     );
                   })}
-                  <Pagination
-                    currentPage={pages.rtuLedgers}
-                    totalPages={totalPages(rtuLedgers)}
-                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuLedgers: next }))}
-                  />
+                  {rtuLedgers.length > 0 && (
+                    <Pagination
+                      currentPage={pages.rtuLedgers}
+                      totalPages={totalPages(rtuLedgers)}
+                      onPageChange={(next) => setPages((prev) => ({ ...prev, rtuLedgers: next }))}
+                    />
+                  )}
                 </div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Events</div>
                 <div className="space-y-2">
+                  <div className="hidden md:grid grid-cols-7 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                    <div className="col-span-2">Case ID</div>
+                    <div>Token</div>
+                    <div>Type</div>
+                    <div>Δ Spent (USDT)</div>
+                    <div>Δ Token</div>
+                    <div>Date</div>
+                  </div>
+                  {rtuEvents.length === 0 && (
+                    <div className="text-sm text-gray-500 py-4 text-center">No events.</div>
+                  )}
                   {paginate(rtuEvents, 'rtuEvents').map((event: any) => (
                     <div key={event.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
-                      <div className="md:col-span-2">{event.caseId}</div>
+                      <div className="md:col-span-2 font-mono truncate">{event.caseId}</div>
                       <div>{event.tokenSymbol}</div>
-                      <div>{event.type}</div>
-                      <div>{event.deltaSpentUsdt}</div>
-                      <div>{event.deltaToken}</div>
+                      <div>
+                        <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{event.type}</span>
+                      </div>
+                      <div>{formatTokenValue(event.deltaSpentUsdt)}</div>
+                      <div>{formatTokenValue(event.deltaToken)}</div>
                       <div>{formatDate(event.createdAt)}</div>
                     </div>
                   ))}
-                  <Pagination
-                    currentPage={pages.rtuEvents}
-                    totalPages={totalPages(rtuEvents)}
-                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuEvents: next }))}
-                  />
+                  {rtuEvents.length > 0 && (
+                    <Pagination
+                      currentPage={pages.rtuEvents}
+                      totalPages={totalPages(rtuEvents)}
+                      onPageChange={(next) => setPages((prev) => ({ ...prev, rtuEvents: next }))}
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -1274,45 +1425,42 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'audit' && (
             <div className="space-y-2">
+              <div className="hidden md:grid grid-cols-6 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                <div className="col-span-2">Action</div>
+                <div>Admin</div>
+                <div>Entity</div>
+                <div>Entity ID</div>
+                <div>Date</div>
+              </div>
+              {audit.length === 0 && (
+                <div className="text-sm text-gray-500 py-8 text-center">No audit logs.</div>
+              )}
               {paginate(audit, 'audit').map((log) => (
                 <div key={log.id} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
                   <div className="md:col-span-2">{log.action}</div>
-                  <div>{log.adminId}</div>
+                  <div className="truncate">{log.adminId}</div>
                   <div>{log.entity}</div>
-                  <div>{log.entityId}</div>
+                  <div className="font-mono truncate">{log.entityId}</div>
                   <div>{formatDate(log.createdAt)}</div>
                 </div>
               ))}
-              <Pagination
-                currentPage={pages.audit}
-                totalPages={totalPages(audit)}
-                onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
-              />
+              {audit.length > 0 && (
+                <Pagination
+                  currentPage={pages.audit}
+                  totalPages={totalPages(audit)}
+                  onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
+                />
+              )}
             </div>
           )}
 
           {!loading && !error && activeTab === 'feedback' && (
             <div className="space-y-2">
               {feedbackMessages.map((item: any) => {
-                const status = String(item.status || 'PENDING').toUpperCase();
-                const isEarlyAccessRequest = item.topic === 'EARLY_ACCESS';
-                const isResolvedEarlyAccess = isEarlyAccessRequest && (status === 'APPROVED' || status === 'REJECTED');
-                const resolvedLabel =
-                  status === 'APPROVED'
-                    ? 'Early access granted'
-                    : status === 'REJECTED'
-                      ? 'Request rejected'
-                      : 'Resolved';
-                const statusClass =
-                  status === 'APPROVED'
-                    ? 'bg-web3-success/20 border-web3-success/40 text-web3-success'
-                    : status === 'REJECTED'
-                      ? 'bg-red-500/15 border-red-500/40 text-red-300'
-                      : 'bg-yellow-400/15 border-yellow-400/35 text-yellow-300';
                 return (
                   <div
                     key={item.id}
-                    className={`grid grid-cols-1 md:grid-cols-10 gap-3 items-center rounded-xl p-3 text-xs ${
+                    className={`grid grid-cols-1 md:grid-cols-8 gap-3 items-center rounded-xl p-3 text-xs ${
                       item.isRead
                         ? 'bg-black/30 border border-white/[0.08] text-gray-400'
                         : 'bg-red-500/10 border border-red-500/30 text-red-200'
@@ -1328,13 +1476,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div>{item.topic}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Status</div>
-                      <div className={`inline-flex px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-widest ${statusClass}`}>
-                        {status}
-                      </div>
-                      <div className="text-[10px] text-gray-500 mt-1">{item.reviewedAt ? formatDate(item.reviewedAt) : '-'}</div>
-                    </div>
-                    <div>
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Contact</div>
                       <div className="truncate">{item.contact}</div>
                     </div>
@@ -1344,62 +1485,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                     <div className="text-[10px] text-gray-500">{formatDate(item.createdAt)}</div>
                     <div className="flex justify-end gap-1.5 flex-wrap">
-                      {!isResolvedEarlyAccess && (
-                        <button
-                          onClick={async () => {
-                            setSaving(item.id);
-                            await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
-                            await load();
-                            setSaving(null);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
-                            item.isRead
-                              ? 'bg-white/5 border-white/10 text-gray-300'
-                              : 'bg-red-500/20 border-red-500/40 text-red-200'
-                          }`}
-                        >
-                          {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
-                        </button>
-                      )}
-                      {isEarlyAccessRequest && status === 'PENDING' && (
-                        <>
-                          <button
-                            onClick={async () => {
-                              setSaving(item.id);
-                              await api.updateAdminFeedbackStatus(item.id, 'APPROVED');
-                              await load();
-                              setSaving(null);
-                            }}
-                            disabled={saving === item.id}
-                            className="px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border bg-web3-success/20 border-web3-success/40 text-web3-success disabled:opacity-50"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={async () => {
-                              setSaving(item.id);
-                              await api.updateAdminFeedbackStatus(item.id, 'REJECTED');
-                              await load();
-                              setSaving(null);
-                            }}
-                            disabled={saving === item.id}
-                            className="px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border bg-red-500/15 border-red-500/40 text-red-300 disabled:opacity-50"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      {isResolvedEarlyAccess && (
-                        <div
-                          className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
-                            status === 'APPROVED'
-                              ? 'bg-web3-success/10 border-web3-success/35 text-web3-success'
-                              : 'bg-red-500/10 border-red-500/35 text-red-300'
-                          }`}
-                        >
-                          {resolvedLabel}
-                        </div>
-                      )}
+                      <button
+                        onClick={async () => {
+                          setSaving(item.id);
+                          await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
+                          await load();
+                          setSaving(null);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+                          item.isRead
+                            ? 'bg-white/5 border-white/10 text-gray-300'
+                            : 'bg-red-500/20 border-red-500/40 text-red-200'
+                        }`}
+                      >
+                        {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
+                      </button>
                     </div>
                   </div>
                 );
@@ -1575,8 +1675,235 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
             </div>
           )}
 
-          {!loading && !error && (activeTab === 'reports' || activeTab === 'cms') && (
-            <div className="text-sm text-gray-400">Section coming soon.</div>
+          {/* Analytics tab */}
+          {!loading && !error && activeTab === 'analytics' && analytics && (
+            <div className="space-y-6">
+              <div>
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Platform Summary</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total Users', value: analytics.summary?.totalUsers ?? 0 },
+                    { label: 'Active Cases', value: `${analytics.summary?.activeCases ?? 0} / ${analytics.summary?.totalCases ?? 0}` },
+                    { label: 'Total Openings', value: analytics.summary?.totalOpenings ?? 0 },
+                    { label: 'Total Battles', value: analytics.summary?.totalBattles ?? 0 },
+                    { label: 'Total Deposits', value: analytics.summary?.totalDeposits ?? 0 },
+                    { label: 'Deposit Volume', value: `${Number(analytics.summary?.totalDepositVolume ?? 0).toFixed(2)} ₮` },
+                    { label: 'Total Claims', value: analytics.summary?.totalClaims ?? 0 },
+                    { label: 'Active Inventory', value: `${analytics.summary?.inventoryActiveCount ?? 0} (${Number(analytics.summary?.inventoryActiveValue ?? 0).toFixed(2)} ₮)` },
+                  ].map((item) => (
+                    <StatCard key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Growth (Last 30 Days)</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'New Users (today)', value: analytics.growth?.newUsersToday ?? 0, accent: true },
+                    { label: 'New Users (7d)', value: analytics.growth?.newUsers7d ?? 0 },
+                    { label: 'New Users (30d)', value: analytics.growth?.newUsers30d ?? 0 },
+                    { label: 'Active Users (30d)', value: analytics.growth?.activeUsers30d ?? 0, accent: true },
+                    { label: 'Openings (30d)', value: analytics.growth?.openings30d ?? 0 },
+                    { label: 'Battles (30d)', value: analytics.growth?.battles30d ?? 0 },
+                    { label: 'Deposits (30d)', value: `${Number(analytics.growth?.deposit30dVolume ?? 0).toFixed(2)} ₮` },
+                    { label: 'Reward Claims (30d)', value: analytics.growth?.rewardClaims30d ?? 0 },
+                  ].map((item) => (
+                    <div key={item.label} className={`rounded-xl border p-3 ${(item as any).accent ? 'bg-web3-accent/5 border-web3-accent/20' : 'bg-black/20 border-white/[0.06]'}`}>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">{item.label}</div>
+                      <div className={`text-lg font-bold ${(item as any).accent ? 'text-web3-accent' : 'text-white'}`}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const charts = analytics.charts || {};
+                const chartConfigs: { key: string; label: string; color: string }[] = [
+                  { key: 'dailyNewUsers', label: 'New Users', color: '#6366f1' },
+                  { key: 'dailyActiveUsers', label: 'Active Users', color: '#22c55e' },
+                  { key: 'dailyOpenings', label: 'Case Openings', color: '#f59e0b' },
+                  { key: 'dailyBattles', label: 'Battles', color: '#ef4444' },
+                  { key: 'dailyDeposits', label: 'Deposits (₮)', color: '#06b6d4' },
+                ];
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {chartConfigs.map(({ key, label, color }) => {
+                      const rows: { date: string; value: number }[] = charts[key] || [];
+                      if (!rows.length) return null;
+                      const maxVal = Math.max(...rows.map((r) => r.value), 1);
+                      return (
+                        <div key={key} className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="text-xs uppercase tracking-widest text-gray-500">{label}</div>
+                            <div className="text-xs text-gray-600">
+                              Total: {rows.reduce((s, r) => s + r.value, 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="flex items-end gap-[2px] h-32">
+                            {rows.map((r) => {
+                              const pct = (r.value / maxVal) * 100;
+                              return (
+                                <div key={r.date} className="flex-1 group relative flex flex-col justify-end h-full">
+                                  <div
+                                    className="rounded-t-sm min-h-[2px] transition-all hover:opacity-80"
+                                    style={{ height: `${Math.max(pct, 2)}%`, backgroundColor: color }}
+                                  />
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-black/90 border border-white/10 rounded px-2 py-1 text-[10px] text-white whitespace-nowrap z-10">
+                                    {r.date}: {r.value}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex justify-between mt-1 text-[9px] text-gray-600">
+                            <span>{rows[0]?.date?.slice(5)}</span>
+                            <span>{rows[rows.length - 1]?.date?.slice(5)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeTab === 'mailing' && (
+            <div className="space-y-6 max-w-2xl">
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-white">Email Mailing</h2>
+                <p className="text-xs text-gray-400">Paste email addresses (one per line or comma-separated). Sends in batches of 50.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-gray-400 mb-1">Subject</label>
+                  <input
+                    type="text"
+                    value={mailingSubject}
+                    onChange={(e) => setMailingSubject(e.target.value)}
+                    disabled={mailingRunning}
+                    placeholder="e.g. Big update from CaseFun 🎉"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/50 disabled:opacity-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-gray-400 mb-1">Message Text</label>
+                  <textarea
+                    value={mailingText}
+                    onChange={(e) => setMailingText(e.target.value)}
+                    disabled={mailingRunning}
+                    rows={6}
+                    placeholder="Write your message here..."
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/50 disabled:opacity-50 resize-y"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-gray-400 mb-1">
+                    Recipients
+                    {mailingEmails.trim() && (
+                      <span className="ml-2 normal-case text-web3-accent">
+                        {mailingEmails.split(/[\n,]+/).map(e => e.trim()).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)).length} valid
+                      </span>
+                    )}
+                  </label>
+                  <textarea
+                    value={mailingEmails}
+                    onChange={(e) => setMailingEmails(e.target.value)}
+                    disabled={mailingRunning}
+                    rows={8}
+                    placeholder={"user1@gmail.com\nuser2@gmail.com\nuser3@example.com"}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/50 disabled:opacity-50 resize-y font-mono text-xs"
+                  />
+                </div>
+
+                {mailingError && (
+                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+                    {mailingError}
+                  </div>
+                )}
+
+                {mailingProgress && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Sending... {mailingProgress.done} / {mailingProgress.total} emails</span>
+                      <span>{Math.round((mailingProgress.done / mailingProgress.total) * 100)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                      <div
+                        className="h-full bg-gradient-to-r from-web3-accent to-web3-success rounded-full transition-all duration-300"
+                        style={{ width: `${(mailingProgress.done / mailingProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {mailingResult && !mailingRunning && (
+                  <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-400 space-y-1">
+                    <div className="font-bold">✅ Done!</div>
+                    <div>Sent: <span className="text-white">{mailingResult.sent}</span></div>
+                    {mailingResult.failed > 0 && <div className="text-yellow-400">Failed: {mailingResult.failed}</div>}
+                  </div>
+                )}
+
+                <button
+                  disabled={mailingRunning || !mailingSubject.trim() || !mailingText.trim() || !mailingEmails.trim()}
+                  onClick={async () => {
+                    setMailingError(null);
+                    setMailingResult(null);
+                    setMailingProgress(null);
+
+                    const allEmails = mailingEmails
+                      .split(/[\n,]+/)
+                      .map(e => e.trim().toLowerCase())
+                      .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+
+                    const unique = [...new Set(allEmails)];
+                    if (unique.length === 0) {
+                      setMailingError('No valid email addresses found.');
+                      return;
+                    }
+
+                    const BATCH = 50;
+                    const batches: string[][] = [];
+                    for (let i = 0; i < unique.length; i += BATCH) {
+                      batches.push(unique.slice(i, i + BATCH));
+                    }
+
+                    setMailingRunning(true);
+                    setMailingProgress({ done: 0, total: unique.length });
+
+                    let totalSent = 0;
+                    let totalFailed = 0;
+
+                    for (const batch of batches) {
+                      try {
+                        const res = await api.sendMailingBatch({
+                          emails: batch,
+                          subject: mailingSubject.trim(),
+                          text: mailingText.trim(),
+                        });
+                        totalSent += res.data?.sent ?? batch.length;
+                        totalFailed += batch.length - (res.data?.sent ?? batch.length);
+                      } catch {
+                        totalFailed += batch.length;
+                      }
+                      setMailingProgress(prev => prev ? { ...prev, done: Math.min(prev.done + batch.length, unique.length) } : null);
+                    }
+
+                    setMailingRunning(false);
+                    setMailingProgress(null);
+                    setMailingResult({ sent: totalSent, failed: totalFailed });
+                  }}
+                  className="w-full py-3 rounded-xl font-bold text-sm uppercase tracking-widest transition-all bg-gradient-to-r from-web3-accent to-web3-success text-black hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {mailingRunning ? 'Sending...' : 'Send Emails'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
