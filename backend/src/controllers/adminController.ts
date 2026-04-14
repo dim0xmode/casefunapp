@@ -1057,7 +1057,10 @@ export const getAnalytics = async (_req: Request, res: Response, next: NextFunct
       prisma.deposit.count(),
       prisma.caseOpening.count(),
       prisma.claim.count(),
-      prisma.case.count({ where: { isActive: true } }),
+      prisma.case.findMany({
+        where: { isActive: true },
+        select: { id: true, createdAt: true, openDurationHours: true },
+      }),
       prisma.user.count({ where: { createdAt: { gte: today } } }),
       prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
       prisma.user.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
@@ -1096,10 +1099,18 @@ export const getAnalytics = async (_req: Request, res: Response, next: NextFunct
     const totalDepositVolume = allDepositsAgg._sum?.amountUsdt || 0;
     const deposit30dVolume = deposits30d.reduce((s, d) => s + (d.amountUsdt || 0), 0);
 
+    const nowMs = now.getTime();
+    const openCasesCount = activeCases.filter((c) => {
+      if (!c.openDurationHours) return true;
+      const endAt = new Date(c.createdAt).getTime() + c.openDurationHours * 3600_000;
+      return endAt > nowMs;
+    }).length;
+    const expiredCasesCount = activeCases.length - openCasesCount;
+
     const formatDaily = (rows: { day: string | Date; count?: bigint; total?: number }[]) =>
       rows.map((r) => ({
         date: typeof r.day === 'string' ? r.day : new Date(r.day).toISOString().slice(0, 10),
-        value: r.count != null ? Number(r.count) : Number(r.total || 0),
+        value: r.count != null ? Number(r.count) : parseFloat(Number(r.total || 0).toFixed(2)),
       }));
 
     res.json({
@@ -1108,7 +1119,8 @@ export const getAnalytics = async (_req: Request, res: Response, next: NextFunct
         summary: {
           totalUsers,
           totalCases,
-          activeCases,
+          openCases: openCasesCount,
+          expiredCases: expiredCasesCount,
           totalBattles,
           totalDeposits: allDepositsAgg._count,
           totalDepositVolume,

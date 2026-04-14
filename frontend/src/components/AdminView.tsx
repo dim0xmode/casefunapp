@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { formatTokenValue } from '../utils/number';
 import { SearchInput } from './ui/SearchInput';
@@ -92,6 +92,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     deltaSpentUsdt: '',
     reason: '',
   });
+  const reportRef = useRef<HTMLDivElement>(null);
   const [newRewardTask, setNewRewardTask] = useState({
     type: 'LIKE_TWEET',
     targetUrl: '',
@@ -602,16 +603,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       const summaryRows = [
                         { metric: 'Total Users', value: s.totalUsers },
                         { metric: 'Total Cases', value: s.totalCases },
-                        { metric: 'Active Cases', value: s.activeCases },
+                        { metric: 'Open Cases', value: s.openCases },
+                        { metric: 'Expired Cases', value: s.expiredCases },
                         { metric: 'Total Battles', value: s.totalBattles },
                         { metric: 'Total Deposits', value: s.totalDeposits },
                         { metric: 'Total Deposit Volume (USDT)', value: s.totalDepositVolume },
                         { metric: 'Total Openings', value: s.totalOpenings },
-                        { metric: 'Total Claims', value: s.totalClaims },
-                        { metric: 'Active Inventory Count', value: s.inventoryActiveCount },
-                        { metric: 'Active Inventory Value', value: s.inventoryActiveValue },
-                        { metric: 'Claimed Inventory Count', value: s.inventoryClaimedCount },
-                        { metric: 'Claimed Inventory Value', value: s.inventoryClaimedValue },
+                        { metric: 'Token Claims', value: s.totalClaims },
+                        { metric: 'Unclaimed Tokens Count', value: s.inventoryActiveCount },
+                        { metric: 'Unclaimed Tokens Value', value: s.inventoryActiveValue },
+                        { metric: 'Claimed Tokens Count', value: s.inventoryClaimedCount },
+                        { metric: 'Claimed Tokens Value', value: s.inventoryClaimedValue },
                         { metric: 'New Users Today', value: g.newUsersToday },
                         { metric: 'New Users (7d)', value: g.newUsers7d },
                         { metric: 'New Users (30d)', value: g.newUsers30d },
@@ -1025,6 +1027,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'battles' && (
             <div className="space-y-2">
+              <div className="text-xs text-gray-500 mb-2">PvP and bot battle results. Each row is one player's outcome — cost is the case opening price, result is WIN or LOSS.</div>
               <div className="hidden md:grid grid-cols-6 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                 <div className="col-span-2">ID</div>
                 <div>User</div>
@@ -1060,6 +1063,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'inventory' && (
             <div className="space-y-2">
+              <div className="text-xs text-gray-500 mb-2">Tokens won by users from case openings, upgrades, and battles. ACTIVE = in user's wallet, not yet claimed on-chain. BURNT = used in an upgrade attempt.</div>
               <div className="hidden md:grid grid-cols-7 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                 <div className="col-span-2">ID</div>
                 <div>User</div>
@@ -1097,6 +1101,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'transactions' && (
             <div className="space-y-2">
+              <div className="text-xs text-gray-500 mb-2">All balance movements. DEPOSIT = user top-up, CASE_OPEN = case opening cost, CASE_CREATE = case creation fee, BATTLE = battle entry cost, UPGRADE = upgrade attempt.</div>
               <div className="hidden md:grid grid-cols-7 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                 <div className="col-span-2">ID</div>
                 <div>User</div>
@@ -1136,6 +1141,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'rtu' && (
             <div className="space-y-4">
+              <div className="text-xs text-gray-500 mb-2">Return-To-User (RTU) engine. Tracks how much USDT was spent per case and how many tokens were issued. Buffer debt shows the deficit/surplus between ideal and actual token issuance. Use manual adjustment to correct ledger imbalances.</div>
               <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Battle Resolve Preview</div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
@@ -1360,6 +1366,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'settings' && (
             <div className="space-y-3">
+              <div className="text-xs text-gray-500 mb-2">Key-value configuration store. Values can be JSON objects or plain strings. Changes take effect immediately.</div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3">
                 <input
                   value={newSetting.key}
@@ -1425,6 +1432,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'audit' && (
             <div className="space-y-2">
+              <div className="text-xs text-gray-500 mb-2">Log of all admin actions — role changes, bans, case edits, RTU adjustments. Use for accountability and troubleshooting.</div>
               <div className="hidden md:grid grid-cols-6 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                 <div className="col-span-2">Action</div>
                 <div>Admin</div>
@@ -1678,40 +1686,95 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           {/* Analytics tab */}
           {!loading && !error && activeTab === 'analytics' && analytics && (
             <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-500">Platform report — generated {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                <button
+                  onClick={async () => {
+                    const el = reportRef.current;
+                    if (!el) return;
+                    setSaving('pdf');
+                    try {
+                      const html2canvas = (await import('html2canvas-pro')).default;
+                      const { jsPDF } = await import('jspdf');
+                      const canvas = await html2canvas(el, { backgroundColor: '#0B0C10', scale: 2 });
+                      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                      const pdfW = pdf.internal.pageSize.getWidth();
+                      const pdfH = pdf.internal.pageSize.getHeight();
+                      const imgW = pdfW - 20;
+                      const pageCanvas = document.createElement('canvas');
+                      pageCanvas.width = canvas.width;
+                      const pageImgH = ((pdfH - 20) / imgW) * canvas.width;
+                      let remaining = canvas.height;
+                      let srcY = 0;
+                      while (remaining > 0) {
+                        const sliceH = Math.min(pageImgH, remaining);
+                        pageCanvas.height = sliceH;
+                        const ctx = pageCanvas.getContext('2d')!;
+                        ctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+                        const pageImg = pageCanvas.toDataURL('image/png');
+                        const drawH = (sliceH * imgW) / canvas.width;
+                        if (srcY > 0) pdf.addPage();
+                        pdf.addImage(pageImg, 'PNG', 10, 10, imgW, drawH);
+                        srcY += sliceH;
+                        remaining -= sliceH;
+                      }
+                      pdf.save(`CaseFun_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+                    } catch (err) {
+                      console.error('PDF generation failed:', err);
+                    } finally {
+                      setSaving(null);
+                    }
+                  }}
+                  disabled={saving === 'pdf'}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
+                >
+                  {saving === 'pdf' ? 'Generating PDF...' : 'Download PDF Report'}
+                </button>
+              </div>
+
+              <div ref={reportRef} className="space-y-6" style={{ padding: '4px' }}>
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Platform Summary</div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {[
-                    { label: 'Total Users', value: analytics.summary?.totalUsers ?? 0 },
-                    { label: 'Active Cases', value: `${analytics.summary?.activeCases ?? 0} / ${analytics.summary?.totalCases ?? 0}` },
-                    { label: 'Total Openings', value: analytics.summary?.totalOpenings ?? 0 },
-                    { label: 'Total Battles', value: analytics.summary?.totalBattles ?? 0 },
-                    { label: 'Total Deposits', value: analytics.summary?.totalDeposits ?? 0 },
-                    { label: 'Deposit Volume', value: `${Number(analytics.summary?.totalDepositVolume ?? 0).toFixed(2)} ₮` },
-                    { label: 'Total Claims', value: analytics.summary?.totalClaims ?? 0 },
-                    { label: 'Active Inventory', value: `${analytics.summary?.inventoryActiveCount ?? 0} (${Number(analytics.summary?.inventoryActiveValue ?? 0).toFixed(2)} ₮)` },
+                    { label: 'Total Users', value: analytics.summary?.totalUsers ?? 0, desc: 'Registered accounts' },
+                    { label: 'Cases Created', value: analytics.summary?.totalCases ?? 0, desc: 'Total cases on platform' },
+                    { label: 'Open Cases', value: analytics.summary?.openCases ?? 0, desc: 'Currently available to open' },
+                    { label: 'Expired Cases', value: analytics.summary?.expiredCases ?? 0, desc: 'Cases past their duration' },
+                    { label: 'Total Openings', value: (analytics.summary?.totalOpenings ?? 0).toLocaleString(), desc: 'Case openings all time' },
+                    { label: 'Total Battles', value: (analytics.summary?.totalBattles ?? 0).toLocaleString(), desc: 'PvP and bot battles' },
+                    { label: 'Total Deposits', value: analytics.summary?.totalDeposits ?? 0, desc: 'Deposit transactions' },
+                    { label: 'Deposit Volume', value: `${Number(analytics.summary?.totalDepositVolume ?? 0).toFixed(2)} ₮`, desc: 'Total USDT deposited' },
+                    { label: 'Token Claims', value: analytics.summary?.totalClaims ?? 0, desc: 'Token claim transactions' },
+                    { label: 'Unclaimed Tokens', value: `${analytics.summary?.inventoryActiveCount ?? 0} items`, desc: `Value: ${Number(analytics.summary?.inventoryActiveValue ?? 0).toFixed(2)} ₮` },
+                    { label: 'Claimed Tokens', value: `${analytics.summary?.inventoryClaimedCount ?? 0} items`, desc: `Value: ${Number(analytics.summary?.inventoryClaimedValue ?? 0).toFixed(2)} ₮` },
                   ].map((item) => (
-                    <StatCard key={item.label} label={item.label} value={item.value} />
+                    <div key={item.label} className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">{item.label}</div>
+                      <div className="text-lg font-bold text-white">{item.value}</div>
+                      {item.desc && <div className="text-[10px] text-gray-600 mt-0.5">{item.desc}</div>}
+                    </div>
                   ))}
                 </div>
               </div>
 
               <div>
-                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Growth (Last 30 Days)</div>
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Growth — Last 30 Days</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: 'New Users (today)', value: analytics.growth?.newUsersToday ?? 0, accent: true },
+                    { label: 'New Users Today', value: analytics.growth?.newUsersToday ?? 0, accent: true },
                     { label: 'New Users (7d)', value: analytics.growth?.newUsers7d ?? 0 },
                     { label: 'New Users (30d)', value: analytics.growth?.newUsers30d ?? 0 },
-                    { label: 'Active Users (30d)', value: analytics.growth?.activeUsers30d ?? 0, accent: true },
+                    { label: 'Active Users (30d)', value: analytics.growth?.activeUsers30d ?? 0, accent: true, desc: 'Users who opened at least 1 case' },
                     { label: 'Openings (30d)', value: analytics.growth?.openings30d ?? 0 },
                     { label: 'Battles (30d)', value: analytics.growth?.battles30d ?? 0 },
                     { label: 'Deposits (30d)', value: `${Number(analytics.growth?.deposit30dVolume ?? 0).toFixed(2)} ₮` },
-                    { label: 'Reward Claims (30d)', value: analytics.growth?.rewardClaims30d ?? 0 },
+                    { label: 'Reward Claims (30d)', value: analytics.growth?.rewardClaims30d ?? 0, desc: 'CFP reward tasks completed' },
                   ].map((item) => (
                     <div key={item.label} className={`rounded-xl border p-3 ${(item as any).accent ? 'bg-web3-accent/5 border-web3-accent/20' : 'bg-black/20 border-white/[0.06]'}`}>
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">{item.label}</div>
                       <div className={`text-lg font-bold ${(item as any).accent ? 'text-web3-accent' : 'text-white'}`}>{item.value}</div>
+                      {(item as any).desc && <div className="text-[10px] text-gray-600 mt-0.5">{(item as any).desc}</div>}
                     </div>
                   ))}
                 </div>
@@ -1719,25 +1782,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
               {(() => {
                 const charts = analytics.charts || {};
-                const chartConfigs: { key: string; label: string; color: string }[] = [
-                  { key: 'dailyNewUsers', label: 'New Users', color: '#6366f1' },
-                  { key: 'dailyActiveUsers', label: 'Active Users', color: '#22c55e' },
+                const chartConfigs: { key: string; label: string; color: string; isCurrency?: boolean }[] = [
+                  { key: 'dailyNewUsers', label: 'New Registrations', color: '#6366f1' },
+                  { key: 'dailyActiveUsers', label: 'Daily Active Users', color: '#22c55e' },
                   { key: 'dailyOpenings', label: 'Case Openings', color: '#f59e0b' },
                   { key: 'dailyBattles', label: 'Battles', color: '#ef4444' },
-                  { key: 'dailyDeposits', label: 'Deposits (₮)', color: '#06b6d4' },
+                  { key: 'dailyDeposits', label: 'Deposit Volume (₮)', color: '#06b6d4', isCurrency: true },
                 ];
                 return (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {chartConfigs.map(({ key, label, color }) => {
+                    {chartConfigs.map(({ key, label, color, isCurrency }) => {
                       const rows: { date: string; value: number }[] = charts[key] || [];
                       if (!rows.length) return null;
                       const maxVal = Math.max(...rows.map((r) => r.value), 1);
+                      const total = rows.reduce((s, r) => s + r.value, 0);
                       return (
                         <div key={key} className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div className="text-xs uppercase tracking-widest text-gray-500">{label}</div>
                             <div className="text-xs text-gray-600">
-                              Total: {rows.reduce((s, r) => s + r.value, 0).toLocaleString()}
+                              Total: {isCurrency ? `${total.toFixed(2)} ₮` : total.toLocaleString()}
                             </div>
                           </div>
                           <div className="flex items-end gap-[2px] h-32">
@@ -1750,7 +1814,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                                     style={{ height: `${Math.max(pct, 2)}%`, backgroundColor: color }}
                                   />
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-black/90 border border-white/10 rounded px-2 py-1 text-[10px] text-white whitespace-nowrap z-10">
-                                    {r.date}: {r.value}
+                                    {r.date}: {isCurrency ? `${r.value.toFixed(2)} ₮` : r.value}
                                   </div>
                                 </div>
                               );
@@ -1766,6 +1830,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 );
               })()}
+              </div>
             </div>
           )}
 
