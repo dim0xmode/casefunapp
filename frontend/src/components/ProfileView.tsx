@@ -1290,7 +1290,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               })()}
 
               {rewardsSubTab === 'casefun' && (() => {
-                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN');
+                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
                 const now = Date.now();
                 return (
                 <div className="space-y-1.5">

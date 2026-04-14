@@ -682,7 +682,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           {rewardsSubTab === 'earn' && (() => {
             const allTasks = rewardTasks.filter((t) => !t.claimed);
             const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
-            const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN');
+            const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN').sort((a, b) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
             const now = Date.now();
             return (
             <div className="space-y-1.5">
