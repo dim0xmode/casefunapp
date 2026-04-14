@@ -66,6 +66,7 @@ interface ProfileViewProps {
   onToggleBackgroundAnimation?: () => void;
   isTelegramMiniApp?: boolean;
   telegramBotUsername?: string;
+  onBalanceUpdate?: (balance: number) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -96,6 +97,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onToggleBackgroundAnimation,
   isTelegramMiniApp = false,
   telegramBotUsername = 'casefun_bot',
+  onBalanceUpdate,
 }) => {
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -1177,7 +1179,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     const res = await api.activatePromo(promoCode.trim());
                     setPromoResult({ ok: true, msg: `+${res.data?.amount} ₮ added to your balance!` });
                     setPromoCode('');
-                    setTimeout(() => window.location.reload(), 1500);
+                    if (onBalanceUpdate && typeof res.data?.balance === 'number') onBalanceUpdate(res.data.balance);
                   } catch (err: any) {
                     setPromoResult({ ok: false, msg: err?.message || 'Failed to activate' });
                   } finally {

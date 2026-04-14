@@ -454,7 +454,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           onOpenTelegramMiniApp={onOpenTelegramMiniApp} telegramBusy={telegramBusy}
           telegramError={telegramError} isBackgroundAnimated={isBackgroundAnimated}
           onToggleBackgroundAnimation={onToggleBackgroundAnimation} isTelegramMiniApp
-          telegramBotUsername="casefun_bot"
+          telegramBotUsername="casefun_bot" onBalanceUpdate={onBalanceUpdate}
         />
       </div>
     );

@@ -2050,6 +2050,7 @@ const App = () => {
                   telegramError={telegramError}
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
+                  onBalanceUpdate={setBalance}
                 />
               </div>
             )}
