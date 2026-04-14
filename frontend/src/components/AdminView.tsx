@@ -1536,7 +1536,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           {!loading && !error && activeTab === 'rewards' && (
             <div className="space-y-4">
               {(() => {
-                const isCaseFun = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS'].includes(newRewardTask.type);
+                const isCaseFun = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS','CREATE_CASES'].includes(newRewardTask.type);
                 const needsUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
                 const canCreate = saving === null

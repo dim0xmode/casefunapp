@@ -55,7 +55,6 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const [tokenPrice, setTokenPrice] = useState('');
   const [openDurationHours, setOpenDurationHours] = useState(24);
   const durationOptions = [
-    { label: '1m', value: 1 / 60 },
     { label: '2h', value: 2 },
     { label: '6h', value: 6 },
     { label: '12h', value: 12 },
