@@ -181,7 +181,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [referralError, setReferralError] = useState<string | null>(null);
   const canShowReferralLink = true;
   const [socialRewardsTab, setSocialRewardsTab] = useState<'social' | 'rewards'>('social');
-  const [rewardsSubTab, setRewardsSubTab] = useState<'tasks' | 'history'>('tasks');
+  const [rewardsSubTab, setRewardsSubTab] = useState<'tasks' | 'casefun' | 'history'>('tasks');
   const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
@@ -1068,7 +1068,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <Gift size={11} />
               Rewards
-              {rewardTasks.some((t) => !t.claimed) && socialRewardsTab !== 'rewards' && (
+              {rewardTasks.some((t: any) => !t.claimed && !(t.onCooldown)) && socialRewardsTab !== 'rewards' && (
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </button>
@@ -1217,24 +1217,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
                 </div>
                 <div className="flex gap-1">
-                  <button type="button" onClick={() => setRewardsSubTab('tasks')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'tasks' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>Tasks</button>
+                  <button type="button" onClick={() => setRewardsSubTab('tasks')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'tasks' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>Social</button>
+                  <button type="button" onClick={() => setRewardsSubTab('casefun')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'casefun' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>CaseFun</button>
                   <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>History</button>
                 </div>
               </div>
 
               {rewardsSubTab === 'tasks' && (() => {
-                const unclaimedTasks = rewardTasks.filter((t) => !t.claimed);
+                const socialTasks = rewardTasks.filter((t: any) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
                 return (
                 <div className="space-y-1.5">
                   {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-                  {!rewardsLoading && unclaimedTasks.length === 0 && (
+                  {!rewardsLoading && socialTasks.length === 0 && (
                     <div className="text-center py-6">
                       <Gift size={20} className="mx-auto text-gray-600 mb-2" />
-                      <div className="text-[11px] text-gray-500">All tasks completed!</div>
+                      <div className="text-[11px] text-gray-500">All social tasks completed!</div>
                       <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
                     </div>
                   )}
-                  {unclaimedTasks.map((task) => {
+                  {socialTasks.map((task) => {
                     const needsAction = taskNeedsAction(task);
                     const isActivated = activatedTasks.has(task.id);
                     const showClaim = isEditable && task.completed && !task.locked && (!needsAction || isActivated);
@@ -1246,21 +1247,90 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         {task.locked ? <Lock size={10} /> : <Gift size={11} />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] text-white font-medium">
-                          {renderTaskTitle(task)}
-                        </div>
-                        {task.locked && (
-                          <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>
-                        )}
+                        <div className="text-[11px] text-white font-medium">{renderTaskTitle(task)}</div>
+                        {task.locked && <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
                         {showGo && actionUrl && (
-                          <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10 active:scale-[0.97] transition flex items-center gap-1">
-                            Go <ExternalLink size={10} />
-                          </button>
+                          <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent hover:bg-web3-accent/10 active:scale-[0.97] transition flex items-center gap-1">Go <ExternalLink size={10} /></button>
                         )}
                         {showClaim && (
+                          <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
+                            {claimingTaskId === task.id ? '…' : 'Claim'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    );
+                  })}
+                  {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
+                </div>
+                );
+              })()}
+
+              {rewardsSubTab === 'casefun' && (() => {
+                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN');
+                const now = Date.now();
+                return (
+                <div className="space-y-1.5">
+                  {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
+                  {!rewardsLoading && cfTasks.length === 0 && (
+                    <div className="text-center py-6">
+                      <Rocket size={20} className="mx-auto text-gray-600 mb-2" />
+                      <div className="text-[11px] text-gray-500">No CaseFun tasks yet!</div>
+                      <div className="text-[10px] text-gray-600 mt-1">Platform challenges coming soon</div>
+                    </div>
+                  )}
+                  {cfTasks.map((task: any) => {
+                    const progress = task.progress ?? 0;
+                    const target = task.targetCount ?? 1;
+                    const pct = Math.min(100, Math.round((progress / target) * 100));
+                    const isComplete = progress >= target && !task.onCooldown;
+                    const isCooldown = task.onCooldown && task.cooldownEndsAt;
+                    const isDone = task.claimed && !task.onCooldown;
+
+                    let timeLabel = '';
+                    if (task.activeUntil) {
+                      const d = new Date(task.activeUntil);
+                      timeLabel = `Until ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`;
+                    } else {
+                      timeLabel = 'Always active';
+                    }
+
+                    let cooldownLabel = '';
+                    if (isCooldown) {
+                      const ms = new Date(task.cooldownEndsAt).getTime() - now;
+                      if (ms > 0) {
+                        const h = Math.floor(ms / 3600000);
+                        const m = Math.floor((ms % 3600000) / 60000);
+                        cooldownLabel = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                      }
+                    }
+
+                    return (
+                    <div key={task.id} className={`px-3 py-2.5 rounded-xl border bg-black/20 ${isCooldown || isDone ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] text-white font-medium">{task.title}</div>
+                          <div className="text-[10px] text-gray-500">{task.description} · <span className="text-gray-600">{timeLabel}</span></div>
+                        </div>
+                        <span className="text-[10px] font-mono text-web3-accent shrink-0 ml-2">+{task.reward} CFP</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden mb-1.5">
+                        <div className={`h-full rounded-full transition-all duration-500 ${isComplete ? 'bg-web3-success' : 'bg-web3-accent'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] text-gray-500">
+                          {isCooldown ? (
+                            <span className="text-yellow-500">Next in {cooldownLabel}</span>
+                          ) : isDone ? (
+                            <span className="text-gray-600">Completed</span>
+                          ) : (
+                            <span>{pct}%</span>
+                          )}
+                        </div>
+                        {isComplete && isEditable && (
                           <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
                             {claimingTaskId === task.id ? '…' : 'Claim'}
                           </button>

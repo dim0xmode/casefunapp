@@ -39,6 +39,12 @@ enum RewardTaskType {
   LIKE_TWEET
   REPOST_TWEET
   COMMENT_TWEET
+  OPEN_CASES
+  OPEN_SPECIFIC_CASE
+  DO_UPGRADES
+  CREATE_BATTLES
+  JOIN_BATTLES
+  CLAIM_TOKENS
 }
 
 enum BattleLobbyStatus {
@@ -428,18 +434,23 @@ model BattleLobby {
 }
 
 model RewardTask {
-  id          String          @id @default(cuid())
-  type        RewardTaskType
-  title       String
-  description String
-  targetUrl   String?
-  reward      Int             @default(1)
-  isDefault   Boolean         @default(false)
-  isActive    Boolean         @default(true)
-  sortOrder   Int             @default(0)
-  createdById String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  type                RewardTaskType
+  title               String
+  description         String
+  targetUrl           String?
+  reward              Int             @default(1)
+  isDefault           Boolean         @default(false)
+  isActive            Boolean         @default(true)
+  sortOrder           Int             @default(0)
+  createdById         String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  category            String          @default("SOCIAL")
+  targetCount         Int?
+  targetCaseId        String?
+  repeatIntervalHours Int?
+  activeUntil         DateTime?
 
   createdBy   User?           @relation("RewardTaskCreator", fields: [createdById], references: [id])
   claims      RewardClaim[]
@@ -460,9 +471,9 @@ model RewardClaim {
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   task      RewardTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, taskId])
   @@index([userId])
   @@index([taskId])
+  @@index([userId, taskId])
   @@map("reward_claims")
 }
 

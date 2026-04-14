@@ -127,7 +127,13 @@ export type RewardTaskType =
   | 'SUBSCRIBE_TELEGRAM'
   | 'LIKE_TWEET'
   | 'REPOST_TWEET'
-  | 'COMMENT_TWEET';
+  | 'COMMENT_TWEET'
+  | 'OPEN_CASES'
+  | 'OPEN_SPECIFIC_CASE'
+  | 'DO_UPGRADES'
+  | 'CREATE_BATTLES'
+  | 'JOIN_BATTLES'
+  | 'CLAIM_TOKENS';
 
 export interface RewardTask {
   id: string;
@@ -136,10 +142,17 @@ export interface RewardTask {
   description: string;
   targetUrl?: string | null;
   reward: number;
-  isDefault: boolean;
+  isDefault?: boolean;
   completed: boolean;
   claimed: boolean;
   locked: boolean;
+  category?: string;
+  targetCount?: number;
+  progress?: number;
+  onCooldown?: boolean;
+  cooldownEndsAt?: string | null;
+  activeUntil?: string | null;
+  targetCaseId?: string | null;
 }
 
 export interface RewardClaimRecord {

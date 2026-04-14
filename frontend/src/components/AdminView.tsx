@@ -98,6 +98,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     type: 'LIKE_TWEET',
     targetUrl: '',
     reward: 1,
+    targetCount: '',
+    targetCaseId: '',
+    repeatIntervalHours: '',
+    activeUntil: '',
   });
   const [newPromo, setNewPromo] = useState({ code: '', amount: '', maxUses: '', usesPerUser: '' });
   const [filters, setFilters] = useState({
@@ -1530,67 +1534,111 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'rewards' && (
             <div className="space-y-4">
-              {/* Create task form */}
               {(() => {
-                const needsUrl = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(newRewardTask.type);
-                const canCreate = saving === null && (!needsUrl || newRewardTask.targetUrl.trim());
+                const isCaseFun = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS'].includes(newRewardTask.type);
+                const needsUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
+                const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
+                const canCreate = saving === null
+                  && (!needsUrl || newRewardTask.targetUrl.trim())
+                  && (!isCaseFun || Number(newRewardTask.targetCount) > 0);
                 return (
-              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-4 space-y-3">
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Create Reward Task</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <select
-                    value={newRewardTask.type}
-                    onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '' }))}
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  >
-                    <option value="LIKE_TWEET">Like post</option>
-                    <option value="REPOST_TWEET">Repost</option>
-                    <option value="COMMENT_TWEET">Comment on post</option>
-                    <option value="FOLLOW_TWITTER">Follow @casefunnet</option>
-                    <option value="SUBSCRIBE_TELEGRAM">Join Telegram</option>
-                  </select>
-                  <input
-                    value={newRewardTask.reward}
-                    onChange={(e) =>
-                      setNewRewardTask((p) => ({ ...p, reward: Math.max(1, Number(e.target.value) || 1) }))
-                    }
-                    type="number"
-                    min={1}
-                    placeholder="CFP"
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  />
+              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-5 space-y-4">
+                <div className="text-sm font-bold text-white">Create Reward Task</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Task Type</label>
+                    <select
+                      value={newRewardTask.type}
+                      onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '', targetCount: '', targetCaseId: '' }))}
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                    >
+                      <optgroup label="Social">
+                        <option value="LIKE_TWEET">Like post on X</option>
+                        <option value="REPOST_TWEET">Repost on X</option>
+                        <option value="COMMENT_TWEET">Comment on post</option>
+                        <option value="FOLLOW_TWITTER">Follow @casefunnet</option>
+                        <option value="SUBSCRIBE_TELEGRAM">Join Telegram</option>
+                      </optgroup>
+                      <optgroup label="CaseFun">
+                        <option value="OPEN_CASES">Open cases</option>
+                        <option value="OPEN_SPECIFIC_CASE">Open specific case</option>
+                        <option value="DO_UPGRADES">Complete upgrades</option>
+                        <option value="CREATE_BATTLES">Create battles</option>
+                        <option value="JOIN_BATTLES">Play battles</option>
+                        <option value="CLAIM_TOKENS">Claim tokens</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Reward (CFP)</label>
+                    <input value={newRewardTask.reward} onChange={(e) => setNewRewardTask((p) => ({ ...p, reward: Math.max(1, Number(e.target.value) || 1) }))} type="number" min={1} placeholder="e.g. 5" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                    <div className="text-[10px] text-gray-600">CFP awarded per completion</div>
+                  </div>
                 </div>
+
                 {needsUrl && (
-                  <input
-                    value={newRewardTask.targetUrl}
-                    onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
-                    placeholder="Link to the post (x.com/…/status/…)"
-                    className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  />
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Post URL</label>
+                    <input value={newRewardTask.targetUrl} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))} placeholder="https://x.com/.../status/..." className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                  </div>
                 )}
+
+                {isCaseFun && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-gray-400 font-medium">Target Count</label>
+                      <input value={newRewardTask.targetCount} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetCount: e.target.value }))} type="number" min={1} placeholder="e.g. 5" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                      <div className="text-[10px] text-gray-600">How many actions to complete the task</div>
+                    </div>
+                    {needsCaseId && (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-gray-400 font-medium">Case ID</label>
+                        <input value={newRewardTask.targetCaseId} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetCaseId: e.target.value }))} placeholder="Case ID" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600 font-mono" />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-gray-400 font-medium">Repeat Interval</label>
+                      <select value={newRewardTask.repeatIntervalHours} onChange={(e) => setNewRewardTask((p) => ({ ...p, repeatIntervalHours: e.target.value }))} className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300">
+                        <option value="">One-time only</option>
+                        <option value="1">Every 1 hour</option>
+                        <option value="6">Every 6 hours</option>
+                        <option value="12">Every 12 hours</option>
+                        <option value="24">Every 24 hours (daily)</option>
+                        <option value="48">Every 48 hours</option>
+                        <option value="168">Every 7 days (weekly)</option>
+                      </select>
+                      <div className="text-[10px] text-gray-600">One-time = claim once. Repeatable = resets after cooldown.</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-gray-400 font-medium">Active Until</label>
+                      <input value={newRewardTask.activeUntil} onChange={(e) => setNewRewardTask((p) => ({ ...p, activeUntil: e.target.value }))} type="datetime-local" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                      <div className="text-[10px] text-gray-600">Leave empty = active until manually disabled</div>
+                    </div>
+                  </div>
+                )}
+
                 <button
-                  type="button"
-                  disabled={!canCreate}
+                  type="button" disabled={!canCreate}
                   onClick={async () => {
                     setSaving('new-reward');
                     try {
                       await api.createAdminRewardTask({
-                        type: newRewardTask.type,
-                        title: '',
-                        description: '',
+                        type: newRewardTask.type, title: '', description: '',
                         targetUrl: newRewardTask.targetUrl || undefined,
-                        reward: newRewardTask.reward,
-                        sortOrder: 100,
+                        reward: newRewardTask.reward, sortOrder: 100,
+                        ...(isCaseFun ? {
+                          targetCount: Number(newRewardTask.targetCount) || 1,
+                          targetCaseId: newRewardTask.targetCaseId || undefined,
+                          repeatIntervalHours: Number(newRewardTask.repeatIntervalHours) || undefined,
+                          activeUntil: newRewardTask.activeUntil || undefined,
+                        } : {}),
                       });
-                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1 });
+                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1, targetCount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
                       await load();
-                    } catch (err: any) {
-                      window.alert(err?.message || 'Failed to create task');
-                    } finally {
-                      setSaving(null);
-                    }
+                    } catch (err: any) { window.alert(err?.message || 'Failed'); }
+                    finally { setSaving(null); }
                   }}
-                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40"
                 >
                   {saving === 'new-reward' ? 'Creating…' : 'Create Task'}
                 </button>
@@ -1601,18 +1649,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               {/* Task list */}
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
-                {((data as any)?.tasks || []).map((task: any) => (
+                {((data as any)?.tasks || []).map((task: any) => {
+                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens' };
+                  const isCF = task.category === 'CASEFUN';
+                  return (
                   <div
                     key={task.id}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-white font-medium">
-                        {{ LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment on post', FOLLOW_TWITTER: 'Follow @casefunnet', SUBSCRIBE_TELEGRAM: 'Join Telegram', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram' }[task.type as string] || task.title}
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${isCF ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{isCF ? 'CaseFun' : 'Social'}</span>
+                        <span className="text-xs text-white font-medium">{TYPE_LABELS[task.type] || task.title}</span>
                       </div>
-                      <div className="text-[10px] text-gray-500">
-                        +{task.reward} CFP · {task.claimCount ?? 0} claims{' '}
-                        {task.isDefault ? '· Default' : ''}
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        +{task.reward} CFP · {task.claimCount ?? 0} claims
+                        {isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
+                        {isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
+                        {task.activeUntil ? ` · until ${new Date(task.activeUntil).toLocaleDateString()}` : ''}
+                        {task.isDefault ? ' · Default' : ''}
                       </div>
                       {task.targetUrl && (
                         <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>
@@ -1664,7 +1719,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Claims history */}

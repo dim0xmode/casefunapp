@@ -240,6 +240,35 @@ const verifyTelegramSubscription = async (
   }
 };
 
+const CASEFUN_TYPES = new Set([
+  'OPEN_CASES', 'OPEN_SPECIFIC_CASE', 'DO_UPGRADES',
+  'CREATE_BATTLES', 'JOIN_BATTLES', 'CLAIM_TOKENS',
+]);
+
+const countUserActions = async (
+  userId: string,
+  type: string,
+  since: Date,
+  targetCaseId?: string | null,
+): Promise<number> => {
+  switch (type) {
+    case 'OPEN_CASES':
+      return prisma.caseOpening.count({ where: { userId, timestamp: { gte: since } } });
+    case 'OPEN_SPECIFIC_CASE':
+      return prisma.caseOpening.count({ where: { userId, caseId: targetCaseId || '', timestamp: { gte: since } } });
+    case 'DO_UPGRADES':
+      return prisma.transaction.count({ where: { userId, type: 'UPGRADE', status: 'completed', timestamp: { gte: since } } });
+    case 'CREATE_BATTLES':
+      return prisma.battleLobby.count({ where: { hostUserId: userId, createdAt: { gte: since } } });
+    case 'JOIN_BATTLES':
+      return prisma.battle.count({ where: { userId, timestamp: { gte: since } } });
+    case 'CLAIM_TOKENS':
+      return prisma.claim.count({ where: { userId, status: 'completed', createdAt: { gte: since } } });
+    default:
+      return 0;
+  }
+};
+
 // ──────── User endpoints ────────
 
 export const listRewardTasks = async (
@@ -249,6 +278,7 @@ export const listRewardTasks = async (
 ) => {
   try {
     const userId = (req as any).userId;
+    const now = new Date();
 
     const [tasks, claims, user] = await Promise.all([
       prisma.rewardTask.findMany({
@@ -259,6 +289,7 @@ export const listRewardTasks = async (
         ? prisma.rewardClaim.findMany({
             where: { userId },
             select: { taskId: true, reward: true, claimedAt: true },
+            orderBy: { claimedAt: 'desc' },
           })
         : Promise.resolve([]),
       userId
@@ -273,49 +304,99 @@ export const listRewardTasks = async (
         : Promise.resolve(null),
     ]);
 
-    const claimedSet = new Set(claims.map((c) => c.taskId));
+    const claimsByTask = new Map<string, { claimedAt: Date; count: number }>();
+    for (const c of claims) {
+      const existing = claimsByTask.get(c.taskId);
+      if (!existing) {
+        claimsByTask.set(c.taskId, { claimedAt: c.claimedAt, count: 1 });
+      } else {
+        existing.count++;
+      }
+    }
 
-    const taskList = tasks.map((task) => {
-      const claimed = claimedSet.has(task.id);
+    const taskList = await Promise.all(tasks.map(async (task) => {
+      if (task.activeUntil && task.activeUntil < now) return null;
+
+      const isCaseFun = CASEFUN_TYPES.has(task.type);
+      const claimInfo = claimsByTask.get(task.id);
+
+      if (isCaseFun) {
+        const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours > 0;
+        const lastClaimAt = claimInfo?.claimedAt;
+
+        let onCooldown = false;
+        let cooldownEndsAt: Date | null = null;
+        if (isRepeatable && lastClaimAt) {
+          cooldownEndsAt = new Date(lastClaimAt.getTime() + task.repeatIntervalHours! * 3600_000);
+          onCooldown = cooldownEndsAt > now;
+        }
+
+        const claimedOnce = Boolean(claimInfo);
+        if (!isRepeatable && claimedOnce) {
+          return {
+            id: task.id, type: task.type, title: task.title,
+            description: task.description, reward: task.reward,
+            category: task.category,
+            targetCount: task.targetCount || 1,
+            progress: task.targetCount || 1,
+            claimed: true, completed: true, locked: false,
+            onCooldown: false, cooldownEndsAt: null,
+            activeUntil: task.activeUntil,
+            targetCaseId: task.targetCaseId,
+          };
+        }
+
+        const since = isRepeatable && lastClaimAt && !onCooldown
+          ? lastClaimAt
+          : isRepeatable && lastClaimAt && onCooldown
+            ? lastClaimAt
+            : task.createdAt;
+
+        const countSince = onCooldown ? lastClaimAt! : (isRepeatable && lastClaimAt ? lastClaimAt : task.createdAt);
+        const progress = userId ? await countUserActions(userId, task.type, countSince, task.targetCaseId) : 0;
+        const targetCount = task.targetCount || 1;
+
+        return {
+          id: task.id, type: task.type, title: task.title,
+          description: task.description, reward: task.reward,
+          category: task.category,
+          targetCount,
+          progress: Math.min(progress, targetCount),
+          claimed: false, completed: progress >= targetCount && !onCooldown,
+          locked: false,
+          onCooldown,
+          cooldownEndsAt,
+          activeUntil: task.activeUntil,
+          targetCaseId: task.targetCaseId,
+        };
+      }
+
+      // Social tasks
+      const claimed = Boolean(claimInfo);
       let completed = false;
       if (user) {
         switch (task.type) {
-          case 'LINK_TWITTER':
-            completed = Boolean(user.twitterId);
-            break;
-          case 'LINK_TELEGRAM':
-            completed = Boolean(user.telegramId);
-            break;
-          default:
-            completed = claimed || Boolean(user.twitterId && user.telegramId);
-            break;
+          case 'LINK_TWITTER': completed = Boolean(user.twitterId); break;
+          case 'LINK_TELEGRAM': completed = Boolean(user.telegramId); break;
+          default: completed = claimed || Boolean(user.twitterId && user.telegramId); break;
         }
       }
-      const requiresSocial = ![
-        'LINK_TWITTER',
-        'LINK_TELEGRAM',
-      ].includes(task.type);
-      const locked =
-        requiresSocial && (!user?.twitterId || !user?.telegramId);
+      const requiresSocial = !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
+      const locked = requiresSocial && (!user?.twitterId || !user?.telegramId);
 
       return {
-        id: task.id,
-        type: task.type,
-        title: task.title,
-        description: task.description,
-        targetUrl: task.targetUrl,
-        reward: task.reward,
-        isDefault: task.isDefault,
-        completed,
-        claimed,
-        locked,
+        id: task.id, type: task.type, title: task.title,
+        description: task.description, targetUrl: task.targetUrl,
+        reward: task.reward, isDefault: task.isDefault,
+        category: task.category || 'SOCIAL',
+        completed, claimed, locked,
       };
-    });
+    }));
 
     res.json({
       status: 'success',
       data: {
-        tasks: taskList,
+        tasks: taskList.filter(Boolean),
         totalPoints: user?.rewardPoints ?? 0,
       },
     });
@@ -335,10 +416,12 @@ export const claimReward = async (
     if (!userId) return next(new AppError('Authentication required', 401));
     if (!taskId) return next(new AppError('Task id is required', 400));
 
-    const [task, existingClaim, user] = await Promise.all([
+    const [task, existingClaims, user] = await Promise.all([
       prisma.rewardTask.findUnique({ where: { id: taskId } }),
-      prisma.rewardClaim.findUnique({
-        where: { userId_taskId: { userId, taskId } },
+      prisma.rewardClaim.findMany({
+        where: { userId, taskId },
+        orderBy: { claimedAt: 'desc' },
+        take: 1,
       }),
       prisma.user.findUnique({
         where: { id: userId },
@@ -355,103 +438,103 @@ export const claimReward = async (
     if (!task || !task.isActive) {
       return next(new AppError('Task not found or inactive', 404));
     }
-    if (existingClaim) {
-      return next(new AppError('Reward already claimed', 409));
-    }
     if (!user) {
       return next(new AppError('User not found', 404));
     }
 
-    const requiresSocial = ![
-      'LINK_TWITTER',
-      'LINK_TELEGRAM',
-    ].includes(task.type);
-    if (requiresSocial && (!user.twitterId || !user.telegramId)) {
-      return next(
-        new AppError(
-          'Link both Twitter and Telegram first to unlock this task',
-          403
-        )
-      );
+    const now = new Date();
+    if (task.activeUntil && task.activeUntil < now) {
+      return next(new AppError('Task has expired', 400));
     }
 
-    let verified = false;
+    const isCaseFun = CASEFUN_TYPES.has(task.type);
+    const lastClaim = existingClaims[0] || null;
 
-    switch (task.type) {
-      case 'LINK_TWITTER':
-        verified = Boolean(user.twitterId);
-        break;
+    if (isCaseFun) {
+      const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours > 0;
 
-      case 'LINK_TELEGRAM':
-        verified = Boolean(user.telegramId);
-        break;
+      if (!isRepeatable && lastClaim) {
+        return next(new AppError('Reward already claimed', 409));
+      }
 
-      case 'FOLLOW_TWITTER': {
-        if (!user.twitterId)
-          return next(new AppError('Link Twitter first', 400));
-        const tw = await getValidTwitterToken(userId);
-        if (tw) {
-          verified = await verifyTwitterFollow(tw.token, tw.twitterId);
-        } else {
-          verified = await verifyTwitterFollowByAppToken(user.twitterId);
+      if (isRepeatable && lastClaim) {
+        const cooldownEnd = new Date(lastClaim.claimedAt.getTime() + task.repeatIntervalHours! * 3600_000);
+        if (cooldownEnd > now) {
+          return next(new AppError('Task is on cooldown', 400));
         }
-        if (!verified)
-          return next(new AppError('Follow @casefunnet on Twitter first, then try again', 400));
-        break;
       }
 
-      case 'SUBSCRIBE_TELEGRAM': {
-        if (!user.telegramId)
-          return next(new AppError('Link Telegram first', 400));
-        verified = await verifyTelegramSubscription(user.telegramId);
-        break;
+      const since = isRepeatable && lastClaim ? lastClaim.claimedAt : task.createdAt;
+      const progress = await countUserActions(userId, task.type, since, task.targetCaseId);
+      const targetCount = task.targetCount || 1;
+
+      if (progress < targetCount) {
+        return next(new AppError(`Progress: ${progress}/${targetCount} — keep going!`, 400));
+      }
+    } else {
+      // Social tasks — one-time only
+      if (lastClaim) {
+        return next(new AppError('Reward already claimed', 409));
       }
 
-      case 'LIKE_TWEET': {
-        const tweetId = extractTweetId(task.targetUrl);
-        if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
-        const tw = await getValidTwitterToken(userId);
-        if (!tw)
-          return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        const likeResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'like');
-        if (likeResult.serverError)
-          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
-        verified = likeResult.verified || likeResult.tierLimited;
-        break;
+      const requiresSocial = !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
+      if (requiresSocial && (!user.twitterId || !user.telegramId)) {
+        return next(new AppError('Link both Twitter and Telegram first to unlock this task', 403));
       }
 
-      case 'REPOST_TWEET': {
-        const tweetId = extractTweetId(task.targetUrl);
-        if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
-        const tw = await getValidTwitterToken(userId);
-        if (!tw)
-          return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        const repostResult = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'retweet');
-        if (repostResult.serverError)
-          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
-        verified = repostResult.verified || repostResult.tierLimited;
-        break;
+      let verified = false;
+      switch (task.type) {
+        case 'LINK_TWITTER':
+          verified = Boolean(user.twitterId); break;
+        case 'LINK_TELEGRAM':
+          verified = Boolean(user.telegramId); break;
+        case 'FOLLOW_TWITTER': {
+          if (!user.twitterId) return next(new AppError('Link Twitter first', 400));
+          const tw = await getValidTwitterToken(userId);
+          if (tw) { verified = await verifyTwitterFollow(tw.token, tw.twitterId); }
+          else { verified = await verifyTwitterFollowByAppToken(user.twitterId); }
+          if (!verified) return next(new AppError('Follow @casefunnet on Twitter first, then try again', 400));
+          break;
+        }
+        case 'SUBSCRIBE_TELEGRAM': {
+          if (!user.telegramId) return next(new AppError('Link Telegram first', 400));
+          verified = await verifyTelegramSubscription(user.telegramId);
+          break;
+        }
+        case 'LIKE_TWEET': {
+          const tweetId = extractTweetId(task.targetUrl);
+          if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
+          const tw = await getValidTwitterToken(userId);
+          if (!tw) return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
+          const r = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'like');
+          if (r.serverError) return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+          verified = r.verified || r.tierLimited;
+          break;
+        }
+        case 'REPOST_TWEET': {
+          const tweetId = extractTweetId(task.targetUrl);
+          if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
+          const tw = await getValidTwitterToken(userId);
+          if (!tw) return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
+          const r = await verifyTweetAction(tw.token, tw.twitterId, tweetId, 'retweet');
+          if (r.serverError) return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+          verified = r.verified || r.tierLimited;
+          break;
+        }
+        case 'COMMENT_TWEET': {
+          const tweetId = extractTweetId(task.targetUrl);
+          if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
+          const tw = await getValidTwitterToken(userId);
+          if (!tw) return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
+          const r = await verifyTweetComment(tw.token, tw.twitterId, tweetId);
+          if (r.serverError) return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
+          verified = r.verified || r.tierLimited;
+          break;
+        }
+        default:
+          return next(new AppError('Unknown task type', 400));
       }
-
-      case 'COMMENT_TWEET': {
-        const tweetId = extractTweetId(task.targetUrl);
-        if (!tweetId) return next(new AppError('Invalid tweet URL', 400));
-        const tw = await getValidTwitterToken(userId);
-        if (!tw)
-          return next(new AppError('Disconnect and reconnect Twitter in your profile to refresh credentials.', 400));
-        const commentResult = await verifyTweetComment(tw.token, tw.twitterId, tweetId);
-        if (commentResult.serverError)
-          return next(new AppError('Twitter API temporarily unavailable — try again later', 503));
-        verified = commentResult.verified || commentResult.tierLimited;
-        break;
-      }
-
-      default:
-        return next(new AppError('Unknown task type', 400));
-    }
-
-    if (!verified) {
-      return next(new AppError('Task not completed — action not detected', 400));
+      if (!verified) return next(new AppError('Task not completed — action not detected', 400));
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -551,10 +634,10 @@ export const adminCreateRewardTask = async (
 ) => {
   try {
     const adminId = (req as any).userId;
-    const { type, title, description, targetUrl, reward, sortOrder } =
-      req.body || {};
+    const { type, title, description, targetUrl, reward, sortOrder,
+            targetCount, targetCaseId, repeatIntervalHours, activeUntil } = req.body || {};
 
-    const TASK_PRESETS: Record<string, { title: string; description: string }> = {
+    const SOCIAL_PRESETS: Record<string, { title: string; description: string }> = {
       LINK_TWITTER: { title: 'Link Twitter', description: 'Connect your X account' },
       LINK_TELEGRAM: { title: 'Link Telegram', description: 'Connect your Telegram account' },
       FOLLOW_TWITTER: { title: 'Follow @casefunnet', description: 'Follow our official X account' },
@@ -564,17 +647,29 @@ export const adminCreateRewardTask = async (
       COMMENT_TWEET: { title: 'Comment on this post', description: 'Leave a comment on the post' },
     };
 
-    if (!TASK_PRESETS[type]) {
+    const CASEFUN_PRESETS: Record<string, { title: string; description: string }> = {
+      OPEN_CASES: { title: `Open ${targetCount || 1} cases`, description: 'Open cases to earn rewards' },
+      OPEN_SPECIFIC_CASE: { title: `Open a specific case ${targetCount || 1} times`, description: 'Open the designated case' },
+      DO_UPGRADES: { title: `Complete ${targetCount || 1} upgrades`, description: 'Upgrade your tokens' },
+      CREATE_BATTLES: { title: `Create ${targetCount || 1} battles`, description: 'Create battle lobbies' },
+      JOIN_BATTLES: { title: `Play ${targetCount || 1} battles`, description: 'Participate in battles' },
+      CLAIM_TOKENS: { title: `Claim ${targetCount || 1} tokens`, description: 'Claim tokens from cases' },
+    };
+
+    const allPresets = { ...SOCIAL_PRESETS, ...CASEFUN_PRESETS };
+    if (!allPresets[type]) {
       return next(new AppError('Invalid task type', 400));
     }
-    if (
-      ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(type) &&
-      !targetUrl
-    ) {
+
+    const isCaseFun = CASEFUN_TYPES.has(type);
+    if (!isCaseFun && ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(type) && !targetUrl) {
       return next(new AppError('Target URL is required for tweet tasks', 400));
     }
+    if (isCaseFun && (!targetCount || Number(targetCount) < 1)) {
+      return next(new AppError('Target count is required for CaseFun tasks', 400));
+    }
 
-    const preset = TASK_PRESETS[type];
+    const preset = allPresets[type];
     const finalTitle = title ? String(title).trim() : preset.title;
     const finalDescription = description ? String(description).trim() : preset.description;
 
@@ -589,6 +684,11 @@ export const adminCreateRewardTask = async (
         isActive: true,
         sortOrder: Number(sortOrder) || 100,
         createdById: adminId,
+        category: isCaseFun ? 'CASEFUN' : 'SOCIAL',
+        targetCount: isCaseFun ? Math.max(1, Number(targetCount) || 1) : null,
+        targetCaseId: type === 'OPEN_SPECIFIC_CASE' && targetCaseId ? String(targetCaseId) : null,
+        repeatIntervalHours: repeatIntervalHours != null ? Math.max(0, Number(repeatIntervalHours)) || null : null,
+        activeUntil: activeUntil ? new Date(activeUntil) : null,
       },
     });
 
