@@ -1003,16 +1003,20 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 key={tab.id} type="button"
                 onClick={() => goToTab(tab.id)}
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-all duration-150 select-none"
-                style={active ? { background: 'rgba(102,252,241,0.08)' } : undefined}
+                style={
+                  isRewardsTab && active
+                    ? { background: 'linear-gradient(135deg, rgba(102,252,241,0.12), rgba(139,92,246,0.08))' }
+                    : active ? { background: 'rgba(102,252,241,0.08)' } : undefined
+                }
               >
-                {isRewardsTab && !active ? (
+                {isRewardsTab ? (
                   <>
-                    <span className="relative flex">
-                      <svg width={0} height={0} className="absolute"><defs><linearGradient id="rwdGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#66FCF1" /><stop offset="50%" stopColor="#10B981" /><stop offset="100%" stopColor="#8B5CF6" /></linearGradient></defs></svg>
-                      <Icon size={22} strokeWidth={1.8} style={{ stroke: 'url(#rwdGrad)' }} />
+                    <svg width={0} height={0} className="absolute"><defs><linearGradient id="rwdGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#66FCF1" /><stop offset="50%" stopColor="#10B981" /><stop offset="100%" stopColor="#8B5CF6" /></linearGradient></defs></svg>
+                    <span className={`relative flex ${!active ? 'animate-glow-pulse' : ''}`} style={{ filter: active ? 'drop-shadow(0 0 6px rgba(102,252,241,0.5))' : undefined }}>
+                      <Icon size={22} strokeWidth={active ? 2.2 : 1.8} style={{ stroke: 'url(#rwdGrad)' }} />
                       {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
                     </span>
-                    <span className="text-[10px] font-semibold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                    <span className="text-[10px] font-bold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
                       {tab.label}
                     </span>
                   </>
@@ -1020,7 +1024,6 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   <>
                     <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
                       <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
-                      {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
                     </span>
                     <span className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
                       {tab.label}
