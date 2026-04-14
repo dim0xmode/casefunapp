@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { formatTokenValue } from '../utils/number';
 import { SearchInput } from './ui/SearchInput';
@@ -92,7 +92,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     deltaSpentUsdt: '',
     reason: '',
   });
-  const reportRef = useRef<HTMLDivElement>(null);
   const [newRewardTask, setNewRewardTask] = useState({
     type: 'LIKE_TWEET',
     targetUrl: '',
@@ -1688,36 +1687,135 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-gray-500">Platform report — generated {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    const el = reportRef.current;
-                    if (!el) return;
                     setSaving('pdf');
                     try {
-                      const html2canvas = (await import('html2canvas-pro')).default;
                       const { jsPDF } = await import('jspdf');
-                      const canvas = await html2canvas(el, { backgroundColor: '#0B0C10', scale: 2 });
                       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-                      const pdfW = pdf.internal.pageSize.getWidth();
-                      const pdfH = pdf.internal.pageSize.getHeight();
-                      const imgW = pdfW - 20;
-                      const pageCanvas = document.createElement('canvas');
-                      pageCanvas.width = canvas.width;
-                      const pageImgH = ((pdfH - 20) / imgW) * canvas.width;
-                      let remaining = canvas.height;
-                      let srcY = 0;
-                      while (remaining > 0) {
-                        const sliceH = Math.min(pageImgH, remaining);
-                        pageCanvas.height = sliceH;
-                        const ctx = pageCanvas.getContext('2d')!;
-                        ctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-                        const pageImg = pageCanvas.toDataURL('image/png');
-                        const drawH = (sliceH * imgW) / canvas.width;
-                        if (srcY > 0) pdf.addPage();
-                        pdf.addImage(pageImg, 'PNG', 10, 10, imgW, drawH);
-                        srcY += sliceH;
-                        remaining -= sliceH;
+                      const W = pdf.internal.pageSize.getWidth();
+                      const H = pdf.internal.pageSize.getHeight();
+                      const m = 15;
+                      let y = 0;
+                      const s = analytics.summary || {};
+                      const g = analytics.growth || {};
+                      const charts = analytics.charts || {};
+
+                      const bg = (yy: number, hh: number, color = [19, 22, 32]) => {
+                        pdf.setFillColor(color[0], color[1], color[2]);
+                        pdf.rect(0, yy, W, hh, 'F');
+                      };
+                      const checkPage = (need: number) => {
+                        if (y + need > H - 10) { pdf.addPage(); bg(0, H); y = m; }
+                      };
+                      const sectionTitle = (text: string) => {
+                        checkPage(15);
+                        pdf.setFontSize(7); pdf.setTextColor(100, 110, 130);
+                        pdf.text(text.toUpperCase(), m, y); y += 6;
+                      };
+                      const drawMetricGrid = (items: { label: string; value: string | number }[], cols = 4) => {
+                        const cellW = (W - m * 2) / cols;
+                        const cellH = 14;
+                        const rows = Math.ceil(items.length / cols);
+                        checkPage(rows * cellH + 2);
+                        items.forEach((item, i) => {
+                          const col = i % cols;
+                          const row = Math.floor(i / cols);
+                          const cx = m + col * cellW;
+                          const cy = y + row * cellH;
+                          pdf.setFillColor(15, 17, 25);
+                          pdf.roundedRect(cx + 1, cy, cellW - 2, cellH - 2, 2, 2, 'F');
+                          pdf.setFontSize(6); pdf.setTextColor(100, 110, 130);
+                          pdf.text(item.label.toUpperCase(), cx + 4, cy + 5);
+                          pdf.setFontSize(11); pdf.setTextColor(255, 255, 255);
+                          pdf.text(String(item.value), cx + 4, cy + 10.5);
+                        });
+                        y += rows * cellH + 3;
+                      };
+                      const drawBarChart = (title: string, rows: { date: string; value: number }[], color: number[], isCurrency = false) => {
+                        if (!rows.length) return;
+                        checkPage(42);
+                        pdf.setFontSize(7); pdf.setTextColor(100, 110, 130);
+                        pdf.text(title.toUpperCase(), m, y);
+                        const total = rows.reduce((a, r) => a + r.value, 0);
+                        const totalStr = isCurrency ? `${total.toFixed(2)} USDT` : total.toLocaleString();
+                        pdf.text(`TOTAL: ${totalStr}`, W - m, y, { align: 'right' });
+                        y += 4;
+                        const chartW = W - m * 2;
+                        const chartH = 28;
+                        pdf.setFillColor(15, 17, 25);
+                        pdf.roundedRect(m, y, chartW, chartH, 2, 2, 'F');
+                        const maxVal = Math.max(...rows.map((r) => r.value), 1);
+                        const barW = (chartW - 4) / rows.length;
+                        rows.forEach((r, i) => {
+                          const pct = r.value / maxVal;
+                          const bh = Math.max(pct * (chartH - 6), 0.5);
+                          pdf.setFillColor(color[0], color[1], color[2]);
+                          pdf.rect(m + 2 + i * barW + 0.3, y + chartH - 2 - bh, Math.max(barW - 0.6, 0.5), bh, 'F');
+                        });
+                        pdf.setFontSize(5); pdf.setTextColor(80, 90, 100);
+                        pdf.text(rows[0]?.date?.slice(5) || '', m + 2, y + chartH + 3);
+                        pdf.text(rows[rows.length - 1]?.date?.slice(5) || '', W - m - 2, y + chartH + 3, { align: 'right' });
+                        y += chartH + 7;
+                      };
+
+                      bg(0, H);
+
+                      pdf.setFillColor(99, 102, 241);
+                      pdf.rect(0, 0, W, 38, 'F');
+                      pdf.setFontSize(22); pdf.setTextColor(255, 255, 255);
+                      pdf.text('CaseFun', m, 16);
+                      pdf.setFontSize(10); pdf.setTextColor(200, 210, 255);
+                      pdf.text('Platform Analytics Report', m, 23);
+                      pdf.setFontSize(8); pdf.setTextColor(180, 190, 230);
+                      pdf.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), m, 30);
+                      pdf.setFontSize(7);
+                      pdf.text('Confidential', W - m, 30, { align: 'right' });
+                      y = 46;
+
+                      sectionTitle('Platform Summary');
+                      drawMetricGrid([
+                        { label: 'Total Users', value: s.totalUsers ?? 0 },
+                        { label: 'Cases Created', value: s.totalCases ?? 0 },
+                        { label: 'Open Cases', value: s.openCases ?? 0 },
+                        { label: 'Expired Cases', value: s.expiredCases ?? 0 },
+                        { label: 'Total Openings', value: (s.totalOpenings ?? 0).toLocaleString() },
+                        { label: 'Total Battles', value: (s.totalBattles ?? 0).toLocaleString() },
+                        { label: 'Total Deposits', value: s.totalDeposits ?? 0 },
+                        { label: 'Deposit Volume', value: `${Number(s.totalDepositVolume ?? 0).toFixed(2)} ₮` },
+                        { label: 'Token Claims', value: s.totalClaims ?? 0 },
+                        { label: 'Unclaimed Tokens', value: `${s.inventoryActiveCount ?? 0} (${Number(s.inventoryActiveValue ?? 0).toFixed(2)} ₮)` },
+                        { label: 'Claimed Tokens', value: `${s.inventoryClaimedCount ?? 0} (${Number(s.inventoryClaimedValue ?? 0).toFixed(2)} ₮)` },
+                      ]);
+
+                      sectionTitle('Growth — Last 30 Days');
+                      drawMetricGrid([
+                        { label: 'New Users Today', value: g.newUsersToday ?? 0 },
+                        { label: 'New Users (7d)', value: g.newUsers7d ?? 0 },
+                        { label: 'New Users (30d)', value: g.newUsers30d ?? 0 },
+                        { label: 'Active Users (30d)', value: g.activeUsers30d ?? 0 },
+                        { label: 'Openings (30d)', value: g.openings30d ?? 0 },
+                        { label: 'Battles (30d)', value: g.battles30d ?? 0 },
+                        { label: 'Deposits (30d)', value: `${Number(g.deposit30dVolume ?? 0).toFixed(2)} ₮` },
+                        { label: 'Reward Claims (30d)', value: g.rewardClaims30d ?? 0 },
+                      ]);
+
+                      sectionTitle('Daily Activity — 30 Day Trend');
+                      drawBarChart('New Registrations', charts.dailyNewUsers || [], [99, 102, 241]);
+                      drawBarChart('Daily Active Users', charts.dailyActiveUsers || [], [34, 197, 94]);
+                      drawBarChart('Case Openings', charts.dailyOpenings || [], [245, 158, 11]);
+                      drawBarChart('Battles', charts.dailyBattles || [], [239, 68, 68]);
+                      drawBarChart('Deposit Volume (USDT)', charts.dailyDeposits || [], [6, 182, 212], true);
+
+                      const pageCount = pdf.getNumberOfPages();
+                      for (let p = 1; p <= pageCount; p++) {
+                        pdf.setPage(p);
+                        pdf.setFontSize(6); pdf.setTextColor(80, 90, 100);
+                        pdf.text(`CaseFun Analytics Report — Page ${p} of ${pageCount}`, m, H - 5);
+                        pdf.text(new Date().toISOString().slice(0, 10), W - m, H - 5, { align: 'right' });
                       }
+
                       pdf.save(`CaseFun_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
                     } catch (err) {
                       console.error('PDF generation failed:', err);
@@ -1728,11 +1826,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   disabled={saving === 'pdf'}
                   className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
                 >
-                  {saving === 'pdf' ? 'Generating PDF...' : 'Download PDF Report'}
+                  {saving === 'pdf' ? 'Generating...' : 'Download PDF Report'}
                 </button>
+                </div>
               </div>
 
-              <div ref={reportRef} className="space-y-6" style={{ padding: '4px' }}>
+              <div className="space-y-6">
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Platform Summary</div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
