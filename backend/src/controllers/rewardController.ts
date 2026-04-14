@@ -242,7 +242,7 @@ const verifyTelegramSubscription = async (
 
 const CASEFUN_TYPES = new Set([
   'OPEN_CASES', 'OPEN_SPECIFIC_CASE', 'DO_UPGRADES',
-  'CREATE_BATTLES', 'JOIN_BATTLES', 'CLAIM_TOKENS',
+  'CREATE_BATTLES', 'JOIN_BATTLES', 'CLAIM_TOKENS', 'CREATE_CASES',
 ]);
 
 const countUserActions = async (
@@ -264,6 +264,8 @@ const countUserActions = async (
       return prisma.battle.count({ where: { userId, timestamp: { gte: since } } });
     case 'CLAIM_TOKENS':
       return prisma.claim.count({ where: { userId, status: 'completed', createdAt: { gte: since } } });
+    case 'CREATE_CASES':
+      return prisma.case.count({ where: { createdById: userId, createdAt: { gte: since } } });
     default:
       return 0;
   }
@@ -654,6 +656,7 @@ export const adminCreateRewardTask = async (
       CREATE_BATTLES: { title: `Create ${targetCount || 1} battles`, description: 'Create battle lobbies' },
       JOIN_BATTLES: { title: `Play ${targetCount || 1} battles`, description: 'Participate in battles' },
       CLAIM_TOKENS: { title: `Claim ${targetCount || 1} tokens`, description: 'Claim tokens from cases' },
+      CREATE_CASES: { title: `Create ${targetCount || 1} cases`, description: 'Create your own cases' },
     };
 
     const allPresets = { ...SOCIAL_PRESETS, ...CASEFUN_PRESETS };

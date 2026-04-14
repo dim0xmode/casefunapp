@@ -133,7 +133,8 @@ export type RewardTaskType =
   | 'DO_UPGRADES'
   | 'CREATE_BATTLES'
   | 'JOIN_BATTLES'
-  | 'CLAIM_TOKENS';
+  | 'CLAIM_TOKENS'
+  | 'CREATE_CASES';
 
 export interface RewardTask {
   id: string;

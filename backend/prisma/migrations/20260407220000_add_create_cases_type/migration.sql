@@ -1,0 +1,1 @@
+ALTER TYPE "RewardTaskType" ADD VALUE 'CREATE_CASES';

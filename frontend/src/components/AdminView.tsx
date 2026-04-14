@@ -1566,6 +1566,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <option value="CREATE_BATTLES">Create battles</option>
                         <option value="JOIN_BATTLES">Play battles</option>
                         <option value="CLAIM_TOKENS">Claim tokens</option>
+                        <option value="CREATE_CASES">Create cases</option>
                       </optgroup>
                     </select>
                   </div>
@@ -1650,7 +1651,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
                 {((data as any)?.tasks || []).map((task: any) => {
-                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens' };
+                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases' };
                   const isCF = task.category === 'CASEFUN';
                   return (
                   <div

@@ -45,6 +45,7 @@ enum RewardTaskType {
   CREATE_BATTLES
   JOIN_BATTLES
   CLAIM_TOKENS
+  CREATE_CASES
 }
 
 enum BattleLobbyStatus {
