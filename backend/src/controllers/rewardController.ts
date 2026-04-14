@@ -728,6 +728,12 @@ export const adminUpdateRewardTask = async (
       data.isActive = Boolean(req.body.isActive);
     if (req.body.sortOrder !== undefined)
       data.sortOrder = Number(req.body.sortOrder) || 0;
+    if (req.body.targetCount !== undefined)
+      data.targetCount = req.body.targetCount ? Math.max(1, Number(req.body.targetCount)) : null;
+    if (req.body.repeatIntervalHours !== undefined)
+      data.repeatIntervalHours = req.body.repeatIntervalHours ? Math.max(0, Number(req.body.repeatIntervalHours)) || null : null;
+    if (req.body.activeUntil !== undefined)
+      data.activeUntil = req.body.activeUntil ? new Date(req.body.activeUntil) : null;
 
     const task = await prisma.rewardTask.update({
       where: { id },

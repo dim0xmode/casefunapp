@@ -189,6 +189,13 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
       }),
     ]);
 
+    const rewardClaims = await prisma.rewardClaim.findMany({
+      where: { userId: id },
+      orderBy: { claimedAt: 'desc' },
+      take: 200,
+      include: { task: { select: { id: true, title: true, type: true, category: true } } },
+    });
+
     const totals = user.transactions.reduce(
       (acc, tx) => {
         if (tx.type === 'DEPOSIT') acc.deposits += tx.amount;
@@ -211,6 +218,7 @@ export const getUserDetail = async (req: Request, res: Response, next: NextFunct
         claims,
         feedbacks,
         createdCases,
+        rewardClaims,
         referralInsight: {
           referralCode: user.referralCode,
           referralConfirmedCount: user.referralConfirmedCount,

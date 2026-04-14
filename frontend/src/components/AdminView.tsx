@@ -103,6 +103,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     repeatIntervalHours: '',
     activeUntil: '',
   });
+  const [editingTask, setEditingTask] = useState<any>(null);
   const [newPromo, setNewPromo] = useState({ code: '', amount: '', maxUses: '', usesPerUser: '' });
   const [filters, setFilters] = useState({
     userRole: 'all',
@@ -806,7 +807,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Balance</div>
-                      <div className="text-xs text-gray-400">{user.balance} ₮</div>
+                      <div className="text-xs text-gray-400">{user.balance} ₮ · <span className="text-web3-accent">{user.rewardPoints ?? 0} CFP</span></div>
                       <div className="text-[10px] text-gray-500 mt-1">
                         Invited: <span className="text-gray-300">{user.invitedUserCount ?? 0}</span>
                       </div>
@@ -1653,72 +1654,86 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 {((data as any)?.tasks || []).map((task: any) => {
                   const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases' };
                   const isCF = task.category === 'CASEFUN';
+                  const isEditing = editingTask?.id === task.id;
                   return (
-                  <div
-                    key={task.id}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${isCF ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{isCF ? 'CaseFun' : 'Social'}</span>
-                        <span className="text-xs text-white font-medium">{TYPE_LABELS[task.type] || task.title}</span>
+                  <div key={task.id} className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${isCF ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{isCF ? 'CaseFun' : 'Social'}</span>
+                          <span className="text-xs text-white font-medium">{TYPE_LABELS[task.type] || task.title}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">
+                          +{task.reward} CFP · <span className="text-gray-400">{task.claimCount ?? 0} claims</span>
+                          {isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
+                          {isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
+                          {task.activeUntil ? ` · until ${new Date(task.activeUntil).toLocaleDateString()}` : ''}
+                          {task.isDefault ? ' · Default' : ''}
+                        </div>
+                        {task.targetUrl && <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>}
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        +{task.reward} CFP · {task.claimCount ?? 0} claims
-                        {isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
-                        {isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
-                        {task.activeUntil ? ` · until ${new Date(task.activeUntil).toLocaleDateString()}` : ''}
-                        {task.isDefault ? ' · Default' : ''}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button type="button" onClick={() => setEditingTask(isEditing ? null : { id: task.id, reward: task.reward, targetUrl: task.targetUrl || '', targetCount: task.targetCount || '', repeatIntervalHours: task.repeatIntervalHours ?? '', activeUntil: task.activeUntil ? new Date(task.activeUntil).toISOString().slice(0, 16) : '' })} className="text-[10px] px-2 py-1 rounded-lg border border-web3-accent/30 text-web3-accent">
+                          {isEditing ? 'Cancel' : 'Edit'}
+                        </button>
+                        <button type="button" onClick={async () => { setSaving(task.id); try { await api.updateAdminRewardTask(task.id, { isActive: !task.isActive }); await load(); } catch (err: any) { window.alert(err?.message || 'Failed'); } finally { setSaving(null); } }} disabled={saving === task.id} className={`text-[10px] px-2 py-1 rounded-lg border ${task.isActive ? 'border-web3-success/30 text-web3-success' : 'border-gray-600 text-gray-500'}`}>
+                          {task.isActive ? 'Active' : 'Inactive'}
+                        </button>
+                        {!task.isDefault && (
+                          <button type="button" onClick={async () => { if (!window.confirm('Delete this task?')) return; setSaving(task.id); try { await api.deleteAdminRewardTask(task.id); await load(); } catch (err: any) { window.alert(err?.message || 'Failed'); } finally { setSaving(null); } }} disabled={saving === task.id} className="text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400">Delete</button>
+                        )}
                       </div>
-                      {task.targetUrl && (
-                        <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>
-                      )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setSaving(task.id);
-                          try {
-                            await api.updateAdminRewardTask(task.id, { isActive: !task.isActive });
-                            await load();
-                          } catch (err: any) {
-                            window.alert(err?.message || 'Failed');
-                          } finally {
-                            setSaving(null);
-                          }
-                        }}
-                        disabled={saving === task.id}
-                        className={`text-[10px] px-2 py-1 rounded-lg border ${
-                          task.isActive
-                            ? 'border-web3-success/30 text-web3-success'
-                            : 'border-gray-600 text-gray-500'
-                        }`}
-                      >
-                        {task.isActive ? 'Active' : 'Inactive'}
-                      </button>
-                      {!task.isDefault && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!window.confirm('Delete this task?')) return;
+                    {isEditing && (
+                      <div className="mt-3 pt-3 border-t border-white/[0.06] grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500">Reward (CFP)</label>
+                          <input type="number" min={1} value={editingTask.reward} onChange={(e) => setEditingTask((p: any) => ({ ...p, reward: Number(e.target.value) || 1 }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                        </div>
+                        {!isCF && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500">Target URL</label>
+                            <input value={editingTask.targetUrl} onChange={(e) => setEditingTask((p: any) => ({ ...p, targetUrl: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                          </div>
+                        )}
+                        {isCF && (
+                          <>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500">Target Count</label>
+                              <input type="number" min={1} value={editingTask.targetCount} onChange={(e) => setEditingTask((p: any) => ({ ...p, targetCount: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500">Repeat (hours)</label>
+                              <input type="number" min={0} value={editingTask.repeatIntervalHours} onChange={(e) => setEditingTask((p: any) => ({ ...p, repeatIntervalHours: e.target.value }))} placeholder="0 = one-time" className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-gray-500">Active Until</label>
+                              <input type="datetime-local" value={editingTask.activeUntil} onChange={(e) => setEditingTask((p: any) => ({ ...p, activeUntil: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                            </div>
+                          </>
+                        )}
+                        <div className="flex items-end">
+                          <button type="button" disabled={saving === task.id} onClick={async () => {
                             setSaving(task.id);
                             try {
-                              await api.deleteAdminRewardTask(task.id);
+                              const updates: any = { reward: editingTask.reward };
+                              if (!isCF) updates.targetUrl = editingTask.targetUrl || null;
+                              if (isCF) {
+                                if (editingTask.targetCount) updates.targetCount = Number(editingTask.targetCount);
+                                updates.repeatIntervalHours = Number(editingTask.repeatIntervalHours) || null;
+                                updates.activeUntil = editingTask.activeUntil || null;
+                              }
+                              await api.updateAdminRewardTask(task.id, updates);
+                              setEditingTask(null);
                               await load();
-                            } catch (err: any) {
-                              window.alert(err?.message || 'Failed');
-                            } finally {
-                              setSaving(null);
-                            }
-                          }}
-                          disabled={saving === task.id}
-                          className="text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
+                            } catch (err: any) { window.alert(err?.message || 'Failed'); }
+                            finally { setSaving(null); }
+                          }} className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50">
+                            {saving === task.id ? '...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -2300,7 +2315,8 @@ type UserDetailTab =
   | 'openings'
   | 'transactions'
   | 'battles'
-  | 'feedback';
+  | 'feedback'
+  | 'rewards';
 
 const UserDetail: React.FC<{
   userId: string;
@@ -2357,6 +2373,7 @@ const UserDetail: React.FC<{
     { key: 'transactions', label: `Ledger (${u.transactions?.length ?? 0})` },
     { key: 'battles', label: `Battles (${u.battles?.length ?? 0})` },
     { key: 'feedback', label: `Feedback (${detail.feedbacks?.length ?? 0})` },
+    { key: 'rewards', label: `Rewards (${detail.rewardClaims?.length ?? 0})` },
   ];
 
   return (
@@ -2374,7 +2391,7 @@ const UserDetail: React.FC<{
             Wallet linked: {u.hasLinkedWallet ? 'yes' : 'no'}
             {u.walletLinkedAt ? ` · ${formatDate(u.walletLinkedAt)}` : ''}
           </div>
-          <div className="text-[10px]">Balance {u.balance} ₮</div>
+          <div className="text-[10px]">Balance {u.balance} ₮ · <span className="text-web3-accent">{u.rewardPoints ?? 0} CFP</span></div>
           {u.isBanned && <div className="text-[10px] text-red-400">Banned: {u.banReason || '—'}</div>}
         </div>
         {isBootstrapAdmin && (
@@ -2671,6 +2688,24 @@ const UserDetail: React.FC<{
             </div>
           ))}
           {!detail.feedbacks?.length && <div className="text-gray-600 text-[10px]">No feedback.</div>}
+        </div>
+      )}
+
+      {tab === 'rewards' && (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+          <div className="text-[10px] text-gray-500 mb-1">Total: <span className="text-web3-accent font-bold">{u.rewardPoints ?? 0} CFP</span></div>
+          {(detail.rewardClaims ?? []).map((rc: any) => (
+            <div key={rc.id} className="flex items-center justify-between bg-black/30 border border-white/[0.08] rounded-lg p-2">
+              <div>
+                <div className="text-[11px] text-white">{rc.task?.title || 'Deleted task'}</div>
+                <div className="text-[10px] text-gray-500">
+                  {rc.task?.category === 'CASEFUN' ? 'CaseFun' : 'Social'} · {formatDate(rc.claimedAt)}
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-web3-accent font-bold">+{rc.reward} CFP</span>
+            </div>
+          ))}
+          {!detail.rewardClaims?.length && <div className="text-gray-600 text-[10px]">No reward claims.</div>}
         </div>
       )}
     </div>
