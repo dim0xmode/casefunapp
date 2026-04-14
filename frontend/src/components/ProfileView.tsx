@@ -184,6 +184,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
   const [rewardsLoading, setRewardsLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoResult, setPromoResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [claimingTaskId, setClaimingTaskId] = useState<string | null>(null);
   const [rewardError, setRewardError] = useState<string | null>(null);
   const [activatedTasks, setActivatedTasks] = useState<Set<string>>(() => {
@@ -1063,6 +1066,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <Gift size={11} />
               Rewards
+              {rewardTasks.some((t) => !t.claimed) && socialRewardsTab !== 'rewards' && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
             </button>
           </div>
 
@@ -1158,24 +1164,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
 
-              {(() => {
-                const nextTask = rewardTasks.find((t) => !t.claimed);
-                return (
-                  <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
-                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-1.5">
-                      <Gift size={11} /> {nextTask ? 'Next Quest' : 'Quests'}
-                    </div>
-                    {nextTask ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] text-gray-400">{nextTask.title} <span className="text-web3-accent font-mono">+{nextTask.reward} CFP</span></div>
-                        <button type="button" onClick={() => setSocialRewardsTab('rewards')} className="text-[10px] text-web3-accent hover:underline">View</button>
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-gray-500">All tasks completed! More coming soon</div>
-                    )}
-                  </div>
-                );
-              })()}
+              <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-2">
+                  <Gift size={11} /> Promo Code
+                </div>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!promoCode.trim() || promoLoading) return;
+                  setPromoLoading(true);
+                  setPromoResult(null);
+                  try {
+                    const res = await api.activatePromo(promoCode.trim());
+                    setPromoResult({ ok: true, msg: `+${res.data?.amount} ₮ added to your balance!` });
+                    setPromoCode('');
+                    setTimeout(() => window.location.reload(), 1500);
+                  } catch (err: any) {
+                    setPromoResult({ ok: false, msg: err?.message || 'Failed to activate' });
+                  } finally {
+                    setPromoLoading(false);
+                  }
+                }} className="flex gap-2">
+                  <input
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    placeholder="Enter code"
+                    className="flex-1 min-w-0 bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/40 font-mono uppercase tracking-wider"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!promoCode.trim() || promoLoading}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40 shrink-0"
+                  >
+                    {promoLoading ? '...' : 'Apply'}
+                  </button>
+                </form>
+                {promoResult && (
+                  <div className={`mt-1.5 text-[10px] ${promoResult.ok ? 'text-web3-success' : 'text-red-400'}`}>{promoResult.msg}</div>
+                )}
+              </div>
 
               {isEditable && twitterError && <div className="mt-2 text-[10px] text-red-400">{twitterError}</div>}
               {isEditable && telegramError && <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>}

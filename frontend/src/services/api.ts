@@ -720,6 +720,39 @@ class ApiClient {
       60_000
     );
   }
+
+  async activatePromo(code: string) {
+    return this.request<{ balance: number; amount: number }>('/users/promo/activate', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async getAdminPromoCodes() {
+    return this.request<{ promos: any[] }>('/admin/promo');
+  }
+
+  async createAdminPromoCode(data: { code: string; amount: number; maxUses: number; usesPerUser: number }) {
+    return this.request<{ promo: any }>('/admin/promo', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAdminPromoCode(id: string, data: any) {
+    return this.request<{ promo: any }>(`/admin/promo/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAdminPromoCode(id: string) {
+    return this.request<{}>(`/admin/promo/${id}`, { method: 'DELETE' });
+  }
+
+  async getAdminPromoActivations() {
+    return this.request<{ activations: any[] }>('/admin/promo/activations');
+  }
 }
 
 export const api = new ApiClient(API_URL);

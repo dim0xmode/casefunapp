@@ -18,6 +18,7 @@ type TabKey =
   | 'audit'
   | 'feedback'
   | 'rewards'
+  | 'promo'
   | 'mailing';
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -28,6 +29,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'battles', label: 'Battles' },
   { key: 'inventory', label: 'Inventory' },
   { key: 'transactions', label: 'Transactions' },
+  { key: 'promo', label: 'Promo Codes' },
   { key: 'rtu', label: 'RTU' },
   { key: 'settings', label: 'Settings' },
   { key: 'audit', label: 'Audit' },
@@ -97,6 +99,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     targetUrl: '',
     reward: 1,
   });
+  const [newPromo, setNewPromo] = useState({ code: '', amount: '', maxUses: '100', usesPerUser: '1' });
   const [filters, setFilters] = useState({
     userRole: 'all',
     userStatus: 'all',
@@ -218,6 +221,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
             api.getAdminRewardClaims(),
           ]);
           setData({ tasks: tasksRes.data?.tasks || [], claims: claimsRes.data?.claims || [] });
+          break;
+        }
+        case 'promo': {
+          const [promosRes, activationsRes] = await Promise.all([
+            api.getAdminPromoCodes(),
+            api.getAdminPromoActivations(),
+          ]);
+          setData({ promos: promosRes.data?.promos || [], activations: activationsRes.data?.activations || [] });
           break;
         }
         case 'mailing':
@@ -1929,6 +1940,136 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 );
               })()}
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && activeTab === 'promo' && (
+            <div className="space-y-4">
+              <div className="text-xs text-gray-500 mb-2">Create promo codes that transfer balance from the main admin wallet to users who activate them. Funds are deducted from admin balance on each activation.</div>
+              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-4 space-y-3">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Create Promo Code</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <input
+                    value={newPromo.code}
+                    onChange={(e) => setNewPromo((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
+                    placeholder="CODE"
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 font-mono uppercase"
+                  />
+                  <input
+                    value={newPromo.amount}
+                    onChange={(e) => setNewPromo((p) => ({ ...p, amount: e.target.value }))}
+                    placeholder="Amount (₮)"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  />
+                  <input
+                    value={newPromo.maxUses}
+                    onChange={(e) => setNewPromo((p) => ({ ...p, maxUses: e.target.value }))}
+                    placeholder="Max activations"
+                    type="number"
+                    min="1"
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  />
+                  <input
+                    value={newPromo.usesPerUser}
+                    onChange={(e) => setNewPromo((p) => ({ ...p, usesPerUser: e.target.value }))}
+                    placeholder="Per user"
+                    type="number"
+                    min="1"
+                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
+                  />
+                </div>
+                <button
+                  disabled={!newPromo.code.trim() || !Number(newPromo.amount) || saving !== null}
+                  onClick={async () => {
+                    setSaving('new-promo');
+                    try {
+                      await api.createAdminPromoCode({
+                        code: newPromo.code.trim(),
+                        amount: Number(newPromo.amount),
+                        maxUses: Number(newPromo.maxUses) || 100,
+                        usesPerUser: Number(newPromo.usesPerUser) || 1,
+                      });
+                      setNewPromo({ code: '', amount: '', maxUses: '100', usesPerUser: '1' });
+                      await load();
+                    } catch (err: any) {
+                      window.alert(err?.message || 'Failed');
+                    } finally {
+                      setSaving(null);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
+                >
+                  {saving === 'new-promo' ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">All Promo Codes</div>
+                <div className="hidden md:grid grid-cols-8 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                  <div>Code</div>
+                  <div>Amount</div>
+                  <div>Used / Max</div>
+                  <div>Per User</div>
+                  <div>Funder</div>
+                  <div>Status</div>
+                  <div>Created</div>
+                  <div></div>
+                </div>
+                {((data as any)?.promos || []).length === 0 && (
+                  <div className="text-sm text-gray-500 py-4 text-center">No promo codes yet.</div>
+                )}
+                {((data as any)?.promos || []).map((promo: any) => (
+                  <div key={promo.id} className="grid grid-cols-1 md:grid-cols-8 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
+                    <div className="font-mono font-bold text-white">{promo.code}</div>
+                    <div>{promo.amount} ₮</div>
+                    <div>{promo._count?.activations ?? promo.currentUses} / {promo.maxUses}</div>
+                    <div>{promo.usesPerUser}</div>
+                    <div className="truncate">{promo.fundingUser?.username || '-'}</div>
+                    <div>
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${promo.isActive ? 'bg-web3-success/20 text-web3-success' : 'bg-gray-500/20 text-gray-400'}`}>
+                        {promo.isActive ? 'Active' : 'Disabled'}
+                      </span>
+                    </div>
+                    <div>{formatDate(promo.createdAt)}</div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={async () => {
+                          setSaving(promo.id);
+                          try {
+                            await api.updateAdminPromoCode(promo.id, { isActive: !promo.isActive });
+                            await load();
+                          } finally { setSaving(null); }
+                        }}
+                        disabled={saving === promo.id}
+                        className={`text-[10px] px-2 py-1 rounded-lg border ${promo.isActive ? 'border-yellow-500/30 text-yellow-400' : 'border-web3-success/30 text-web3-success'}`}
+                      >
+                        {promo.isActive ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Recent Activations</div>
+                {((data as any)?.activations || []).length === 0 && (
+                  <div className="text-xs text-gray-600">No activations yet.</div>
+                )}
+                {((data as any)?.activations || []).map((act: any) => (
+                  <div key={act.id} className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/[0.06] bg-black/15">
+                    <div>
+                      <div className="text-[11px] text-white">
+                        {act.user?.username || 'Unknown'} — <span className="font-mono text-web3-accent">{act.promo?.code}</span>
+                      </div>
+                      <div className="text-[10px] text-gray-600">{new Date(act.activatedAt).toLocaleString()}</div>
+                    </div>
+                    <span className="text-[11px] font-mono text-web3-success font-bold">+{act.amount} ₮</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

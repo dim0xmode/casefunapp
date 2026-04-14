@@ -73,4 +73,7 @@ router.get('/rewards/tasks', listRewardTasks);
 router.post('/rewards/claim/:taskId', claimReward);
 router.get('/rewards/history', getRewardHistory);
 
+import { activatePromo } from '../controllers/promoController.js';
+router.post('/promo/activate', activatePromo);
+
 export default router;

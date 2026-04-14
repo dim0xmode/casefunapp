@@ -97,6 +97,8 @@ model User {
   joinedBattleLobbies BattleLobby[] @relation("BattleLobbyJoiner")
   rewardClaims        RewardClaim[]
   createdRewardTasks  RewardTask[]  @relation("RewardTaskCreator")
+  fundedPromos        PromoCode[]        @relation("PromoFunder")
+  promoActivations    PromoActivation[]
   
   @@index([walletAddress])
   @@index([referredById])
@@ -462,4 +464,38 @@ model RewardClaim {
   @@index([userId])
   @@index([taskId])
   @@map("reward_claims")
+}
+
+model PromoCode {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  amount          Float
+  maxUses         Int      @default(1)
+  usesPerUser     Int      @default(1)
+  currentUses     Int      @default(0)
+  fundingUserId   String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  fundingUser     User              @relation("PromoFunder", fields: [fundingUserId], references: [id])
+  activations     PromoActivation[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("promo_codes")
+}
+
+model PromoActivation {
+  id          String   @id @default(cuid())
+  userId      String
+  promoId     String
+  amount      Float
+  activatedAt DateTime @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promo       PromoCode @relation(fields: [promoId], references: [id])
+
+  @@index([userId])
+  @@index([promoId])
+  @@map("promo_activations")
 }

@@ -79,4 +79,18 @@ router.get('/rewards/claims', adminListRewardClaims);
 
 router.post('/mailing/batch', sendMailingBatch);
 
+import {
+  adminListPromoCodes,
+  adminCreatePromoCode,
+  adminUpdatePromoCode,
+  adminDeletePromoCode,
+  adminListPromoActivations,
+} from '../controllers/promoController.js';
+
+router.get('/promo', adminListPromoCodes);
+router.post('/promo', adminCreatePromoCode);
+router.patch('/promo/:id', adminUpdatePromoCode);
+router.delete('/promo/:id', adminDeletePromoCode);
+router.get('/promo/activations', adminListPromoActivations);
+
 export default router;
