@@ -1040,24 +1040,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
             </div>
 
+        {!isTelegramMiniApp && (
         <div
-          className={`xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl flex flex-col ${
-            isTelegramMiniApp ? 'p-4 h-auto min-h-0' : 'p-6 h-[440px]'
-          }`}
+          className="xl:col-span-4 bg-black/20 border border-white/[0.12] rounded-2xl backdrop-blur-2xl flex flex-col p-6 h-[440px]"
         >
           <div className="flex items-center gap-1 mb-3">
             <button
               type="button"
               onClick={() => setSocialRewardsTab('social')}
               className={`text-xs font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-lg transition ${
-                socialRewardsTab === 'social' || isTelegramMiniApp
+                socialRewardsTab === 'social'
                   ? 'text-white bg-white/[0.08]'
                   : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Social
             </button>
-            {!isTelegramMiniApp && (
             <button
               type="button"
               onClick={() => setSocialRewardsTab('rewards')}
@@ -1073,7 +1071,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </button>
-            )}
           </div>
 
           {socialRewardsTab === 'social' && (
@@ -1369,6 +1366,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {isTelegramMiniApp ? (

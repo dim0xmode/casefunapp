@@ -3,6 +3,7 @@ import {
   Boxes,
   ChevronLeft,
   Coins,
+  Copy,
   ExternalLink,
   Gift,
   Lock,
@@ -318,7 +319,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     });
   }, [inventory, caseMap]);
 
-  const [rewardsSubTab, setRewardsSubTab] = useState<'social' | 'casefun' | 'history'>('social');
+  const [rewardsSubTab, setRewardsSubTab] = useState<'social' | 'earn' | 'history'>('social');
   const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
@@ -415,6 +416,38 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   }, [openExternalUrl]);
 
   const hasActiveRewards = rewardTasks.some((t) => !t.claimed && !t.onCooldown);
+
+  const [referralUrl, setReferralUrl] = useState<string | null>(null);
+  const [referralInvited, setReferralInvited] = useState<number>(user?.referralConfirmedCount ?? 0);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoResult, setPromoResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    let cancelled = false;
+    setReferralLoading(true);
+    void (async () => {
+      try {
+        const r = await api.getReferralCode();
+        if (cancelled || !r.data?.code) return;
+        setReferralUrl(`https://t.me/casefun_bot?startapp=ref_${encodeURIComponent(r.data.code)}`);
+        setReferralInvited(r.data.invitedCount ?? 0);
+      } catch (e: any) {
+        if (!cancelled) setReferralError(e?.message || 'Failed to load referral link');
+      } finally { if (!cancelled) setReferralLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, user?.id]);
+
+  const formatLinkedAt = (value?: string | number | null) => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
   const isSecondaryTab = activeTab === 'topup';
 
@@ -537,28 +570,126 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
           </div>
           <div className="flex gap-1">
-            <button type="button" onClick={() => setRewardsSubTab('social')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
-              Social
-              {rewardsSubTab !== 'social' && rewardTasks.some((t) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            <button type="button" onClick={() => setRewardsSubTab('social')} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>Social</button>
+            <button type="button" onClick={() => setRewardsSubTab('earn')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'earn' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
+              Earn
+              {rewardsSubTab !== 'earn' && rewardTasks.some((t) => !t.claimed && !t.onCooldown && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
             </button>
-            <button type="button" onClick={() => setRewardsSubTab('casefun')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'casefun' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
-              CaseFun
-              {rewardsSubTab !== 'casefun' && rewardTasks.some((t) => t.category === 'CASEFUN' && !t.claimed && !t.onCooldown) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
-            </button>
-            <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>History</button>
+            <button type="button" onClick={() => { setRewardsSubTab('history'); loadRewardHistory(); }} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>History</button>
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
-          {rewardsSubTab === 'social' && (() => {
-            const socialTasks = rewardTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
+          {/* ── Social: account linking, referrals, promo ── */}
+          {rewardsSubTab === 'social' && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+                <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${user?.twitterId ? 'border-web3-success/40' : 'border-white/10'}`}>
+                  <svg viewBox="0 0 1200 1227" className={`w-3 h-3 fill-current ${user?.twitterId ? 'text-web3-success' : 'text-gray-500'}`}>
+                    <path d="M714.163 519.284L1160.89 0H1055.14L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.748L515.454 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.06 687.828L521.627 619.936L144.011 79.6944H306.615L611.333 515.664L658.766 583.556L1055.19 1150.69H892.586L569.06 687.854V687.828Z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">X / Twitter</div>
+                  {user?.twitterId ? (
+                    <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                      <span className="text-sm font-bold text-white truncate">@{user.twitterUsername || 'connected'}</span>
+                      {formatLinkedAt(user?.twitterLinkedAt) && <span className="text-[10px] text-gray-600 shrink-0">{formatLinkedAt(user?.twitterLinkedAt)}</span>}
+                    </div>
+                  ) : <div className="text-xs text-gray-600 mt-0.5">Not linked</div>}
+                </div>
+                <button type="button" onClick={() => user?.twitterId ? onDisconnectTwitter?.() : onConnectTwitter?.()} disabled={twitterBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.twitterId ? 'border-red-500/25 text-red-400' : 'border-web3-accent/25 text-web3-accent'} ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                  {twitterBusy ? '…' : user?.twitterId ? 'Disconnect' : 'Connect'}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+                <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${user?.telegramId ? 'border-web3-success/40' : 'border-white/10'}`}>
+                  <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 fill-current ${user?.telegramId ? 'text-web3-success' : 'text-gray-500'}`}>
+                    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.820 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.800-.840-.547-.297-1.174.157-1.557.112-.098 3.018-2.885 3.076-3.13.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Telegram</div>
+                  {user?.telegramId ? (
+                    <div className="flex items-center gap-2 mt-0.5 min-w-0">
+                      <span className="text-sm font-bold text-white truncate">{user.telegramUsername ? `@${user.telegramUsername}` : user.telegramFirstName || 'linked'}</span>
+                      {formatLinkedAt(user?.telegramLinkedAt) && <span className="text-[10px] text-gray-600 shrink-0">{formatLinkedAt(user?.telegramLinkedAt)}</span>}
+                    </div>
+                  ) : <div className="text-xs text-gray-600 mt-0.5">Not linked</div>}
+                </div>
+                <button type="button" onClick={() => user?.telegramId ? onDisconnectTelegram?.() : onConnectTelegram?.()} disabled={telegramBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.telegramId ? 'border-red-500/25 text-red-400' : 'border-web3-accent/25 text-web3-accent'} ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                  {telegramBusy ? '…' : user?.telegramId ? 'Disconnect' : 'Connect'}
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Referrals</div>
+                {referralLoading ? <div className="text-xs text-gray-600">Loading…</div> : referralError ? <div className="text-[10px] text-red-400">{referralError}</div> : (
+                  <>
+                    <div className="text-[11px] text-gray-400 leading-snug">
+                      Confirmed invites: <span className="text-white font-bold tabular-nums">{referralInvited}</span>
+                      <span className="block mt-1 text-[10px] text-gray-600">Counted after your invitee makes the first confirmed on-chain wallet deposit.</span>
+                    </div>
+                    {referralUrl && (
+                      <div className="flex flex-col gap-1.5 pt-0.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[11px] text-web3-accent truncate flex-1 font-mono">{referralUrl}</span>
+                          <button type="button" onClick={() => { void navigator.clipboard?.writeText(referralUrl).catch(() => {}); }} className="shrink-0 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg border border-white/[0.12] text-gray-300 hover:text-white transition">
+                            <Copy size={12} /> Copy
+                          </button>
+                        </div>
+                        <button type="button" onClick={() => { try { const tg = (window as any)?.Telegram?.WebApp; const text = `Join me on CaseFun! Open crypto cases and win tokens.`; if (typeof tg?.openTelegramLink === 'function') { tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(referralUrl)}&text=${encodeURIComponent(text)}`); } else { window.open(`https://t.me/share/url?url=${encodeURIComponent(referralUrl)}&text=${encodeURIComponent(text)}`, '_blank'); } } catch {} }} className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-web3-accent to-web3-success text-black active:scale-[0.98] transition">
+                          <ExternalLink size={12} /> Share via Telegram
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-2">
+                  <Gift size={11} /> Promo Code
+                </div>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!promoCode.trim() || promoLoading) return;
+                  setPromoLoading(true); setPromoResult(null);
+                  try {
+                    const res = await api.activatePromo(promoCode.trim().toUpperCase());
+                    setPromoResult({ ok: true, msg: `+${res.data?.amount} ₮ added to your balance!` });
+                    setPromoCode('');
+                    if (onBalanceUpdate && typeof res.data?.balance === 'number') onBalanceUpdate(res.data.balance);
+                  } catch (err: any) { setPromoResult({ ok: false, msg: err?.message || 'Failed to activate' }); }
+                  finally { setPromoLoading(false); }
+                }} className="flex gap-2">
+                  <input value={promoCode} onChange={(e) => setPromoCode(e.target.value)} placeholder="Enter code" className="flex-1 min-w-0 bg-black/40 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-web3-accent/40 font-mono uppercase tracking-wider" />
+                  <button type="submit" disabled={!promoCode.trim() || promoLoading} className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40 shrink-0">
+                    {promoLoading ? '...' : 'Apply'}
+                  </button>
+                </form>
+                {promoResult && <div className={`mt-1.5 text-[10px] ${promoResult.ok ? 'text-web3-success' : 'text-red-400'}`}>{promoResult.msg}</div>}
+              </div>
+
+              {twitterError && <div className="text-[10px] text-red-400">{twitterError}</div>}
+              {telegramError && <div className="text-[10px] text-red-400">{telegramError}</div>}
+            </div>
+          )}
+
+          {/* ── Earn: all reward tasks merged ── */}
+          {rewardsSubTab === 'earn' && (() => {
+            const allTasks = rewardTasks.filter((t) => !t.claimed);
+            const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
+            const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN');
+            const now = Date.now();
             return (
             <div className="space-y-1.5">
               {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-              {!rewardsLoading && socialTasks.length === 0 && (
+              {!rewardsLoading && allTasks.length === 0 && (
                 <div className="text-center py-8">
                   <Gift size={24} className="mx-auto text-gray-600 mb-2" />
-                  <div className="text-[11px] text-gray-500">All social tasks completed!</div>
+                  <div className="text-[11px] text-gray-500">All tasks completed!</div>
                   <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
                 </div>
               )}
@@ -591,24 +722,6 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 </div>
                 );
               })}
-              {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
-            </div>
-            );
-          })()}
-
-          {rewardsSubTab === 'casefun' && (() => {
-            const cfTasks = rewardTasks.filter((t) => t.category === 'CASEFUN');
-            const now = Date.now();
-            return (
-            <div className="space-y-1.5">
-              {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-              {!rewardsLoading && cfTasks.length === 0 && (
-                <div className="text-center py-8">
-                  <Rocket size={24} className="mx-auto text-gray-600 mb-2" />
-                  <div className="text-[11px] text-gray-500">No CaseFun tasks yet!</div>
-                  <div className="text-[10px] text-gray-600 mt-1">Platform challenges coming soon</div>
-                </div>
-              )}
               {cfTasks.map((task: any) => {
                 const progress = task.progress ?? 0;
                 const target = task.targetCount ?? 1;
@@ -616,7 +729,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 const isComplete = progress >= target && !task.onCooldown;
                 const isCooldown = task.onCooldown && task.cooldownEndsAt;
                 const isDone = task.claimed && !task.onCooldown;
-                let timeLabel = task.activeUntil ? `Until ${new Date(task.activeUntil).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}` : 'Always active';
+                const timeLabel = task.activeUntil ? `Until ${new Date(task.activeUntil).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}` : 'Always active';
                 let cooldownLabel = '';
                 if (isCooldown) {
                   const ms = new Date(task.cooldownEndsAt).getTime() - now;
@@ -652,6 +765,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             );
           })()}
 
+          {/* ── History ── */}
           {rewardsSubTab === 'history' && (
             <div className="space-y-1">
               {rewardHistory.length === 0 && <div className="text-xs text-gray-600 text-center py-8">No rewards claimed yet</div>}
