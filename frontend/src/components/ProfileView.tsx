@@ -1223,7 +1223,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </button>
                   <button type="button" onClick={() => setRewardsSubTab('casefun')} className={`text-[10px] px-2 py-0.5 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'casefun' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
                     CaseFun
-                    {rewardsSubTab !== 'casefun' && rewardTasks.some((t: any) => t.category === 'CASEFUN' && !t.claimed && !t.onCooldown && (t.completed || (t.progress ?? 0) > 0)) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+                    {rewardsSubTab !== 'casefun' && rewardTasks.some((t: any) => t.category === 'CASEFUN' && !t.claimed && !t.onCooldown) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
                   </button>
                   <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>History</button>
                 </div>
