@@ -107,9 +107,9 @@ const BASE_TABS: TabDef[] = [
   { id: 'cases', label: 'Cases', icon: Boxes },
   { id: 'create', label: 'Create', icon: PlusCircle },
   { id: 'upgrade', label: 'Upgrade', icon: Coins },
-  { id: 'rewards', label: 'Rewards', icon: Gift },
   { id: 'battle', label: 'Battle', icon: Swords },
   { id: 'profile', label: 'Profile', icon: UserCircle2 },
+  { id: 'rewards', label: 'Rewards', icon: Gift },
 ];
 
 const SECONDARY_TITLES: Partial<Record<MiniTab, string>> = {
@@ -996,7 +996,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           {BASE_TABS.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
-            const showDot = tab.id === 'rewards' && !active && hasActiveRewards;
+            const isRewardsTab = tab.id === 'rewards';
+            const showDot = isRewardsTab && !active && hasActiveRewards;
             return (
               <button
                 key={tab.id} type="button"
@@ -1004,16 +1005,28 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-all duration-150 select-none"
                 style={active ? { background: 'rgba(102,252,241,0.08)' } : undefined}
               >
-                <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
-                  <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
-                  {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
-                </span>
-                <span
-                  className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150"
-                  style={{ color: active ? '#66FCF1' : '#4b5563' }}
-                >
-                  {tab.label}
-                </span>
+                {isRewardsTab && !active ? (
+                  <>
+                    <span className="relative flex">
+                      <svg width={0} height={0} className="absolute"><defs><linearGradient id="rwdGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#66FCF1" /><stop offset="50%" stopColor="#10B981" /><stop offset="100%" stopColor="#8B5CF6" /></linearGradient></defs></svg>
+                      <Icon size={22} strokeWidth={1.8} style={{ stroke: 'url(#rwdGrad)' }} />
+                      {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
+                    </span>
+                    <span className="text-[10px] font-semibold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                      {tab.label}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                      <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+                      {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
+                    </span>
+                    <span className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                      {tab.label}
+                    </span>
+                  </>
+                )}
               </button>
             );
           })}
