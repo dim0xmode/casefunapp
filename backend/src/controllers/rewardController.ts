@@ -323,12 +323,13 @@ export const listRewardTasks = async (
       const claimInfo = claimsByTask.get(task.id);
 
       if (isCaseFun) {
-        const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours > 0;
+        const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
+        const isInstantRepeat = task.repeatIntervalHours === 0;
         const lastClaimAt = claimInfo?.claimedAt;
 
         let onCooldown = false;
         let cooldownEndsAt: Date | null = null;
-        if (isRepeatable && lastClaimAt) {
+        if (isRepeatable && !isInstantRepeat && lastClaimAt) {
           cooldownEndsAt = new Date(lastClaimAt.getTime() + task.repeatIntervalHours! * 3600_000);
           onCooldown = cooldownEndsAt > now;
         }
@@ -453,13 +454,14 @@ export const claimReward = async (
     const lastClaim = existingClaims[0] || null;
 
     if (isCaseFun) {
-      const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours > 0;
+      const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
+      const isInstantRepeat = task.repeatIntervalHours === 0;
 
       if (!isRepeatable && lastClaim) {
         return next(new AppError('Reward already claimed', 409));
       }
 
-      if (isRepeatable && lastClaim) {
+      if (isRepeatable && !isInstantRepeat && lastClaim) {
         const cooldownEnd = new Date(lastClaim.claimedAt.getTime() + task.repeatIntervalHours! * 3600_000);
         if (cooldownEnd > now) {
           return next(new AppError('Task is on cooldown', 400));
@@ -690,7 +692,7 @@ export const adminCreateRewardTask = async (
         category: isCaseFun ? 'CASEFUN' : 'SOCIAL',
         targetCount: isCaseFun ? Math.max(1, Number(targetCount) || 1) : null,
         targetCaseId: type === 'OPEN_SPECIFIC_CASE' && targetCaseId ? String(targetCaseId) : null,
-        repeatIntervalHours: repeatIntervalHours != null ? Math.max(0, Number(repeatIntervalHours)) || null : null,
+        repeatIntervalHours: repeatIntervalHours != null && repeatIntervalHours !== '' ? Math.max(0, Number(repeatIntervalHours)) : null,
         activeUntil: activeUntil ? new Date(activeUntil) : null,
       },
     });
@@ -730,8 +732,10 @@ export const adminUpdateRewardTask = async (
       data.sortOrder = Number(req.body.sortOrder) || 0;
     if (req.body.targetCount !== undefined)
       data.targetCount = req.body.targetCount ? Math.max(1, Number(req.body.targetCount)) : null;
-    if (req.body.repeatIntervalHours !== undefined)
-      data.repeatIntervalHours = req.body.repeatIntervalHours ? Math.max(0, Number(req.body.repeatIntervalHours)) || null : null;
+    if (req.body.repeatIntervalHours !== undefined) {
+      const rih = req.body.repeatIntervalHours;
+      data.repeatIntervalHours = rih !== null && rih !== '' && rih !== undefined ? Math.max(0, Number(rih)) : null;
+    }
     if (req.body.activeUntil !== undefined)
       data.activeUntil = req.body.activeUntil ? new Date(req.body.activeUntil) : null;
 

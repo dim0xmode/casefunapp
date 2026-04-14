@@ -1602,6 +1602,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <label className="text-[11px] text-gray-400 font-medium">Repeat Interval</label>
                       <select value={newRewardTask.repeatIntervalHours} onChange={(e) => setNewRewardTask((p) => ({ ...p, repeatIntervalHours: e.target.value }))} className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300">
                         <option value="">One-time only</option>
+                        <option value="0">Instantly repeatable (no cooldown)</option>
                         <option value="1">Every 1 hour</option>
                         <option value="6">Every 6 hours</option>
                         <option value="12">Every 12 hours</option>
@@ -1609,7 +1610,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <option value="48">Every 48 hours</option>
                         <option value="168">Every 7 days (weekly)</option>
                       </select>
-                      <div className="text-[10px] text-gray-600">One-time = claim once. Repeatable = resets after cooldown.</div>
+                      <div className="text-[10px] text-gray-600">One-time = claim once. Instant = available again immediately after claim. Timed = resets after cooldown.</div>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] text-gray-400 font-medium">Active Until</label>
@@ -1666,7 +1667,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <div className="text-[10px] text-gray-500 mt-0.5">
                           +{task.reward} CFP · <span className="text-gray-400">{task.claimCount ?? 0} claims</span>
                           {isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
-                          {isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
+                          {isCF && task.repeatIntervalHours != null && task.repeatIntervalHours === 0 ? ' · instant repeat' : isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
                           {task.activeUntil ? ` · until ${new Date(task.activeUntil).toLocaleDateString()}` : ''}
                           {task.isDefault ? ' · Default' : ''}
                         </div>

@@ -1,3 +1,22 @@
+const LEVEL_THRESHOLDS = [50, 75, 100, 150, 200, 300, 400, 500, 750, 1000];
+const CUMULATIVE: number[] = [];
+LEVEL_THRESHOLDS.reduce((sum, v) => { const c = sum + v; CUMULATIVE.push(c); return c; }, 0);
+
+export const getLevelInfo = (cfp: number) => {
+  let level = 0;
+  for (let i = 0; i < CUMULATIVE.length; i++) {
+    if (cfp >= CUMULATIVE[i]) level = i + 1;
+    else break;
+  }
+  const isMaxLevel = level >= CUMULATIVE.length;
+  const currentFloor = level > 0 ? CUMULATIVE[level - 1] : 0;
+  const nextCeil = isMaxLevel ? CUMULATIVE[CUMULATIVE.length - 1] : CUMULATIVE[level];
+  const xpInLevel = cfp - currentFloor;
+  const xpNeeded = nextCeil - currentFloor;
+  const progress = isMaxLevel ? 100 : Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));
+  return { level, progress, xpInLevel, xpNeeded, isMaxLevel, totalCfp: cfp, nextLevelCfp: nextCeil };
+};
+
 export const formatShortfallUp = (value: number): string => {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   const roundedUp = Math.ceil(safeValue * 100) / 100;

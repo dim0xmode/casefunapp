@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { parseEther } from 'ethers';
 import { Case, Item, Rarity, RewardClaimRecord, RewardTask, User } from '../types';
+import { getLevelInfo } from '../utils/number';
 import { api } from '../services/api';
 import type { TelegramWalletOption } from '../utils/walletConnect';
 import { CaseView } from './CaseView';
@@ -1026,43 +1027,55 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   return (
     <Shell>
       {/* ── Top bar ── */}
-      <div className="shrink-0 flex items-center gap-3 px-4" style={{ height: '52px' }}>
-        {isSecondaryTab ? (
-          <button
-            type="button" onClick={() => goToTab(lastPrimaryTab)}
-            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-white/[0.05] active:bg-white/[0.1] transition"
-          >
+      {isSecondaryTab ? (
+        <div className="shrink-0 flex items-center gap-3 px-4" style={{ height: '52px' }}>
+          <button type="button" onClick={() => goToTab(lastPrimaryTab)} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-white/[0.05] active:bg-white/[0.1] transition">
             <ChevronLeft size={18} className="text-gray-300" />
           </button>
-        ) : (
-          <div className="w-8 h-8 shrink-0 rounded-xl overflow-hidden border border-white/[0.08]">
-            {user.avatar ? (
-              <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-xs font-black bg-web3-accent/10 text-web3-accent">
-                {(user.username || 'U')[0].toUpperCase()}
-              </div>
-            )}
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold text-white truncate">{SECONDARY_TITLES[activeTab]}</div>
           </div>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-white truncate">
-            {isSecondaryTab ? SECONDARY_TITLES[activeTab] : (user.username || 'User')}
+          <button type="button" onClick={() => goToTab('topup')} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl active:scale-95 transition" style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}>
+            <Wallet size={14} className="text-web3-accent" />
+            <span className="text-[13px] font-black tabular-nums text-web3-accent">{Number(balance || 0).toFixed(2)}</span>
+          </button>
+        </div>
+      ) : (() => {
+        const lvl = getLevelInfo(rewardPoints);
+        return (
+        <div className="shrink-0 px-3 pt-2 pb-1.5">
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={() => goToTab('profile')} className="shrink-0 w-10 h-10 rounded-full overflow-hidden border-2 border-web3-accent/40 active:scale-95 transition relative">
+              {user.avatar ? (
+                <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-sm font-black bg-web3-accent/10 text-web3-accent">
+                  {(user.username || 'U')[0].toUpperCase()}
+                </div>
+              )}
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[14px] font-bold text-white truncate">{user.username || 'User'}</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gradient-to-r from-web3-accent/15 to-web3-purple/15 border border-web3-accent/20 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple" style={{ WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundImage: 'linear-gradient(to right, #66FCF1, #8B5CF6)' }}>Lvl {lvl.level}</span>
+                </div>
+                <button type="button" onClick={() => goToTab('topup')} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg active:scale-95 transition" style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}>
+                  <Wallet size={12} className="text-web3-accent" />
+                  <span className="text-[12px] font-black tabular-nums text-web3-accent">{Number(balance || 0).toFixed(2)}</span>
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple transition-all duration-700" style={{ width: `${lvl.progress}%` }} />
+                </div>
+                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{lvl.isMaxLevel ? 'MAX' : `${lvl.xpInLevel}/${lvl.xpNeeded}`}</span>
+              </div>
+            </div>
           </div>
         </div>
-
-        <button
-          type="button" onClick={() => goToTab('topup')}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl active:scale-95 transition"
-          style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}
-        >
-          <Wallet size={14} className="text-web3-accent" />
-          <span className="text-[13px] font-black tabular-nums text-web3-accent">
-            {Number(balance || 0).toFixed(2)}
-          </span>
-        </button>
-      </div>
+        );
+      })()}
 
       {/* ── Scrollable content ── */}
       {successToast && (
