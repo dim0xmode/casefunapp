@@ -144,7 +144,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
       .toUpperCase()
       .replace(/[^A-Z0-9\s]/g, '')
       .replace(/^\s+/, '');
-  const sanitizeToken = (value: string) => value.toUpperCase().replace(/[^A-Z]/g, '');
+  const sanitizeToken = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const [drops, setDrops] = useState<DropDraft[]>([
     { id: 'drop-1', value: '' },
     { id: 'drop-2', value: '' },
@@ -207,8 +207,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
 
   const validateTicker = (value: string, currentName?: string) => {
     if (!value) return null;
-    if (!/^[A-Z]+$/.test(value)) {
-      return 'Token ticker must contain only A-Z letters.';
+    if (!/^[A-Z][A-Z0-9]*$/.test(value)) {
+      return 'Token ticker must start with a letter and contain only letters/numbers.';
     }
     if (currentName && value === currentName) {
       return 'Token ticker and case name must be different.';
