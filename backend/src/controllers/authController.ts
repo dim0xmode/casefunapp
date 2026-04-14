@@ -1144,6 +1144,7 @@ export const getProfile = async (
         referralConfirmedCount: true,
         referredById: true,
         referralConfirmedAt: true,
+        rewardPoints: true,
         createdAt: true,
         inventory: {
           where: { status: 'ACTIVE', claimedAt: null },

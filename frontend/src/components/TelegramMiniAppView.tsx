@@ -250,16 +250,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [lastPrimaryTab, setLastPrimaryTab] = useState<MiniTab>('cases');
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [splashDone, setSplashDone] = useState(false);
-  const [headerMounted, setHeaderMounted] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setSplashDone(true), 3400);
     return () => clearTimeout(timer);
   }, []);
-
-  useEffect(() => {
-    if (splashDone) { const t = setTimeout(() => setHeaderMounted(true), 100); return () => clearTimeout(t); }
-  }, [splashDone]);
   const [topUpUsdt, setTopUpUsdt] = useState('');
   const [topUpEth, setTopUpEth] = useState('');
   const [ethPrice, setEthPrice] = useState<number | null>(null);
@@ -454,6 +449,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     if (Number.isNaN(d.getTime())) return null;
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
+
+  const headerCfp = rewardPoints > 0 ? rewardPoints : (user?.rewardPoints ?? 0);
+  const headerLvl = getLevelInfo(headerCfp);
 
   const isSecondaryTab = activeTab === 'topup';
 
@@ -1045,9 +1043,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             <span className="text-[13px] font-black tabular-nums text-web3-accent">{Number(balance || 0).toFixed(2)}</span>
           </button>
         </div>
-      ) : (() => {
-        const lvl = getLevelInfo(rewardPoints || user?.rewardPoints || 0);
-        return (
+      ) : (
         <div className="shrink-0 px-3 pt-2 pb-1.5">
           <div className="flex items-center gap-2.5">
             <button type="button" onClick={() => goToTab('profile')} className="shrink-0 w-10 h-10 rounded-full overflow-hidden border-2 border-web3-accent/40 active:scale-95 transition relative">
@@ -1063,7 +1059,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               <div className="flex items-center justify-between mb-0.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[14px] font-bold text-white truncate">{user.username || 'User'}</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gradient-to-r from-web3-accent/15 to-web3-purple/15 border border-web3-accent/20 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple" style={{ WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundImage: 'linear-gradient(to right, #66FCF1, #8B5CF6)' }}>Lvl {lvl.level}</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gradient-to-r from-web3-accent/15 to-web3-purple/15 border border-web3-accent/20 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple" style={{ WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundImage: 'linear-gradient(to right, #66FCF1, #8B5CF6)' }}>Lvl {headerLvl.level}</span>
                 </div>
                 <button type="button" onClick={() => goToTab('topup')} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg active:scale-95 transition" style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}>
                   <Wallet size={12} className="text-web3-accent" />
@@ -1072,15 +1068,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className={`h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple ${headerMounted ? 'transition-all duration-700' : ''}`} style={{ width: `${lvl.progress}%` }} />
+                  <div key={headerCfp} className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple" style={{ width: `${headerLvl.progress}%` }} />
                 </div>
-                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{lvl.isMaxLevel ? 'MAX' : `${lvl.xpInLevel}/${lvl.xpNeeded}`}</span>
+                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{headerLvl.isMaxLevel ? 'MAX' : `${headerLvl.xpInLevel}/${headerLvl.xpNeeded}`}</span>
               </div>
             </div>
           </div>
         </div>
-        );
-      })()}
+      )}
 
       {/* ── Scrollable content ── */}
       {successToast && (
