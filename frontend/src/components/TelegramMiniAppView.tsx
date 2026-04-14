@@ -250,11 +250,16 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [lastPrimaryTab, setLastPrimaryTab] = useState<MiniTab>('cases');
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [splashDone, setSplashDone] = useState(false);
+  const [headerMounted, setHeaderMounted] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setSplashDone(true), 3400);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (splashDone) { const t = setTimeout(() => setHeaderMounted(true), 100); return () => clearTimeout(t); }
+  }, [splashDone]);
   const [topUpUsdt, setTopUpUsdt] = useState('');
   const [topUpEth, setTopUpEth] = useState('');
   const [ethPrice, setEthPrice] = useState<number | null>(null);
@@ -1041,7 +1046,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           </button>
         </div>
       ) : (() => {
-        const lvl = getLevelInfo(rewardPoints);
+        const lvl = getLevelInfo(rewardPoints || user?.rewardPoints || 0);
         return (
         <div className="shrink-0 px-3 pt-2 pb-1.5">
           <div className="flex items-center gap-2.5">
@@ -1067,7 +1072,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple transition-all duration-700" style={{ width: `${lvl.progress}%` }} />
+                  <div className={`h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple ${headerMounted ? 'transition-all duration-700' : ''}`} style={{ width: `${lvl.progress}%` }} />
                 </div>
                 <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{lvl.isMaxLevel ? 'MAX' : `${lvl.xpInLevel}/${lvl.xpNeeded}`}</span>
               </div>

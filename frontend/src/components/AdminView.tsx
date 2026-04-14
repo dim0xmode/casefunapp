@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
-import { formatTokenValue } from '../utils/number';
+import { formatTokenValue, getLevelInfo } from '../utils/number';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
 import { StatCard } from './ui/StatCard';
@@ -807,7 +807,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[10px] uppercase tracking-widest text-gray-500">Balance</div>
-                      <div className="text-xs text-gray-400">{user.balance} ₮ · <span className="text-web3-accent">{user.rewardPoints ?? 0} CFP</span></div>
+                      <div className="text-xs text-gray-400">{user.balance} ₮ · <span className="text-web3-accent">{user.rewardPoints ?? 0} CFP</span> · <span className="text-gray-500">Lvl {getLevelInfo(user.rewardPoints ?? 0).level}</span></div>
                       <div className="text-[10px] text-gray-500 mt-1">
                         Invited: <span className="text-gray-300">{user.invitedUserCount ?? 0}</span>
                       </div>
@@ -2392,7 +2392,7 @@ const UserDetail: React.FC<{
             Wallet linked: {u.hasLinkedWallet ? 'yes' : 'no'}
             {u.walletLinkedAt ? ` · ${formatDate(u.walletLinkedAt)}` : ''}
           </div>
-          <div className="text-[10px]">Balance {u.balance} ₮ · <span className="text-web3-accent">{u.rewardPoints ?? 0} CFP</span></div>
+          <div className="text-[10px]">Balance {u.balance} ₮ · <span className="text-web3-accent">{u.rewardPoints ?? 0} CFP</span> · <span className="text-gray-400">Lvl {getLevelInfo(u.rewardPoints ?? 0).level}</span></div>
           {u.isBanned && <div className="text-[10px] text-red-400">Banned: {u.banReason || '—'}</div>}
         </div>
         {isBootstrapAdmin && (
@@ -2694,7 +2694,7 @@ const UserDetail: React.FC<{
 
       {tab === 'rewards' && (
         <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
-          <div className="text-[10px] text-gray-500 mb-1">Total: <span className="text-web3-accent font-bold">{u.rewardPoints ?? 0} CFP</span></div>
+          <div className="text-[10px] text-gray-500 mb-1">Total: <span className="text-web3-accent font-bold">{u.rewardPoints ?? 0} CFP</span> · Level <span className="text-white font-bold">{getLevelInfo(u.rewardPoints ?? 0).level}</span></div>
           {(detail.rewardClaims ?? []).map((rc: any) => (
             <div key={rc.id} className="flex items-center justify-between bg-black/30 border border-white/[0.08] rounded-lg p-2">
               <div>
