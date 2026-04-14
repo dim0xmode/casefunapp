@@ -1050,13 +1050,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               type="button"
               onClick={() => setSocialRewardsTab('social')}
               className={`text-xs font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-lg transition ${
-                socialRewardsTab === 'social'
+                socialRewardsTab === 'social' || isTelegramMiniApp
                   ? 'text-white bg-white/[0.08]'
                   : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               Social
             </button>
+            {!isTelegramMiniApp && (
             <button
               type="button"
               onClick={() => setSocialRewardsTab('rewards')}
@@ -1072,6 +1073,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </button>
+            )}
           </div>
 
           {socialRewardsTab === 'social' && (

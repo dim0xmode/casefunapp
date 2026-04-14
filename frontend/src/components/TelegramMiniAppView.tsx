@@ -1,16 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
   Coins,
   ExternalLink,
+  Gift,
+  Lock,
   PlusCircle,
+  Rocket,
   Swords,
   UserCircle2,
   Wallet,
 } from 'lucide-react';
 import { parseEther } from 'ethers';
-import { Case, Item, Rarity, User } from '../types';
+import { Case, Item, Rarity, RewardClaimRecord, RewardTask, User } from '../types';
 import { api } from '../services/api';
 import type { TelegramWalletOption } from '../utils/walletConnect';
 import { CaseView } from './CaseView';
@@ -92,7 +95,7 @@ interface TelegramMiniAppViewProps {
   onConnectWalletForTopUp?: () => Promise<any>;
 }
 
-type MiniTab = 'cases' | 'create' | 'upgrade' | 'battle' | 'profile' | 'topup';
+type MiniTab = 'cases' | 'create' | 'upgrade' | 'rewards' | 'battle' | 'profile' | 'topup';
 
 type TabDef = {
   id: MiniTab;
@@ -104,6 +107,7 @@ const BASE_TABS: TabDef[] = [
   { id: 'cases', label: 'Cases', icon: Boxes },
   { id: 'create', label: 'Create', icon: PlusCircle },
   { id: 'upgrade', label: 'Upgrade', icon: Coins },
+  { id: 'rewards', label: 'Rewards', icon: Gift },
   { id: 'battle', label: 'Battle', icon: Swords },
   { id: 'profile', label: 'Profile', icon: UserCircle2 },
 ];
@@ -314,6 +318,104 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     });
   }, [inventory, caseMap]);
 
+  const [rewardsSubTab, setRewardsSubTab] = useState<'social' | 'casefun' | 'history'>('social');
+  const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
+  const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
+  const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
+  const [rewardsLoading, setRewardsLoading] = useState(false);
+  const [claimingTaskId, setClaimingTaskId] = useState<string | null>(null);
+  const [rewardError, setRewardError] = useState<string | null>(null);
+  const [activatedTasks, setActivatedTasks] = useState<Set<string>>(() => {
+    try { const s = sessionStorage.getItem('cf_activated_tasks'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
+  });
+
+  const markTaskActivated = useCallback((taskId: string) => {
+    setActivatedTasks((prev) => {
+      const next = new Set(prev); next.add(taskId);
+      try { sessionStorage.setItem('cf_activated_tasks', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
+  useEffect(() => { setRewardPoints(user?.rewardPoints ?? 0); }, [user?.rewardPoints]);
+
+  const loadRewardTasks = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) return;
+    setRewardsLoading(true);
+    try {
+      const res = await api.getRewardTasks();
+      setRewardTasks(Array.isArray(res.data?.tasks) ? res.data.tasks : []);
+      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+    } catch {} finally { setRewardsLoading(false); }
+  }, [isAuthenticated, user?.id]);
+
+  const loadRewardHistory = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) return;
+    try {
+      const res = await api.getRewardHistory();
+      setRewardHistory(Array.isArray(res.data?.claims) ? res.data.claims : []);
+    } catch {}
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
+  useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
+
+  useEffect(() => {
+    const onFocus = () => { loadRewardTasks(); };
+    window.addEventListener('focus', onFocus);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
+  }, [loadRewardTasks]);
+
+  const handleClaimReward = async (taskId: string) => {
+    setClaimingTaskId(taskId);
+    setRewardError(null);
+    try {
+      const res = await api.claimReward(taskId);
+      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+      await loadRewardTasks();
+    } catch (err: any) {
+      setRewardError(err?.message || 'Failed to claim reward');
+    } finally { setClaimingTaskId(null); }
+  };
+
+  const taskNeedsAction = (task: RewardTask) => !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
+
+  const getTaskActionUrl = (task: RewardTask): string | null => {
+    if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
+    if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
+    if (task.type === 'SUBSCRIBE_TELEGRAM') return 'https://t.me/CaseFun_Chat';
+    return task.targetUrl || null;
+  };
+
+  const openExternalUrl = useCallback((url: string, taskId: string) => {
+    markTaskActivated(taskId);
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (tg) {
+      const isTgLink = url.startsWith('https://t.me/');
+      if (isTgLink && typeof tg.openTelegramLink === 'function') tg.openTelegramLink(url);
+      else if (typeof tg.openLink === 'function') tg.openLink(url);
+      else window.open(url, '_blank');
+    } else {
+      window.open(url, '_blank');
+    }
+  }, [markTaskActivated]);
+
+  const renderTaskTitle = useCallback((task: RewardTask) => {
+    const linkClass = "text-web3-accent underline hover:text-web3-accent/80 cursor-pointer";
+    const tweetTypes = ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'];
+    if (task.targetUrl && tweetTypes.includes(task.type)) {
+      const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
+      return <>{verb} <span onClick={() => openExternalUrl(task.targetUrl!, task.id)} className={linkClass}>this post</span></>;
+    }
+    if (task.type === 'FOLLOW_TWITTER') return <>Follow <span onClick={() => openExternalUrl('https://x.com/casefunnet', task.id)} className={linkClass}>@casefunnet</span></>;
+    if (task.type === 'SUBSCRIBE_TELEGRAM') return <>Join <span onClick={() => openExternalUrl('https://t.me/CaseFun_Chat', task.id)} className={linkClass}>Telegram channel</span></>;
+    return task.title;
+  }, [openExternalUrl]);
+
+  const hasActiveRewards = rewardTasks.some((t) => !t.claimed && !t.onCooldown);
+
   const isSecondaryTab = activeTab === 'topup';
 
   const goToTab = (tab: MiniTab) => {
@@ -426,6 +528,146 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
       />
+    );
+
+    if (activeTab === 'rewards') return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[11px] text-gray-400">
+            Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
+          </div>
+          <div className="flex gap-1">
+            <button type="button" onClick={() => setRewardsSubTab('social')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
+              Social
+              {rewardsSubTab !== 'social' && rewardTasks.some((t) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            </button>
+            <button type="button" onClick={() => setRewardsSubTab('casefun')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'casefun' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
+              CaseFun
+              {rewardsSubTab !== 'casefun' && rewardTasks.some((t) => t.category === 'CASEFUN' && !t.claimed && !t.onCooldown) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            </button>
+            <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>History</button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+          {rewardsSubTab === 'social' && (() => {
+            const socialTasks = rewardTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
+            return (
+            <div className="space-y-1.5">
+              {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
+              {!rewardsLoading && socialTasks.length === 0 && (
+                <div className="text-center py-8">
+                  <Gift size={24} className="mx-auto text-gray-600 mb-2" />
+                  <div className="text-[11px] text-gray-500">All social tasks completed!</div>
+                  <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
+                </div>
+              )}
+              {socialTasks.map((task) => {
+                const needsAction = taskNeedsAction(task);
+                const isActivated = activatedTasks.has(task.id);
+                const showClaim = task.completed && !task.locked && (!needsAction || isActivated);
+                const showGo = task.completed && !task.locked && needsAction && !isActivated;
+                const actionUrl = getTaskActionUrl(task);
+                return (
+                <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
+                  <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : isActivated ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
+                    {task.locked ? <Lock size={10} /> : <Gift size={11} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-white font-medium">{renderTaskTitle(task)}</div>
+                    {task.locked && <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
+                    {showGo && actionUrl && (
+                      <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-web3-accent/40 text-web3-accent active:scale-[0.97] transition flex items-center gap-1">Go <ExternalLink size={10} /></button>
+                    )}
+                    {showClaim && (
+                      <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
+                        {claimingTaskId === task.id ? '…' : 'Claim'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                );
+              })}
+              {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
+            </div>
+            );
+          })()}
+
+          {rewardsSubTab === 'casefun' && (() => {
+            const cfTasks = rewardTasks.filter((t) => t.category === 'CASEFUN');
+            const now = Date.now();
+            return (
+            <div className="space-y-1.5">
+              {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
+              {!rewardsLoading && cfTasks.length === 0 && (
+                <div className="text-center py-8">
+                  <Rocket size={24} className="mx-auto text-gray-600 mb-2" />
+                  <div className="text-[11px] text-gray-500">No CaseFun tasks yet!</div>
+                  <div className="text-[10px] text-gray-600 mt-1">Platform challenges coming soon</div>
+                </div>
+              )}
+              {cfTasks.map((task: any) => {
+                const progress = task.progress ?? 0;
+                const target = task.targetCount ?? 1;
+                const pct = Math.min(100, Math.round((progress / target) * 100));
+                const isComplete = progress >= target && !task.onCooldown;
+                const isCooldown = task.onCooldown && task.cooldownEndsAt;
+                const isDone = task.claimed && !task.onCooldown;
+                let timeLabel = task.activeUntil ? `Until ${new Date(task.activeUntil).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}` : 'Always active';
+                let cooldownLabel = '';
+                if (isCooldown) {
+                  const ms = new Date(task.cooldownEndsAt).getTime() - now;
+                  if (ms > 0) { const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000); cooldownLabel = h > 0 ? `${h}h ${m}m` : `${m}m`; }
+                }
+                return (
+                <div key={task.id} className={`px-3 py-2.5 rounded-xl border bg-black/20 ${isCooldown || isDone ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] text-white font-medium">{task.title}</div>
+                      <div className="text-[10px] text-gray-500">{task.description} · <span className="text-gray-600">{timeLabel}</span></div>
+                    </div>
+                    <span className="text-[10px] font-mono text-web3-accent shrink-0 ml-2">+{task.reward} CFP</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden mb-1.5">
+                    <div className={`h-full rounded-full transition-all duration-500 ${isComplete ? 'bg-web3-success' : 'bg-web3-accent'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-gray-500">
+                      {isCooldown ? <span className="text-yellow-500">Next in {cooldownLabel}</span> : isDone ? <span className="text-gray-600">Completed</span> : <span>{pct}%</span>}
+                    </div>
+                    {isComplete && (
+                      <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
+                        {claimingTaskId === task.id ? '…' : 'Claim'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                );
+              })}
+              {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
+            </div>
+            );
+          })()}
+
+          {rewardsSubTab === 'history' && (
+            <div className="space-y-1">
+              {rewardHistory.length === 0 && <div className="text-xs text-gray-600 text-center py-8">No rewards claimed yet</div>}
+              {rewardHistory.map((claim) => (
+                <div key={claim.id} className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/[0.06] bg-black/15">
+                  <div>
+                    <div className="text-[11px] text-white">{claim.taskTitle}</div>
+                    <div className="text-[10px] text-gray-600">{new Date(claim.claimedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
+                  <span className="text-[11px] font-mono text-web3-accent font-bold">+{claim.reward} CFP</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     );
 
     if (activeTab === 'battle') return (
@@ -754,6 +996,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           {BASE_TABS.map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
+            const showDot = tab.id === 'rewards' && !active && hasActiveRewards;
             return (
               <button
                 key={tab.id} type="button"
@@ -761,8 +1004,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-all duration-150 select-none"
                 style={active ? { background: 'rgba(102,252,241,0.08)' } : undefined}
               >
-                <span className="flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
                   <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+                  {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
                 </span>
                 <span
                   className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150"
