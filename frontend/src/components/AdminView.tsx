@@ -99,7 +99,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     targetUrl: '',
     reward: 1,
   });
-  const [newPromo, setNewPromo] = useState({ code: '', amount: '', maxUses: '100', usesPerUser: '1' });
+  const [newPromo, setNewPromo] = useState({ code: '', amount: '', maxUses: '', usesPerUser: '' });
   const [filters, setFilters] = useState({
     userRole: 'all',
     userStatus: 'all',
@@ -1946,65 +1946,84 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'promo' && (
             <div className="space-y-4">
-              <div className="text-xs text-gray-500 mb-2">Create promo codes that transfer balance from the main admin wallet to users who activate them. Funds are deducted from admin balance on each activation.</div>
-              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-4 space-y-3">
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Create Promo Code</div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <input
-                    value={newPromo.code}
-                    onChange={(e) => setNewPromo((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
-                    placeholder="CODE"
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 font-mono uppercase"
-                  />
-                  <input
-                    value={newPromo.amount}
-                    onChange={(e) => setNewPromo((p) => ({ ...p, amount: e.target.value }))}
-                    placeholder="Amount (₮)"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  />
-                  <input
-                    value={newPromo.maxUses}
-                    onChange={(e) => setNewPromo((p) => ({ ...p, maxUses: e.target.value }))}
-                    placeholder="Max activations"
-                    type="number"
-                    min="1"
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  />
-                  <input
-                    value={newPromo.usesPerUser}
-                    onChange={(e) => setNewPromo((p) => ({ ...p, usesPerUser: e.target.value }))}
-                    placeholder="Per user"
-                    type="number"
-                    min="1"
-                    className="px-3 py-2 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
-                  />
+              <div className="text-xs text-gray-500 mb-4">When a user activates a promo code, the specified amount is transferred from your main admin wallet balance to their account. Make sure your admin balance has enough funds.</div>
+              <div className="rounded-xl border border-white/[0.08] bg-black/20 p-5 space-y-4">
+                <div className="text-sm font-bold text-white mb-1">New Promo Code</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Promo Code</label>
+                    <input
+                      value={newPromo.code}
+                      onChange={(e) => setNewPromo((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
+                      placeholder="e.g. WELCOME50"
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 font-mono uppercase placeholder-gray-600"
+                    />
+                    <div className="text-[10px] text-gray-600">The code users will enter to activate. Auto-capitalized.</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Reward Amount (₮)</label>
+                    <input
+                      value={newPromo.amount}
+                      onChange={(e) => setNewPromo((p) => ({ ...p, amount: e.target.value }))}
+                      placeholder="e.g. 5.00"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
+                    />
+                    <div className="text-[10px] text-gray-600">How much ₮ each user receives when they activate this code.</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Total Activations</label>
+                    <input
+                      value={newPromo.maxUses}
+                      onChange={(e) => setNewPromo((p) => ({ ...p, maxUses: e.target.value }))}
+                      placeholder="e.g. 100"
+                      type="number"
+                      min="1"
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
+                    />
+                    <div className="text-[10px] text-gray-600">Max number of times this code can be used across all users.</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-gray-400 font-medium">Limit Per User</label>
+                    <input
+                      value={newPromo.usesPerUser}
+                      onChange={(e) => setNewPromo((p) => ({ ...p, usesPerUser: e.target.value }))}
+                      placeholder="e.g. 1"
+                      type="number"
+                      min="1"
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
+                    />
+                    <div className="text-[10px] text-gray-600">How many times a single user can use this code. Usually 1.</div>
+                  </div>
                 </div>
-                <button
-                  disabled={!newPromo.code.trim() || !Number(newPromo.amount) || saving !== null}
-                  onClick={async () => {
-                    setSaving('new-promo');
-                    try {
-                      await api.createAdminPromoCode({
-                        code: newPromo.code.trim(),
-                        amount: Number(newPromo.amount),
-                        maxUses: Number(newPromo.maxUses) || 100,
-                        usesPerUser: Number(newPromo.usesPerUser) || 1,
-                      });
-                      setNewPromo({ code: '', amount: '', maxUses: '100', usesPerUser: '1' });
-                      await load();
-                    } catch (err: any) {
-                      window.alert(err?.message || 'Failed');
-                    } finally {
-                      setSaving(null);
-                    }
-                  }}
-                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
-                >
-                  {saving === 'new-promo' ? 'Creating...' : 'Create'}
-                </button>
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    disabled={!newPromo.code.trim() || !Number(newPromo.amount) || !Number(newPromo.maxUses) || !Number(newPromo.usesPerUser) || saving !== null}
+                    onClick={async () => {
+                      setSaving('new-promo');
+                      try {
+                        await api.createAdminPromoCode({
+                          code: newPromo.code.trim(),
+                          amount: Number(newPromo.amount),
+                          maxUses: Number(newPromo.maxUses),
+                          usesPerUser: Number(newPromo.usesPerUser),
+                        });
+                        setNewPromo({ code: '', amount: '', maxUses: '', usesPerUser: '' });
+                        await load();
+                      } catch (err: any) {
+                        window.alert(err?.message || 'Failed');
+                      } finally {
+                        setSaving(null);
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40 transition"
+                  >
+                    {saving === 'new-promo' ? 'Creating...' : 'Create Promo Code'}
+                  </button>
+                  <span className="text-[10px] text-gray-600">All fields are required</span>
+                </div>
               </div>
 
               <div className="space-y-2">
