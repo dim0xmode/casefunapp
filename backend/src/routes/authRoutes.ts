@@ -13,6 +13,7 @@ import {
   logout,
   getProfile,
 } from '../controllers/authController.js';
+import { completeTwitterLinkPublic } from '../controllers/userController.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -27,6 +28,8 @@ router.post('/telegram/wallet-link/start', requireAuth, startTelegramWalletBrows
 router.get('/telegram/wallet-link/claim', claimTelegramWalletBrowserLink);
 router.post('/telegram/topup-link/start', requireAuth, startTelegramTopUpBrowserLink);
 router.get('/telegram/topup-link/claim', claimTelegramTopUpBrowserLink);
+router.get('/twitter/callback', completeTwitterLinkPublic);
+router.post('/twitter/callback', completeTwitterLinkPublic);
 router.post('/logout', logout);
 router.get('/profile', requireAuth, getProfile);
 

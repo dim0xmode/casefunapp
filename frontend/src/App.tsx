@@ -988,6 +988,16 @@ const App = () => {
     const errorDescription = params.get('error_description');
     if (!code && !error) return;
 
+    const hasWalletProvider = typeof (window as any).ethereum !== 'undefined';
+    const hasTgWebApp = !!(window as any)?.Telegram?.WebApp?.initData;
+    const canAuthenticate = hasWalletProvider || hasTgWebApp;
+
+    if (code && state && !canAuthenticate) {
+      const backendCallbackUrl = `${import.meta.env.VITE_API_URL || '/api'}/auth/twitter/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+      window.location.href = backendCallbackUrl;
+      return;
+    }
+
     window.history.replaceState({}, '', window.location.pathname);
     setActiveTab('profile');
 

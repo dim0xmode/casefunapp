@@ -1097,6 +1097,86 @@ export const linkTwitterAccount = async (req: Request, res: Response, next: Next
   }
 };
 
+export const completeTwitterLinkPublic = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const code = String(req.query.code || req.body?.code || '').trim();
+    const state = String(req.query.state || req.body?.state || '').trim();
+    const error = String(req.query.error || '').trim();
+
+    const tgAppUrl = 'https://t.me/casefun_bot';
+
+    const sendHtml = (title: string, message: string, success: boolean) => {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0e17;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+.card{max-width:380px;width:90%;padding:2rem;border-radius:1rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);text-align:center}
+.icon{font-size:3rem;margin-bottom:1rem}
+h1{font-size:1.25rem;margin-bottom:0.75rem;color:${success ? '#66FCF1' : '#f87171'}}
+p{font-size:0.9rem;color:#9ca3af;line-height:1.5;margin-bottom:1.25rem}
+a{display:inline-block;padding:0.75rem 1.5rem;border-radius:0.75rem;background:linear-gradient(135deg,#66FCF1,#8B5CF6);color:#0a0e17;font-weight:700;text-decoration:none;font-size:0.95rem}
+a:active{opacity:0.8}</style></head>
+<body><div class="card"><div class="icon">${success ? '✅' : '❌'}</div><h1>${title}</h1><p>${message}</p>
+<a href="${tgAppUrl}">Open CaseFun App</a></div></body></html>`);
+    };
+
+    if (error) {
+      return sendHtml('Link failed', `Twitter returned an error: ${error}`, false);
+    }
+    if (!code || !state) {
+      return sendHtml('Link failed', 'Missing authorization data. Please try again from the app.', false);
+    }
+
+    const parsedState = parseTwitterState(state);
+    if (!parsedState) {
+      return sendHtml('Link expired', 'The authorization link has expired. Please try again from the app.', false);
+    }
+
+    const userId = parsedState.userId;
+
+    const twitterTokens = await exchangeTwitterCode(code, parsedState.verifier);
+    const twitterProfile = await fetchTwitterProfile(twitterTokens.accessToken);
+
+    const existing = await prisma.user.findFirst({
+      where: { twitterId: twitterProfile.id, NOT: { id: userId } },
+      select: { id: true },
+    });
+    if (existing) {
+      return sendHtml('Already linked', 'This Twitter account is already linked to another user.', false);
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twitterId: twitterProfile.id,
+        twitterUsername: twitterProfile.username,
+        twitterName: twitterProfile.name,
+        twitterLinkedAt: new Date(),
+        twitterAccessToken: twitterTokens.accessToken,
+        twitterRefreshToken: twitterTokens.refreshToken,
+      },
+    });
+
+    return sendHtml(
+      'Twitter connected!',
+      `@${twitterProfile.username} has been linked to your account. You can close this tab and return to the app.`,
+      true
+    );
+  } catch (error: any) {
+    const msg = error?.message || 'Something went wrong';
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(error?.statusCode || 500).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Error</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0e17;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+.card{max-width:380px;width:90%;padding:2rem;border-radius:1rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);text-align:center}
+h1{font-size:1.25rem;margin-bottom:0.75rem;color:#f87171}
+p{font-size:0.9rem;color:#9ca3af;line-height:1.5;margin-bottom:1.25rem}
+a{display:inline-block;padding:0.75rem 1.5rem;border-radius:0.75rem;background:linear-gradient(135deg,#66FCF1,#8B5CF6);color:#0a0e17;font-weight:700;text-decoration:none;font-size:0.95rem}</style></head>
+<body><div class="card"><div style="font-size:3rem;margin-bottom:1rem">❌</div><h1>Error</h1><p>${msg}</p>
+<a href="https://t.me/casefun_bot">Open CaseFun App</a></div></body></html>`);
+  }
+};
+
 export const unlinkTwitterAccount = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = String((req as any).userId || '').trim();
