@@ -75,7 +75,7 @@ model User {
   twitterLinkedAt DateTime?
   twitterAccessToken  String?
   twitterRefreshToken String?
-  rewardPoints  Int      @default(0)
+  rewardPoints  Float    @default(0)
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
   banReason     String?
@@ -465,12 +465,14 @@ model RewardTask {
 model RewardClaim {
   id        String      @id @default(cuid())
   userId    String
-  taskId    String
-  reward    Int
+  taskId    String?
+  reward    Float
+  type      String      @default("TASK")
+  metadata  Json?
   claimedAt DateTime    @default(now())
 
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task      RewardTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task      RewardTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([taskId])

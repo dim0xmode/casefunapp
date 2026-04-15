@@ -13,7 +13,7 @@ import { ImageWithMeta } from './ui/ImageWithMeta';
 import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { api } from '../services/api';
-import { formatTokenValue, getLevelInfo } from '../utils/number';
+import { formatTokenValue, getLevelInfo, formatCfp } from '../utils/number';
 
 const formatWalletAddress = (address: string): string => {
   if (!address) return '';
@@ -1019,7 +1019,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {rewardPoints > 0 && (
                 <>
                   <span className="text-gray-600">·</span>
-                  <span className="font-mono text-sm font-bold text-web3-accent tabular-nums">{rewardPoints} CFP</span>
+                  <span className="font-mono text-sm font-bold text-web3-accent tabular-nums">{formatCfp(rewardPoints)} CFP</span>
                 </>
               )}
             </div>
@@ -1157,7 +1157,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         <div className="text-[11px] text-gray-400 leading-snug">
                           Confirmed invites:{' '}
                           <span className="text-white font-bold tabular-nums">{referralInvited}</span>
-                          <span className="block mt-1 text-[10px] text-gray-600">Counted after your invitee makes the first confirmed on-chain wallet deposit.</span>
+                          <span className="block mt-1 text-[10px] text-gray-600">Counted after your invitee links both Twitter and Telegram. You earn 8 CFP per referral + 10% of their task rewards.</span>
                         </div>
                         {referralUrl && (
                           <div className="flex flex-col gap-1.5 pt-0.5">
@@ -1228,7 +1228,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[11px] text-gray-400">
-                  Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
+                  Total: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
                 </div>
                 <div className="flex gap-1">
                   <button type="button" onClick={() => setRewardsSubTab('tasks')} className={`text-[10px] px-2 py-0.5 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'tasks' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
@@ -1367,15 +1367,30 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {rewardsSubTab === 'history' && (
                 <div className="space-y-1">
                   {rewardHistory.length === 0 && <div className="text-xs text-gray-600">No rewards claimed yet</div>}
-                  {rewardHistory.map((claim) => (
+                  {rewardHistory.map((claim) => {
+                    const meta = claim.metadata as Record<string, any> | null;
+                    let title = claim.taskTitle || 'Reward';
+                    let subtitle = '';
+                    if (claim.type === 'REFERRAL_BONUS') {
+                      title = 'Referral confirmed';
+                      subtitle = 'Invited user linked Twitter & Telegram';
+                    } else if (claim.type === 'REFERRAL_KICKBACK') {
+                      const who = meta?.referralUsername || 'referral';
+                      const pts = meta?.taskReward ?? 0;
+                      title = `Referral reward (10%)`;
+                      subtitle = `${who} earned ${formatCfp(pts)} CFP — you received 10%`;
+                    }
+                    return (
                     <div key={claim.id} className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/[0.06] bg-black/15">
-                      <div>
-                        <div className="text-[11px] text-white">{claim.taskTitle}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] text-white truncate">{title}</div>
+                        {subtitle && <div className="text-[10px] text-gray-500 truncate">{subtitle}</div>}
                         <div className="text-[10px] text-gray-600">{new Date(claim.claimedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                       </div>
-                      <span className="text-[11px] font-mono text-web3-accent font-bold">+{claim.reward} CFP</span>
+                      <span className="text-[11px] font-mono text-web3-accent font-bold shrink-0 ml-2">+{formatCfp(claim.reward)} CFP</span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

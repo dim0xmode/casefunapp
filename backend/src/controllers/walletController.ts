@@ -68,17 +68,6 @@ const recordConfirmedDeposit = async (params: {
       },
     });
 
-    if (updatedUser.referredById && !updatedUser.referralConfirmedAt) {
-      await txDb.user.update({
-        where: { id: userId },
-        data: { referralConfirmedAt: new Date() },
-      });
-      await txDb.user.update({
-        where: { id: updatedUser.referredById },
-        data: { referralConfirmedCount: { increment: 1 } },
-      });
-    }
-
     return { updatedUser, deposit };
   });
 

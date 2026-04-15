@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import prisma from '../config/database.js';
 import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { awardReferralKickback } from '../utils/referralRewards.js';
 
 const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
 const OFFICIAL_TWITTER_USERNAME = 'casefunnet';
@@ -553,6 +554,8 @@ export const claimReward = async (
       return { claim, totalPoints: updatedUser.rewardPoints };
     });
 
+    void awardReferralKickback(prisma, userId, task.reward, task.title).catch(() => {});
+
     res.json({
       status: 'success',
       data: {
@@ -588,9 +591,11 @@ export const getRewardHistory = async (
       data: {
         claims: claims.map((c) => ({
           id: c.id,
-          taskTitle: c.task.title,
-          taskType: c.task.type,
+          taskTitle: c.task?.title ?? null,
+          taskType: c.task?.type ?? null,
           reward: c.reward,
+          type: c.type,
+          metadata: c.metadata,
           claimedAt: c.claimedAt,
         })),
       },

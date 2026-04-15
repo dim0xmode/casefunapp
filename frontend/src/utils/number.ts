@@ -17,6 +17,11 @@ export const getLevelInfo = (cfp: number) => {
   return { level, progress, xpInLevel, xpNeeded, isMaxLevel, totalCfp: cfp, nextLevelCfp: nextCeil };
 };
 
+export const formatCfp = (value: number): string => {
+  const n = Math.round(value * 10) / 10;
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+};
+
 export const formatShortfallUp = (value: number): string => {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   const roundedUp = Math.ceil(safeValue * 100) / 100;

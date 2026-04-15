@@ -7,6 +7,7 @@ import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
 import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
+import { checkAndConfirmReferral } from '../utils/referralRewards.js';
 import {
   verifyTelegramWebAppInitData,
   verifyTelegramLoginPayload,
@@ -797,6 +798,8 @@ export const linkTelegramAccount = async (req: Request, res: Response, next: Nex
       },
     });
 
+    void checkAndConfirmReferral(prisma, userId).catch(() => {});
+
     res.json({
       status: 'success',
       data: {
@@ -850,6 +853,8 @@ export const linkTelegramWebAccount = async (req: Request, res: Response, next: 
         telegramLinkedAt: new Date(),
       },
     });
+
+    void checkAndConfirmReferral(prisma, userId).catch(() => {});
 
     res.json({
       status: 'success',
@@ -1086,6 +1091,8 @@ export const linkTwitterAccount = async (req: Request, res: Response, next: Next
       },
     });
 
+    void checkAndConfirmReferral(prisma, userId).catch(() => {});
+
     res.json({
       status: 'success',
       data: {
@@ -1156,6 +1163,8 @@ a:active{opacity:0.8}</style></head>
         twitterRefreshToken: twitterTokens.refreshToken,
       },
     });
+
+    void checkAndConfirmReferral(prisma, userId).catch(() => {});
 
     return sendHtml(
       'Twitter connected!',

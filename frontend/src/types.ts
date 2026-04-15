@@ -158,9 +158,11 @@ export interface RewardTask {
 
 export interface RewardClaimRecord {
   id: string;
-  taskTitle: string;
-  taskType: RewardTaskType;
+  taskTitle: string | null;
+  taskType: RewardTaskType | null;
   reward: number;
+  type?: 'TASK' | 'REFERRAL_BONUS' | 'REFERRAL_KICKBACK';
+  metadata?: Record<string, any> | null;
   claimedAt: string;
 }
 

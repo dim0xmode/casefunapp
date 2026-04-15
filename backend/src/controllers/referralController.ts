@@ -17,7 +17,7 @@ export const getReferralCode = async (
 
     let user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { referralCode: true, referralConfirmedCount: true, role: true },
+      select: { referralCode: true, referralConfirmedCount: true, role: true, twitterId: true, telegramId: true },
     });
     if (!user) {
       return next(new AppError('User not found', 404));
@@ -25,13 +25,9 @@ export const getReferralCode = async (
 
     const role = String(user.role || '').toUpperCase();
     if (role !== 'ADMIN' && role !== 'MODERATOR') {
-      const hasDeposit = await prisma.transaction.findFirst({
-        where: { userId, amount: { gt: 0 } },
-        select: { id: true },
-      });
-      if (!hasDeposit) {
+      if (!user.twitterId || !user.telegramId) {
         return next(
-          new AppError('Referral link unlocks after your first deposit.', 403)
+          new AppError('Link both Twitter and Telegram to unlock your referral link.', 403)
         );
       }
     }
@@ -41,7 +37,7 @@ export const getReferralCode = async (
       user = await prisma.user.update({
         where: { id: userId },
         data: { referralCode: code },
-        select: { referralCode: true, referralConfirmedCount: true, role: true },
+        select: { referralCode: true, referralConfirmedCount: true, role: true, twitterId: true, telegramId: true },
       });
     }
 
