@@ -571,7 +571,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       <div className="flex flex-col h-full min-h-0">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[11px] text-gray-400">
-            Total: <span className="text-web3-accent font-mono font-bold">{rewardPoints} CFP</span>
+            Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
           </div>
           <div className="flex gap-1">
             <button type="button" onClick={() => setRewardsSubTab('social')} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>Social</button>
