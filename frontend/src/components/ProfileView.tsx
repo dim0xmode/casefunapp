@@ -181,7 +181,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [referralError, setReferralError] = useState<string | null>(null);
   const canShowReferralLink = true;
   const [socialRewardsTab, setSocialRewardsTab] = useState<'social' | 'rewards'>('social');
-  const [rewardsSubTab, setRewardsSubTab] = useState<'tasks' | 'casefun' | 'history'>('tasks');
+  const [rewardsSubTab, setRewardsSubTab] = useState<'earn' | 'history'>('earn');
   const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
@@ -1228,30 +1228,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[11px] text-gray-400">
-                  Total: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
+                  Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
                 </div>
                 <div className="flex gap-1">
-                  <button type="button" onClick={() => setRewardsSubTab('tasks')} className={`text-[10px] px-2 py-0.5 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'tasks' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                    Social
-                    {rewardsSubTab !== 'tasks' && rewardTasks.some((t: any) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
-                  </button>
-                  <button type="button" onClick={() => setRewardsSubTab('casefun')} className={`text-[10px] px-2 py-0.5 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'casefun' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                    CaseFun
-                    {rewardsSubTab !== 'casefun' && rewardTasks.some((t: any) => t.category === 'CASEFUN' && !t.claimed && !t.onCooldown) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+                  <button type="button" onClick={() => setRewardsSubTab('earn')} className={`text-[10px] px-2 py-0.5 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'earn' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                    Earn
+                    {rewardsSubTab !== 'earn' && rewardTasks.some((t: any) => !t.claimed && !t.onCooldown && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
                   </button>
                   <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>History</button>
                 </div>
               </div>
 
-              {rewardsSubTab === 'tasks' && (() => {
+              {rewardsSubTab === 'earn' && (() => {
                 const socialTasks = rewardTasks.filter((t: any) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
+                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
+                const now = Date.now();
+                const hasAny = socialTasks.length > 0 || cfTasks.length > 0;
                 return (
                 <div className="space-y-1.5">
                   {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-                  {!rewardsLoading && socialTasks.length === 0 && (
+                  {!rewardsLoading && !hasAny && (
                     <div className="text-center py-6">
                       <Gift size={20} className="mx-auto text-gray-600 mb-2" />
-                      <div className="text-[11px] text-gray-500">All social tasks completed!</div>
+                      <div className="text-[11px] text-gray-500">All tasks completed!</div>
                       <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
                     </div>
                   )}
@@ -1284,24 +1283,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     );
                   })}
-                  {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
-                </div>
-                );
-              })()}
-
-              {rewardsSubTab === 'casefun' && (() => {
-                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
-                const now = Date.now();
-                return (
-                <div className="space-y-1.5">
-                  {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-                  {!rewardsLoading && cfTasks.length === 0 && (
-                    <div className="text-center py-6">
-                      <Rocket size={20} className="mx-auto text-gray-600 mb-2" />
-                      <div className="text-[11px] text-gray-500">No CaseFun tasks yet!</div>
-                      <div className="text-[10px] text-gray-600 mt-1">Platform challenges coming soon</div>
-                    </div>
-                  )}
                   {cfTasks.map((task: any) => {
                     const progress = task.progress ?? 0;
                     const target = task.targetCount ?? 1;

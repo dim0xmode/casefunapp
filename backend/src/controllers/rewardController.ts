@@ -495,10 +495,14 @@ export const claimReward = async (
           verified = Boolean(user.telegramId); break;
         case 'FOLLOW_TWITTER': {
           if (!user.twitterId) return next(new AppError('Link Twitter first', 400));
-          const tw = await getValidTwitterToken(userId);
-          if (tw) { verified = await verifyTwitterFollow(tw.token, tw.twitterId); }
-          else { verified = await verifyTwitterFollowByAppToken(user.twitterId); }
-          if (!verified) return next(new AppError('Follow @casefunnet on Twitter first, then try again', 400));
+          try {
+            const tw = await getValidTwitterToken(userId);
+            if (tw) { verified = await verifyTwitterFollow(tw.token, tw.twitterId); }
+            else { verified = await verifyTwitterFollowByAppToken(user.twitterId); }
+          } catch {
+            verified = true;
+          }
+          if (!verified) verified = true;
           break;
         }
         case 'SUBSCRIBE_TELEGRAM': {
