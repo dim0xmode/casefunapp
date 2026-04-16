@@ -484,6 +484,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const goToTab = (tab: MiniTab) => {
     if (BASE_TABS.find((t) => t.id === tab)) setLastPrimaryTab(tab);
     setActiveTab(tab);
+    if (tab === 'rewards') loadRewardTasks();
   };
 
   // ── Top-up logic ────────────────────────────────────────────────────────────
@@ -568,7 +569,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const renderTabContent = () => {
     if (activeTab === 'cases') return (
       <CaseView
-        cases={cases} onOpenCase={onOpenCase} balance={balance}
+        cases={cases} onOpenCase={async (caseId, count) => { const items = await onOpenCase(caseId, count); loadRewardTasks(); return items; }} balance={balance}
         onOpenTopUp={onOpenTopUp} userName={user.username}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
@@ -587,7 +588,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
     if (activeTab === 'upgrade') return (
       <UpgradeView
-        inventory={activeInventory} onUpgrade={onUpgrade}
+        inventory={activeInventory} onUpgrade={async (items, mult) => { const res = await onUpgrade(items, mult); loadRewardTasks(); return res; }}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
       />
@@ -833,7 +834,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       <BattleView
         cases={activeCases} userName={user.username}
         userAvatar={user.avatar} userAvatarMeta={user.avatarMeta}
-        onBattleFinish={onBattleFinish} balance={balance}
+        onBattleFinish={(...args) => { const res = onBattleFinish(...args); loadRewardTasks(); return res; }} balance={balance}
         onChargeBattle={onChargeBattle} onOpenTopUp={onOpenTopUp}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
