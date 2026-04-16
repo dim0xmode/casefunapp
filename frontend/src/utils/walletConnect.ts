@@ -52,7 +52,14 @@ export const patchWindowOpenForTelegram = (): (() => void) | null => {
   const orig = window.open.bind(window);
   window.open = function patched(url?: string | URL, target?: string, features?: string) {
     const s = String(url ?? '');
-    if (s && HTTP_RE.test(s)) {
+    if (!s) return orig(url as string, target, features);
+
+    // Suppress raw wc: / cbwallet: / metamask: scheme URIs — they break
+    // inside Telegram WebView ("Invalid deeplink"). The WC relay handles
+    // the actual connection via WebSocket; native scheme links are redundant here.
+    if (/^(wc|cbwallet|metamask|trust|okx):/i.test(s)) return null;
+
+    if (HTTP_RE.test(s)) {
       try { tg.openLink(s, { try_instant_view: false }); } catch {
         try { tg.openLink(s); } catch { return orig(s, target, features); }
       }
