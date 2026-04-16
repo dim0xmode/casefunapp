@@ -1088,8 +1088,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       ) : (
         <div className="shrink-0 px-3 pt-2 pb-1.5">
           <div className="flex items-center gap-2.5">
-            <button type="button" onClick={() => setFeedbackOpen(true)} className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.05] border border-white/[0.08] active:scale-95 transition" title="Feedback">
-              <MessageCircle size={16} className="text-gray-400" />
+            <button type="button" onClick={() => setFeedbackOpen(true)} className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition" style={{ background: 'rgba(102,252,241,0.1)', border: '1px solid rgba(102,252,241,0.25)' }} title="Feedback">
+              <MessageCircle size={15} className="text-web3-accent" />
             </button>
             <button type="button" onClick={() => goToTab('profile')} className="shrink-0 w-10 h-10 rounded-full overflow-hidden border-2 border-web3-accent/40 active:scale-95 transition relative">
               {user.avatar ? (
