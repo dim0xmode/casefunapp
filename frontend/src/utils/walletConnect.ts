@@ -45,26 +45,50 @@ const clearStaleWcStorage = () => {
  * Patch window.open so the WC Modal's deep links go through tg.openLink().
  * Returns a restore function.
  */
+const NATIVE_TO_UNIVERSAL: Record<string, string> = {
+  metamask: 'https://metamask.app.link/wc',
+  cbwallet: 'https://go.cb-w.com/wc',
+  trust: 'https://link.trustwallet.com/wc',
+  okx: 'https://www.okx.com/download',
+};
+
+const nativeSchemeToUniversal = (url: string): string | null => {
+  for (const [scheme, base] of Object.entries(NATIVE_TO_UNIVERSAL)) {
+    if (url.toLowerCase().startsWith(`${scheme}:`)) {
+      const afterScheme = url.replace(/^[^:]+:\/?\/?/, '');
+      const qIdx = afterScheme.indexOf('?');
+      const query = qIdx >= 0 ? afterScheme.slice(qIdx) : '';
+      return query ? `${base}${query}` : base;
+    }
+  }
+  return null;
+};
+
 export const patchWindowOpenForTelegram = (): (() => void) | null => {
   const tg = (window as any)?.Telegram?.WebApp;
   if (!tg?.openLink || typeof tg.openLink !== 'function') return null;
+
+  const openViaTg = (href: string) => {
+    try { tg.openLink(href, { try_instant_view: false }); } catch {
+      try { tg.openLink(href); } catch { /* give up */ }
+    }
+  };
 
   const orig = window.open.bind(window);
   window.open = function patched(url?: string | URL, target?: string, features?: string) {
     const s = String(url ?? '');
     if (!s) return orig(url as string, target, features);
 
-    // Suppress raw wc: / cbwallet: / metamask: scheme URIs — they break
-    // inside Telegram WebView ("Invalid deeplink"). The WC relay handles
-    // the actual connection via WebSocket; native scheme links are redundant here.
-    if (/^(wc|cbwallet|metamask|trust|okx):/i.test(s)) return null;
+    // Raw WC pairing URIs (wc:ecc22…@2?relay-protocol=irn&…) can't be
+    // opened in Telegram WebView — suppress them; the relay handles it.
+    if (/^wc:/i.test(s)) return null;
 
-    if (HTTP_RE.test(s)) {
-      try { tg.openLink(s, { try_instant_view: false }); } catch {
-        try { tg.openLink(s); } catch { return orig(s, target, features); }
-      }
-      return null;
-    }
+    // Native wallet schemes (metamask://, cbwallet://) → HTTP universal links
+    const universal = nativeSchemeToUniversal(s);
+    if (universal) { openViaTg(universal); return null; }
+
+    if (HTTP_RE.test(s)) { openViaTg(s); return null; }
+
     return orig(url as string, target, features);
   };
   return () => { window.open = orig; };
