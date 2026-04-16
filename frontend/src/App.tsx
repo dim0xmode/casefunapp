@@ -843,12 +843,12 @@ const App = () => {
           return;
         }
       }
-      if (!lastAuthAddress) return;
+      if (!lastAuthAddress && !user.id) return;
       void loadProfile().catch(() => {});
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activeTab, lastAuthAddress, user.hasLinkedWallet]);
+  }, [activeTab, lastAuthAddress, user.hasLinkedWallet, user.id]);
 
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);

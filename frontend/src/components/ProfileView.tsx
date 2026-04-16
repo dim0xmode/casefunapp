@@ -669,7 +669,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isEditable, user?.id, canShowReferralLink, isTelegramMiniApp, telegramBotUsername]);
+  }, [isEditable, user?.id, user?.twitterId, user?.telegramId, canShowReferralLink, isTelegramMiniApp, telegramBotUsername]);
 
   const handleSaveName = async () => {
     if (!onUpdateUsername) return;

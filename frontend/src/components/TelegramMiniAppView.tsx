@@ -449,7 +449,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       } finally { if (!cancelled) setReferralLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, user?.twitterId, user?.telegramId]);
 
   const formatLinkedAt = (value?: string | number | null) => {
     if (!value) return null;
