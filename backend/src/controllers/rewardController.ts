@@ -801,11 +801,11 @@ export const adminListRewardClaims = async (
       data: {
         claims: claims.map((c) => ({
           id: c.id,
-          userId: c.user.id,
-          username: c.user.username,
-          taskId: c.task.id,
-          taskTitle: c.task.title,
-          taskType: c.task.type,
+          userId: c.user?.id ?? c.userId,
+          username: c.user?.username ?? 'Deleted',
+          taskId: c.task?.id ?? c.taskId,
+          taskTitle: c.task?.title ?? 'Deleted task',
+          taskType: c.task?.type ?? 'UNKNOWN',
           reward: c.reward,
           claimedAt: c.claimedAt,
         })),
