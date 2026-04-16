@@ -7,11 +7,13 @@ import {
   ExternalLink,
   Gift,
   Lock,
+  MessageCircle,
   PlusCircle,
   Rocket,
   Swords,
   UserCircle2,
   Wallet,
+  X,
 } from 'lucide-react';
 import { parseEther } from 'ethers';
 import { Case, Item, Rarity, RewardClaimRecord, RewardTask, User } from '../types';
@@ -264,6 +266,12 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [battleAlert, setBattleAlert] = useState<{ lobbyId: string; hostName: string; joinerName: string; rounds: number; totalCost: number } | null>(null);
   const battleAlertSeenRef = React.useRef<Set<string>>(new Set());
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [fbTopic, setFbTopic] = useState<'BUG_REPORT' | 'PARTNERSHIP'>('BUG_REPORT');
+  const [fbMessage, setFbMessage] = useState('');
+  const [fbSubmitting, setFbSubmitting] = useState(false);
+  const [fbStatus, setFbStatus] = useState<string | null>(null);
+
   useEffect(() => { initTelegramApp(); }, []);
 
   useEffect(() => {
@@ -452,6 +460,24 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   const headerCfp = rewardPoints > 0 ? rewardPoints : (user?.rewardPoints ?? 0);
   const headerLvl = getLevelInfo(headerCfp);
+
+  const handleFeedbackSubmit = async () => {
+    const msg = fbMessage.trim();
+    if (!msg || msg.length > 500) { setFbStatus('Please write a message (max 500 chars).'); return; }
+    setFbSubmitting(true);
+    setFbStatus(null);
+    try {
+      const contact = user.telegramUsername ? `@${user.telegramUsername}` : (user.username || 'TG User');
+      await api.sendFeedback({ topic: fbTopic, contact, message: msg });
+      setFbStatus('Sent! Thank you for your feedback.');
+      setFbMessage('');
+      setTimeout(() => { setFeedbackOpen(false); setFbStatus(null); setFbTopic('BUG_REPORT'); }, 1500);
+    } catch (e: any) {
+      setFbStatus(e?.message || 'Failed to send.');
+    } finally {
+      setFbSubmitting(false);
+    }
+  };
 
   const isSecondaryTab = activeTab === 'topup';
 
@@ -1043,6 +1069,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   // ── Authenticated app shell ──────────────────────────────────────────────────
   return (
+    <>
     <Shell>
       {/* ── Top bar ── */}
       {isSecondaryTab ? (
@@ -1061,6 +1088,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       ) : (
         <div className="shrink-0 px-3 pt-2 pb-1.5">
           <div className="flex items-center gap-2.5">
+            <button type="button" onClick={() => setFeedbackOpen(true)} className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.05] border border-white/[0.08] active:scale-95 transition" title="Feedback">
+              <MessageCircle size={16} className="text-gray-400" />
+            </button>
             <button type="button" onClick={() => goToTab('profile')} className="shrink-0 w-10 h-10 rounded-full overflow-hidden border-2 border-web3-accent/40 active:scale-95 transition relative">
               {user.avatar ? (
                 <img src={user.avatar} alt="" className="w-full h-full object-cover" />
@@ -1178,5 +1208,67 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         </div>
       </div>
     </Shell>
+
+    {feedbackOpen && (
+      <div className="fixed inset-0 z-[100] flex items-end justify-center" onClick={() => setFeedbackOpen(false)}>
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="relative w-full max-w-md mx-3 mb-3 rounded-2xl border border-white/[0.08] bg-[#151820] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] p-4 animate-slide-up" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+              <MessageCircle size={14} className="text-web3-accent" />
+              Feedback
+            </div>
+            <button type="button" onClick={() => { setFeedbackOpen(false); setFbStatus(null); }} className="w-7 h-7 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center text-gray-400 active:scale-95">
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Topic</div>
+              <div className="flex gap-2">
+                {(['BUG_REPORT', 'PARTNERSHIP'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setFbTopic(t)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${fbTopic === t ? 'bg-web3-accent/15 border border-web3-accent/30 text-web3-accent' : 'bg-black/30 border border-white/[0.06] text-gray-500'}`}>
+                    {t === 'BUG_REPORT' ? '🐛 Bug Report' : '🤝 Partnership'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] uppercase tracking-widest text-gray-500">Message</div>
+                <div className={`text-[10px] ${fbMessage.length > 500 ? 'text-red-400' : 'text-gray-600'}`}>{500 - fbMessage.length}</div>
+              </div>
+              <textarea
+                value={fbMessage}
+                onChange={e => setFbMessage(e.target.value)}
+                maxLength={500}
+                rows={4}
+                placeholder="Describe the issue or your proposal..."
+                className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-web3-accent/30"
+              />
+            </div>
+
+            {fbStatus && (
+              <div className={`text-xs font-medium px-3 py-2 rounded-lg ${fbStatus.includes('Thank') ? 'bg-web3-accent/10 text-web3-accent' : 'bg-red-500/10 text-red-400'}`}>
+                {fbStatus}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleFeedbackSubmit}
+              disabled={fbSubmitting || !fbMessage.trim()}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black font-black uppercase tracking-widest text-xs disabled:opacity-40 active:scale-[0.98] transition"
+            >
+              {fbSubmitting ? 'Sending...' : 'Send Feedback'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
