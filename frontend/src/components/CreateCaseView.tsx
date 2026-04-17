@@ -251,8 +251,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const handleImageUpload = useCallback((file?: File | null) => {
     if (!file) return;
     setImageError(null);
-    if (file.size > 1024 * 1024) {
-      setImageError('Image too large (max 1MB).');
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('Image too large (max 5 MB).');
       return;
     }
     setIsImageUploading(true);
@@ -724,7 +724,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                   </div>
                 )}
                 <div className="text-[10px] uppercase tracking-widest text-gray-600">
-                  PNG/JPG/WebP/GIF • up to 1MB • max 1024px
+                  PNG/JPG/WebP/GIF • up to 5 MB • max 1024px
                 </div>
               </div>
             </div>

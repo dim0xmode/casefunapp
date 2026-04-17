@@ -710,8 +710,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleAvatarChange = useCallback((file?: File | null) => {
     if (!file || !onUploadAvatar) return;
     setAvatarError(null);
-    if (file.size > 1024 * 1024) {
-      setAvatarError('Avatar too large (max 1MB).');
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Avatar too large (max 5 MB).');
       return;
     }
     const previewUrl = URL.createObjectURL(file);
@@ -1888,7 +1888,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 />
               </label>
               <div className="mt-2 text-[10px] uppercase tracking-widest text-gray-600">
-                PNG/JPG/WebP/GIF • up to 1MB • max 1024px
+                PNG/JPG/WebP/GIF • up to 5 MB • max 1024px
               </div>
               {(avatarPreview || user?.avatar) && (
                 <div className="mt-3 flex items-center justify-end">
