@@ -141,6 +141,13 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
         >
           <Package size={14} />
           {caseData.name}
+          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border ${
+            caseData.chainType === 'TON'
+              ? 'bg-blue-500/20 border-blue-400/40 text-blue-300'
+              : 'bg-purple-500/20 border-purple-400/40 text-purple-300'
+          }`}>
+            {caseData.chainType === 'TON' ? 'TON' : 'EVM'}
+          </span>
         </div>
         {caseData.openDurationHours && caseData.createdAt && (
           <div className="mt-3 text-xs uppercase tracking-widest text-gray-500">

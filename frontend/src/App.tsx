@@ -983,13 +983,19 @@ const App = () => {
       const tonConnectUI = new TonConnectUI({
         manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
       });
+      const nonce = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+      tonConnectUI.setConnectRequestParameters({
+        state: 'ready',
+        value: { tonProof: nonce },
+      });
       const result = await tonConnectUI.connectWallet();
       if (!result) return;
       const account = tonConnectUI.account;
       if (!account) return;
 
       const tonProofItem = (result as any).connectItems?.tonProof;
-      const proof = tonProofItem?.proof ?? tonProofItem;
+      const rawProof = tonProofItem?.proof ?? tonProofItem;
+      const proof = rawProof ? { ...rawProof, publicKey: account.publicKey } : undefined;
       const response = await api.linkTonWallet(account.address, proof);
       const data = response.data as any;
 

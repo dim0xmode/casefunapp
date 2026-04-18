@@ -165,12 +165,19 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
       const tonConnectUI = new TonConnectUI({
         manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
       });
+      const nonce = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+      tonConnectUI.setConnectRequestParameters({
+        state: 'ready',
+        value: { tonProof: nonce },
+      });
       const result = await tonConnectUI.connectWallet();
       if (result) {
         const account = tonConnectUI.account;
         if (account) {
           const tonProofItem = (result as any).connectItems?.tonProof;
-          await onLoginTon(account.address, tonProofItem?.proof ?? tonProofItem);
+          const rawProof = tonProofItem?.proof ?? tonProofItem;
+          const proof = rawProof ? { ...rawProof, publicKey: account.publicKey } : undefined;
+          await onLoginTon(account.address, proof);
           onClose();
         }
       }

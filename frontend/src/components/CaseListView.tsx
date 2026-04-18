@@ -72,6 +72,19 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     return `${hours}h ${minutes}m`;
   };
 
+  const chainBadge = (chainType?: string) => {
+    const isTon = chainType === 'TON';
+    return (
+      <span className={`absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-wider border ${
+        isTon
+          ? 'bg-blue-500/20 border-blue-400/40 text-blue-300'
+          : 'bg-purple-500/20 border-purple-400/40 text-purple-300'
+      }`}>
+        {isTon ? 'TON' : 'EVM'}
+      </span>
+    );
+  };
+
   const renderCaseCard = (caseData: Case, inactive: boolean) => {
     const logoValue = caseData.image || caseData.possibleDrops[0]?.image || '';
     const logoIsImage =
@@ -86,6 +99,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
           className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-web3-card/40 transition-all duration-200 active:scale-[0.97] hover:border-web3-accent/40"
         >
           <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.04] to-web3-purple/[0.04] group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-200" />
+          {chainBadge(caseData.chainType)}
           <div className="relative z-10 flex flex-col items-center p-2.5 gap-1.5">
             <div className="text-[8px] uppercase tracking-wider text-gray-500 leading-none">
               {remainingTime || (inactive ? 'closed' : 'open')}
@@ -127,6 +141,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
         className="group relative bg-web3-card/50 backdrop-blur-xl rounded-2xl border border-white/[0.05] hover:border-web3-accent/50 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square flex flex-col p-4 min-h-[220px]"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/[0.02] to-web3-purple/[0.02] group-hover:bg-gradient-to-br group-hover:from-web3-accent/10 group-hover:to-web3-purple/10 transition-all duration-300"></div>
+        {chainBadge(caseData.chainType)}
 
         <div className="relative z-10 grid h-full min-h-0 grid-rows-[auto_auto_1fr_auto] gap-1 px-2 py-2">
           {caseData.openDurationHours && caseData.createdAt && (
