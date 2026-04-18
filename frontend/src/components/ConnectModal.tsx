@@ -165,11 +165,12 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
       const tonConnectUI = new TonConnectUI({
         manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
       });
-      const nonce = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       tonConnectUI.setConnectRequestParameters({
         state: 'ready',
         value: { tonProof: nonce },
       });
+      await new Promise((r) => setTimeout(r, 150));
       const result = await tonConnectUI.connectWallet();
       if (result) {
         const account = tonConnectUI.account;
