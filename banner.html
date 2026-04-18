@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CaseFun Banner</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#05060a;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;gap:24px;padding:30px;
+  font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+}
+
+/* ══════════ BANNER ══════════ */
+.B{width:1200px;height:630px;position:relative;overflow:hidden}
+
+/* ── Background ── */
+.bg{position:absolute;inset:0;background:#0c0e16}
+.bg .g1{position:absolute;width:600px;height:600px;top:-200px;left:-150px;background:radial-gradient(circle,rgba(102,252,241,0.07)0%,transparent 70%)}
+.bg .g2{position:absolute;width:800px;height:600px;bottom:-200px;right:-100px;background:radial-gradient(ellipse,rgba(120,50,200,0.18)0%,rgba(80,30,160,0.06)40%,transparent 70%)}
+.bg .g3{position:absolute;width:500px;height:500px;top:40%;left:35%;background:radial-gradient(circle,rgba(100,40,180,0.06)0%,transparent 65%)}
+.bg .g4{position:absolute;width:300px;height:300px;top:10%;right:25%;background:radial-gradient(circle,rgba(16,185,129,0.04)0%,transparent 60%)}
+.bg .grid{position:absolute;inset:0;opacity:.3;background-image:linear-gradient(rgba(102,252,241,0.02)1px,transparent 1px),linear-gradient(90deg,rgba(102,252,241,0.02)1px,transparent 1px);background-size:44px 44px}
+
+/* ── Corner triangle ── */
+.corner{position:absolute;top:0;right:0;z-index:50}
+.corner svg{display:block}
+.corner-txt{position:absolute;top:28px;right:8px;color:#fff;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;transform:rotate(45deg);transform-origin:center;white-space:nowrap}
+
+/* ══════════ LEFT ══════════ */
+.L{position:absolute;top:0;left:0;width:510px;height:100%;padding:34px 0 32px 44px;display:flex;flex-direction:column;justify-content:space-between;z-index:10}
+
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(236,72,153,0.08);border:1px solid rgba(236,72,153,0.18);border-radius:20px;padding:4px 14px;font-size:9px;font-weight:700;color:#F472B6;text-transform:uppercase;letter-spacing:1.5px;width:fit-content}
+.badge i{width:5px;height:5px;border-radius:50%;background:#EC4899;display:block}
+
+.logo{margin-top:6px;font-size:52px;font-weight:900;letter-spacing:-2px;line-height:1}
+.logo-w{color:#fff}
+.logo-g{color:#66FCF1}
+.sub{font-size:12px;color:rgba(255,255,255,0.38);margin-top:3px;letter-spacing:.3px}
+
+.hl{margin-top:4px}
+.hl-tag{font-size:11px;font-weight:700;color:rgba(102,252,241,0.6);text-transform:uppercase;letter-spacing:3px}
+.hl-big{font-size:44px;font-weight:900;color:#fff;line-height:1.05;margin-top:2px;display:flex;align-items:center;gap:14px}
+.tg-icon{width:46px;height:46px;background:linear-gradient(135deg,#66FCF1,#10B981);border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 20px rgba(102,252,241,0.25)}
+.tg-icon svg{width:26px;height:26px}
+
+.feats{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.feat{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:5px 10px;font-size:10px;color:rgba(255,255,255,0.55);font-weight:600;display:flex;align-items:center;gap:4px}
+
+.promo{display:flex;align-items:center;gap:0;background:rgba(12,16,24,0.7);border:1.5px solid rgba(255,255,255,0.06);border-radius:14px;overflow:hidden}
+.pr-l{display:flex;align-items:center;gap:10px;padding:10px 14px;flex:1}
+.pr-dollar{width:34px;height:34px;background:linear-gradient(135deg,#22C55E,#16A34A);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;flex-shrink:0;box-shadow:0 0 12px rgba(34,197,94,0.25)}
+.pr-info .lbl{font-size:7px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+.pr-info .code{margin-top:2px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:4px 10px;font-size:13px;font-weight:800;color:#fff;display:inline-flex;align-items:center;gap:6px}
+.pr-info .code .cp{color:rgba(255,255,255,0.2);font-size:10px}
+.pr-r{padding:10px 18px;border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.pr-r .amt{font-size:28px;font-weight:900;line-height:1}
+.pr-r .amt .dol{color:#22C55E}
+.pr-r .amt .num{color:#fff}
+.pr-r .usd{font-size:8px;color:rgba(255,255,255,0.35);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:1px}
+
+.cta{display:flex;align-items:center;gap:14px}
+.cta-btn{background:linear-gradient(135deg,#66FCF1,#10B981);color:#0B0C10;font-size:12px;font-weight:800;padding:10px 22px;border-radius:10px;display:flex;align-items:center;gap:7px;text-transform:uppercase;letter-spacing:1px;text-decoration:none;box-shadow:0 0 20px rgba(102,252,241,0.18)}
+.cta-btn svg{width:14px;height:14px}
+.bot{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:8px 14px;color:rgba(255,255,255,0.6);font-size:13px;font-weight:600}
+.bot svg{width:16px;height:16px;color:#66FCF1}
+
+/* ══════════ PHONES AREA ══════════ */
+.R{position:absolute;right:0;top:0;width:660px;height:100%;z-index:5}
+
+/* ── iPhone shell ── */
+.ip{
+  position:absolute;padding:6px;
+  background:linear-gradient(160deg,#333 0%,#1c1c1e 40%,#2a2a2d 100%);
+  border-radius:32px;
+  box-shadow:0 30px 60px rgba(0,0,0,0.5),0 0 0 0.5px rgba(255,255,255,0.1),inset 0 0.5px 0 rgba(255,255,255,0.08);
+}
+.ip-s{width:100%;height:100%;background:#0B0C10;border-radius:26px;overflow:hidden;position:relative}
+/* power btn */
+.ip::before{content:'';position:absolute;right:-1.5px;top:92px;width:2px;height:24px;background:#2a2a2d;border-radius:0 1px 1px 0}
+/* volume btns */
+.ip::after{content:'';position:absolute;left:-1.5px;top:80px;width:2px;height:16px;background:#2a2a2d;border-radius:1px 0 0 1px;box-shadow:0 24px 0 #2a2a2d,0 42px 0 #2a2a2d}
+/* Dynamic Island */
+.di{position:absolute;top:6px;left:50%;transform:translateX(-50%);width:62px;height:16px;background:#000;border-radius:16px;z-index:20}
+/* screen reflection */
+.ip-s::after{content:'';position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,0.025)0%,transparent 30%);pointer-events:none;z-index:25;border-radius:26px}
+
+.ip1{width:220px;height:452px;left:80px;top:35px;z-index:7;transform:rotate(2deg)}
+.ip2{width:220px;height:452px;left:312px;top:55px;z-index:6;transform:rotate(-3deg)}
+
+/* ── Phone inner elements ── */
+.st{height:24px;display:flex;align-items:flex-end;justify-content:center;font-size:9px;font-weight:600;color:#fff;position:relative;z-index:10}
+.hdr{display:flex;align-items:center;padding:3px 8px;gap:5px;z-index:10;position:relative}
+.hdr-av{width:24px;height:24px;border-radius:50%;overflow:hidden;border:1px solid rgba(102,252,241,0.2);flex-shrink:0}
+.hdr-av img{width:100%;height:100%;object-fit:cover;display:block}
+.hdr-i{flex:1;min-width:0}
+.hdr-r{display:flex;align-items:center;gap:3px}
+.hdr-nm{font-size:8.5px;font-weight:700;color:#fff}
+.hdr-lv{font-size:6px;font-weight:700;background:linear-gradient(90deg,#66FCF1,#8B5CF6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr-bal{background:rgba(102,252,241,0.07);border:1px solid rgba(102,252,241,0.12);border-radius:3px;padding:0 4px;margin-left:auto;font-size:7px;font-weight:800;color:#66FCF1}
+.hdr-xp{height:2px;border-radius:1px;background:rgba(255,255,255,0.05);margin-top:2px;overflow:hidden}
+.hdr-xf{height:100%;border-radius:1px;background:linear-gradient(90deg,#66FCF1,#10B981,#8B5CF6)}
+
+/* ── Nav bar ── */
+.nav{position:absolute;bottom:0;left:0;right:0;height:42px;background:rgba(11,12,16,0.96);border-top:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:space-around;z-index:15}
+.n{display:flex;flex-direction:column;align-items:center;gap:0.5px;position:relative}
+.n svg{width:12px;height:12px}
+.n span{font-size:5px;font-weight:600}
+.n.a svg{color:#66FCF1}
+.n.a span{color:#66FCF1}
+.n.x svg{color:#1e222d}
+.n.x span{color:#1e222d}
+.n.gl svg{color:#66FCF1;filter:drop-shadow(0 0 2px rgba(102,252,241,0.3))}
+.n.gl span{background:linear-gradient(90deg,#66FCF1,#8B5CF6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.rdot{position:absolute;top:-1px;right:-1px;width:3px;height:3px;background:#EF4444;border-radius:50%}
+
+/* nav icon SVGs */
+.ic-cases{} .ic-create{} .ic-upgrade{} .ic-battle{} .ic-profile{} .ic-rewards{}
+
+/* ═══ SCREEN: Profile ═══ */
+.scr-p{padding:4px 9px 44px;display:flex;flex-direction:column;align-items:center;z-index:10;position:relative}
+.sp-av{width:48px;height:48px;border-radius:50%;overflow:hidden;border:2px solid rgba(102,252,241,0.15);box-shadow:0 0 16px rgba(102,252,241,0.1)}
+.sp-av img{width:100%;height:100%;object-fit:cover;display:block}
+.sp-nm{font-size:11px;font-weight:800;color:#fff;margin-top:4px}
+.sp-lr{display:flex;align-items:center;gap:3px;margin-top:1px}
+.sp-lv{font-size:7px;font-weight:700;background:linear-gradient(90deg,#66FCF1,#8B5CF6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sp-xp{width:80px;height:3px;border-radius:2px;background:rgba(255,255,255,0.05);overflow:hidden}
+.sp-xf{height:100%;width:65%;border-radius:2px;background:linear-gradient(90deg,#66FCF1,#10B981,#8B5CF6)}
+.sp-bl{margin-top:6px;background:rgba(102,252,241,0.05);border:1px solid rgba(102,252,241,0.10);border-radius:6px;padding:4px 12px;display:flex;align-items:center;gap:3px}
+.sp-bl svg{width:10px;height:10px;color:#66FCF1}
+.sp-bl b{font-size:12px;font-weight:900;color:#66FCF1}
+.sp-cfp{margin-top:2px;font-size:7px;color:rgba(255,255,255,0.3);font-weight:600}
+.sp-cfp em{font-style:normal;color:#66FCF1;font-weight:800}
+.sp-tabs{display:flex;width:100%;margin-top:6px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px solid rgba(255,255,255,0.04);overflow:hidden}
+.sp-tab{flex:1;text-align:center;padding:4px 0;font-size:6.5px;font-weight:700;color:#1e222d}
+.sp-tab.on{color:#66FCF1;background:rgba(102,252,241,0.05);border-bottom:1px solid #66FCF1}
+.sp-sec{width:100%;margin-top:5px}
+.sp-lbl{font-size:5.5px;color:#1e222d;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:1.5px}
+.sp-row{background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.03);border-radius:4px;padding:4px 6px;display:flex;align-items:center;gap:3px;margin-bottom:2.5px}
+.sp-row svg{width:7px;height:7px;color:#66FCF1;flex-shrink:0}
+.sp-row .m{font-size:6.5px;color:rgba(255,255,255,0.4);font-family:'SF Mono','Menlo',monospace}
+.sp-row .c{font-size:6px;color:#66FCF1}
+
+/* ═══ SCREEN: Cases ═══ */
+.scr-c{padding:2px 7px 44px;z-index:10;position:relative}
+.sc-seg{display:flex;background:rgba(0,0,0,0.2);border-radius:6px;border:1px solid rgba(255,255,255,0.04);overflow:hidden;margin-top:1px}
+.sc-s{flex:1;text-align:center;padding:4px 0;font-size:6.5px;font-weight:700}
+.sc-s.on{color:#C4B5FD;background:rgba(139,92,246,0.08);border-bottom:1px solid #8B5CF6}
+.sc-s.off{color:#1e222d}
+
+.sc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:4px}
+.cc{background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.03);border-radius:7px;padding:3px 2px;display:flex;flex-direction:column;align-items:center}
+.cc-e{font-size:4px;font-weight:700;color:#EF4444;text-transform:uppercase;align-self:flex-start;padding-left:2px}
+.cc-i{width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;margin-top:1px}
+.cc-i.c1{background:linear-gradient(135deg,rgba(139,92,246,0.25),rgba(102,252,241,0.08));border:1px solid rgba(139,92,246,0.18);box-shadow:0 0 6px rgba(139,92,246,0.10)}
+.cc-i.c2{background:linear-gradient(135deg,rgba(245,158,11,0.25),rgba(239,68,68,0.08));border:1px solid rgba(245,158,11,0.15);box-shadow:0 0 6px rgba(245,158,11,0.10)}
+.cc-i.c3{background:linear-gradient(135deg,rgba(102,252,241,0.25),rgba(16,185,129,0.08));border:1px solid rgba(102,252,241,0.15);box-shadow:0 0 6px rgba(102,252,241,0.10)}
+.cc-i.c4{background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(102,252,241,0.08));border:1px solid rgba(16,185,129,0.15);box-shadow:0 0 6px rgba(16,185,129,0.10)}
+.cc-i.c5{background:linear-gradient(135deg,rgba(236,72,153,0.25),rgba(139,92,246,0.08));border:1px solid rgba(236,72,153,0.15);box-shadow:0 0 6px rgba(236,72,153,0.10)}
+.cc-i.c6{background:linear-gradient(135deg,rgba(245,158,11,0.3),rgba(234,179,8,0.08));border:1px solid rgba(245,158,11,0.2);box-shadow:0 0 6px rgba(245,158,11,0.14)}
+.cc-n{font-size:5px;font-weight:800;color:#fff;margin-top:1px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.cc-t{font-size:3.5px;color:rgba(255,255,255,0.25);font-weight:600}
+.cc-f{display:flex;justify-content:space-between;width:100%;margin-top:1px;padding:0 1px}
+.cc-f .p{font-size:5px;font-weight:800;color:#66FCF1}
+.cc-f .r{font-size:4px;font-weight:700;color:#10B981}
+
+/* ── Floating feature badges ── */
+.fb{position:absolute;z-index:20;background:rgba(14,16,26,0.80);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:5px 10px;display:flex;align-items:center;gap:4px;box-shadow:0 4px 16px rgba(0,0,0,0.3)}
+.fb em{font-style:normal;font-size:12px}
+.fb b{font-size:9px;font-weight:700;color:#ddd}
+.fb small{font-size:6px;color:rgba(255,255,255,0.25);font-weight:500;display:block}
+
+.fb1{top:6px;left:285px}
+.fb2{top:6px;right:8px}
+.fb3{bottom:22px;left:55px}
+.fb4{bottom:22px;left:358px}
+
+/* ── Download button ── */
+.dl{background:linear-gradient(135deg,#66FCF1,#8B5CF6);color:#0B0C10;font-weight:800;font-size:14px;padding:12px 32px;border:none;border-radius:12px;cursor:pointer;font-family:inherit;transition:transform .15s}
+.dl:hover{transform:scale(1.03)}
+</style>
+</head>
+<body>
+
+<div class="B" id="banner">
+  <!-- BG -->
+  <div class="bg">
+    <div class="g1"></div><div class="g2"></div><div class="g3"></div><div class="g4"></div>
+    <div class="grid"></div>
+  </div>
+
+  <!-- Corner -->
+  <div class="corner">
+    <svg width="140" height="140" viewBox="0 0 140 140"><polygon points="0,0 140,0 140,140" fill="url(#cg)"/><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#EC4899"/><stop offset="100%" stop-color="#E11D48"/></linearGradient></defs></svg>
+    <div class="corner-txt">New Launch</div>
+  </div>
+
+  <!-- ═══ LEFT ═══ -->
+  <div class="L">
+    <div>
+      <div class="badge"><i></i> Live Now — Telegram Mini App</div>
+      <div class="logo"><span class="logo-w">Case</span><span class="logo-g">Fun</span></div>
+      <div class="sub">Your Token, Your Cases, Your Rules.</div>
+    </div>
+
+    <div class="hl">
+      <div class="hl-tag">— Now Available —</div>
+      <div class="hl-big">
+        LIVE ON<br>TELEGRAM
+        <div class="tg-icon"><svg viewBox="0 0 48 48" fill="none"><path d="M6.5 24.5L41.5 9.5L35 42L24 31L35 17L15 28L6.5 24.5Z" fill="#0B0C10"/></svg></div>
+      </div>
+    </div>
+
+    <div class="feats">
+      <div class="feat">📦 Create Cases</div>
+      <div class="feat">⚔️ Battle PvP</div>
+      <div class="feat">⬆️ Upgrade</div>
+      <div class="feat">🏆 Earn Rewards</div>
+      <div class="feat">🔗 On-Chain</div>
+      <div class="feat">🎯 Provably Fair</div>
+    </div>
+
+    <div class="promo">
+      <div class="pr-l">
+        <div class="pr-dollar">$</div>
+        <div class="pr-info">
+          <div class="lbl">Use Promo Code</div>
+          <div class="code">CaseFunWelcome <span class="cp">📋</span></div>
+        </div>
+      </div>
+      <div class="pr-r">
+        <div class="amt"><span class="dol">$</span><span class="num">40</span></div>
+        <div class="usd">USD Top-Up</div>
+      </div>
+    </div>
+
+    <div class="cta">
+      <a class="cta-btn" href="#">
+        <svg viewBox="0 0 48 48" fill="none"><path d="M6.5 24.5L41.5 9.5L35 42L24 31L35 17L15 28L6.5 24.5Z" fill="#0B0C10"/></svg>
+        Start on Telegram
+      </a>
+      <div class="bot">
+        <svg viewBox="0 0 48 48" fill="none"><path d="M6.5 24.5L41.5 9.5L35 42L24 31L35 17L15 28L6.5 24.5Z" fill="currentColor"/></svg>
+        @casefun_bot
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PHONES ═══ -->
+  <div class="R">
+    <!-- Badges — above and below phones -->
+    <div class="fb fb1"><em>📦</em><div><b>Open Cases</b><small>Win crypto tokens</small></div></div>
+    <div class="fb fb2"><em>⬆️</em><div><b>Item Upgrade</b><small>Multiply your wins</small></div></div>
+    <div class="fb fb3"><em>⚔️</em><div><b>Battle Mode</b><small>PvP & bot battles</small></div></div>
+    <div class="fb fb4"><em>🎁</em><div><b>Earn Rewards</b><small>Complete tasks for CFP</small></div></div>
+
+    <!-- ═══ iPhone 1: Profile ═══ -->
+    <div class="ip ip1">
+      <div class="ip-s">
+        <div class="di"></div>
+        <div class="st">9:41</div>
+        <div class="hdr">
+          <div class="hdr-av"><img src="https://casefun.net/uploads/avatar-1771039505964-b9acae38e437.webp" alt=""></div>
+          <div class="hdr-i">
+            <div class="hdr-r">
+              <span class="hdr-nm">SATORO</span>
+              <span class="hdr-lv">Lvl 3</span>
+              <span class="hdr-bal">615.34</span>
+            </div>
+            <div class="hdr-xp"><div class="hdr-xf" style="width:65%"></div></div>
+          </div>
+        </div>
+        <div class="scr-p">
+          <div class="sp-av"><img src="https://casefun.net/uploads/avatar-1771039505964-b9acae38e437.webp" alt=""></div>
+          <div class="sp-nm">SATORO</div>
+          <div class="sp-lr"><span class="sp-lv">Lvl 3</span><div class="sp-xp"><div class="sp-xf"></div></div></div>
+          <div class="sp-bl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><b>615.34 ₮</b></div>
+          <div class="sp-cfp">Points: <em>25.2 CFP</em></div>
+          <div class="sp-tabs"><div class="sp-tab on">Social</div><div class="sp-tab">Rewards</div><div class="sp-tab">Portfolio</div></div>
+          <div class="sp-sec">
+            <div class="sp-lbl">Connected Wallet</div>
+            <div class="sp-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span class="m">0xc459...6524</span></div>
+            <div class="sp-lbl">Referral Link</div>
+            <div class="sp-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg><span class="c">casefun.net/ref/SATORO</span></div>
+            <div class="sp-lbl">Promo Code</div>
+            <div class="sp-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4z"/></svg><span class="m" style="color:#1e222d">Enter code...</span></div>
+          </div>
+        </div>
+        <div class="nav">
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/></svg><span>Cases</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg><span>Create</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/></svg><span>Upgrade</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l7 9-7 9"/><path d="M19 3l-7 9 7 9"/></svg><span>Battle</span></div>
+          <div class="n a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg><span>Profile</span></div>
+          <div class="n gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="14" rx="2"/><path d="M12 8V22"/><path d="M3 14h18"/><path d="M8 8c0-2 1-4 4-4s4 2 4 4"/></svg><span>Rewards</span><div class="rdot"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ iPhone 2: Cases ═══ -->
+    <div class="ip ip2">
+      <div class="ip-s">
+        <div class="di"></div>
+        <div class="st">9:41</div>
+        <div class="hdr">
+          <div class="hdr-av"><img src="https://casefun.net/uploads/avatar-1771039505964-b9acae38e437.webp" alt=""></div>
+          <div class="hdr-i">
+            <div class="hdr-r">
+              <span class="hdr-nm">SATORO</span>
+              <span class="hdr-lv">Lvl 3</span>
+              <span class="hdr-bal">615.34</span>
+            </div>
+            <div class="hdr-xp"><div class="hdr-xf" style="width:65%"></div></div>
+          </div>
+        </div>
+        <div class="scr-c">
+          <div class="sc-seg"><div class="sc-s off">Available</div><div class="sc-s on">Unavailable</div></div>
+          <div class="sc-grid">
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c1">⚡</div><div class="cc-n">GODMODE</div><div class="cc-t">$GOD</div><div class="cc-f"><span class="p">5.00 ₮</span><span class="r">96%</span></div></div>
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c2">🐱</div><div class="cc-n">LITTLECATS</div><div class="cc-t">$LCS</div><div class="cc-f"><span class="p">2.00 ₮</span><span class="r">88%</span></div></div>
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c3">💎</div><div class="cc-n">SATORO</div><div class="cc-t">$SAT</div><div class="cc-f"><span class="p">10.00 ₮</span><span class="r">92%</span></div></div>
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c4">🎰</div><div class="cc-n">ALLINTEST</div><div class="cc-t">$AITC</div><div class="cc-f"><span class="p">1.00 ₮</span><span class="r">78%</span></div></div>
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c5">🚀</div><div class="cc-n">MOONSHOT</div><div class="cc-t">$MOON</div><div class="cc-f"><span class="p">3.00 ₮</span><span class="r">85%</span></div></div>
+            <div class="cc"><div class="cc-e">Expired</div><div class="cc-i c6">👑</div><div class="cc-n">GOLDMINE</div><div class="cc-t">$GLD</div><div class="cc-f"><span class="p">8.00 ₮</span><span class="r">90%</span></div></div>
+          </div>
+        </div>
+        <div class="nav">
+          <div class="n a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/></svg><span>Cases</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg><span>Create</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/></svg><span>Upgrade</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l7 9-7 9"/><path d="M19 3l-7 9 7 9"/></svg><span>Battle</span></div>
+          <div class="n x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-7 8-7s8 3 8 7"/></svg><span>Profile</span></div>
+          <div class="n gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="14" rx="2"/><path d="M12 8V22"/><path d="M3 14h18"/><path d="M8 8c0-2 1-4 4-4s4 2 4 4"/></svg><span>Rewards</span><div class="rdot"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button class="dl" onclick="html2canvas(document.getElementById('banner'),{scale:2,useCORS:true,backgroundColor:null}).then(c=>{const a=document.createElement('a');a.download='CaseFun_Banner.png';a.href=c.toDataURL('image/png');a.click()})">
+  📥 Download PNG (2400×1260)
+</button>
+</body>
+</html>

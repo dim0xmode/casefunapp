@@ -979,32 +979,16 @@ const App = () => {
 
   const handleLinkTonWallet = async () => {
     try {
-      const { TonConnectUI } = await import('@tonconnect/ui');
-      const tonConnectUI = new TonConnectUI({
-        manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
-      });
-      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      tonConnectUI.setConnectRequestParameters({
-        state: 'ready',
-        value: { tonProof: nonce },
-      });
-      await new Promise((r) => setTimeout(r, 150));
-      const result = await tonConnectUI.connectWallet();
-      if (!result) return;
-      const account = tonConnectUI.account;
-      if (!account) return;
-
-      const tonProofItem = (result as any).connectItems?.tonProof;
-      const rawProof = tonProofItem?.proof ?? tonProofItem;
-      const proof = rawProof ? { ...rawProof, publicKey: account.publicKey } : undefined;
-      const response = await api.linkTonWallet(account.address, proof);
+      const { connectTonWallet } = await import('./utils/tonConnect');
+      const wallet = await connectTonWallet();
+      const response = await api.linkTonWallet(wallet.address, wallet.proof);
       const data = response.data as any;
 
       if (data?.conflict) {
         setMergePrompt({
           secondaryUserId: data.conflictUserId,
           mergeToken: data.mergeToken,
-          identifier: `TON ${account.address.slice(0, 6)}...${account.address.slice(-4)}`,
+          identifier: `TON ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`,
         });
         return;
       }

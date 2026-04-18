@@ -161,27 +161,10 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     setLocalConnecting(true);
     setLocalError(null);
     try {
-      const { TonConnectUI } = await import('@tonconnect/ui');
-      const tonConnectUI = new TonConnectUI({
-        manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
-      });
-      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      tonConnectUI.setConnectRequestParameters({
-        state: 'ready',
-        value: { tonProof: nonce },
-      });
-      await new Promise((r) => setTimeout(r, 150));
-      const result = await tonConnectUI.connectWallet();
-      if (result) {
-        const account = tonConnectUI.account;
-        if (account) {
-          const tonProofItem = (result as any).connectItems?.tonProof;
-          const rawProof = tonProofItem?.proof ?? tonProofItem;
-          const proof = rawProof ? { ...rawProof, publicKey: account.publicKey } : undefined;
-          await onLoginTon(account.address, proof);
-          onClose();
-        }
-      }
+      const { connectTonWallet } = await import('../utils/tonConnect');
+      const wallet = await connectTonWallet();
+      await onLoginTon(wallet.address, wallet.proof);
+      onClose();
     } catch (err: any) {
       if (err?.message?.includes('User rejected') || err?.message?.includes('dismissed')) return;
       setLocalError(err?.message || 'TON connection failed');
