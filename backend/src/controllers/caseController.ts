@@ -368,7 +368,15 @@ export const createCase = async (
     let tonTokenAddress: string | null = null;
 
     if (chainType === 'TON') {
-      tonTokenAddress = await deployJetton(normalizedName, normalizedTicker);
+      try {
+        tonTokenAddress = await deployJetton(normalizedName, normalizedTicker);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (msg.includes('balance') || msg.includes('insufficient') || msg.includes('not enough')) {
+          return next(new AppError('TON treasury has insufficient balance to deploy token. Please try EVM or contact admin.', 503));
+        }
+        return next(new AppError(`Failed to deploy TON token: ${msg.slice(0, 120)}`, 500));
+      }
     } else {
       tokenAddress = await deployCaseToken(normalizedName, normalizedTicker);
     }

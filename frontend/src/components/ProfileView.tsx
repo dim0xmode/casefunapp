@@ -739,14 +739,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         if (avatarUrl) {
           try { await onUploadAvatar(file, initialMeta); } catch {}
           setAvatarPreview(avatarUrl.startsWith('/') ? avatarUrl : avatarUrl);
-          setIsAvatarAdjustOpen(true);
-        }
+        setIsAvatarAdjustOpen(true);
+      }
       })
       .catch((err) => {
         if (err?.message !== 'Upload cancelled') setAvatarError('Failed to upload avatar.');
       })
       .finally(() => {
-        setIsUploadingAvatar(false);
+      setIsUploadingAvatar(false);
         setAvatarUploadProgress(0);
         avatarAbortRef.current = null;
       });
@@ -776,9 +776,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return inventory
       .filter(item => item && !isCaseExpired(item.caseId) && !item.claimedAt)
       .reduce((acc, item) => {
-        acc[item.currency] = (acc[item.currency] || 0) + item.value;
-        return acc;
-      }, {} as Record<string, number>);
+      acc[item.currency] = (acc[item.currency] || 0) + item.value;
+      return acc;
+    }, {} as Record<string, number>);
   }, [inventory, casesById]);
 
   const claimedHoldings = useMemo(() => {
@@ -1141,26 +1141,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     <svg viewBox="0 0 1200 1227" className={`w-3 h-3 fill-current ${user?.twitterId ? 'text-web3-success' : 'text-gray-500'}`}>
                       <path d="M714.163 519.284L1160.89 0H1055.14L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.748L515.454 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.06 687.828L521.627 619.936L144.011 79.6944H306.615L611.333 515.664L658.766 583.556L1055.19 1150.69H892.586L569.06 687.854V687.828Z" />
                     </svg>
-                  </div>
+                    </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[10px] uppercase tracking-widest text-gray-500">X / Twitter</div>
                     {user?.twitterId ? (
                       <div className="flex items-center gap-2 mt-0.5 min-w-0">
                         <span className="text-sm font-bold text-white truncate">@{user.twitterUsername || 'connected'}</span>
-                        {formatTwitterLinkedAt(user?.twitterLinkedAt) && (
+                    {formatTwitterLinkedAt(user?.twitterLinkedAt) && (
                           <span className="text-[10px] text-gray-600 shrink-0">{formatTwitterLinkedAt(user?.twitterLinkedAt)}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                     )}
-                  </div>
+                      </div>
+                ) : (
+                      <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
+                )}
+              </div>
                   {isEditable && (
                     <button type="button" onClick={() => user?.twitterId ? onDisconnectTwitter?.() : onConnectTwitter?.()} disabled={twitterBusy || (!user?.twitterId && !onConnectTwitter) || (Boolean(user?.twitterId) && !onDisconnectTwitter)} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.twitterId ? 'border-red-500/25 text-red-400 hover:border-red-500/50' : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'} ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
                       {twitterBusy ? '…' : user?.twitterId ? 'Disconnect' : 'Connect'}
                     </button>
                   )}
-                </div>
+            </div>
 
                 {/* Telegram row */}
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
@@ -1181,13 +1181,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     ) : (
                       <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                     )}
-                  </div>
+              </div>
                   {isEditable && (
                     <button type="button" onClick={() => user?.telegramId ? onDisconnectTelegram?.() : onConnectTelegram?.()} disabled={telegramBusy || (!user?.telegramId && !onConnectTelegram) || (Boolean(user?.telegramId) && !onDisconnectTelegram)} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.telegramId ? 'border-red-500/25 text-red-400 hover:border-red-500/50' : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'} ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
                       {telegramBusy ? '…' : user?.telegramId ? 'Disconnect' : 'Connect'}
                     </button>
-                  )}
-                </div>
+            )}
+          </div>
 
                 {isEditable && canShowReferralLink && (
                   <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
@@ -1202,7 +1202,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           Confirmed invites:{' '}
                           <span className="text-white font-bold tabular-nums">{referralInvited}</span>
                           <span className="block mt-1 text-[10px] text-gray-600">Counted after your invitee links both Twitter and Telegram. You earn 8 CFP per referral + 10% of their task rewards.</span>
-                        </div>
+                    </div>
                         {referralUrl && (
                           <div className="flex flex-col gap-1.5 pt-0.5">
                             <div className="flex items-center gap-2 min-w-0">
@@ -1216,13 +1216,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 <ExternalLink size={12} /> Share via Telegram
                               </button>
                             )}
-                          </div>
-                        )}
-                      </>
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
+                )}
+            </div>
 
               <div className="mt-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gray-600 mb-2">
@@ -1265,8 +1265,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               {isEditable && twitterError && <div className="mt-2 text-[10px] text-red-400">{twitterError}</div>}
               {isEditable && telegramError && <div className="mt-2 text-[10px] text-red-400">{telegramError}</div>}
-            </div>
-          )}
+              </div>
+            )}
 
           {socialRewardsTab === 'rewards' && (
             <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
@@ -1281,7 +1281,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </button>
                   <button type="button" onClick={() => setRewardsSubTab('history')} className={`text-[10px] px-2 py-0.5 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'}`}>History</button>
                 </div>
-              </div>
+          </div>
 
               {rewardsSubTab === 'earn' && (() => {
                 const socialTasks = rewardTasks.filter((t: any) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
@@ -1296,7 +1296,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <Gift size={20} className="mx-auto text-gray-600 mb-2" />
                       <div className="text-[11px] text-gray-500">All tasks completed!</div>
                       <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
-                    </div>
+              </div>
                   )}
                   {socialTasks.map((task) => {
                     const needsAction = taskNeedsAction(task);
@@ -1308,11 +1308,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
                       <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : isActivated ? 'border-web3-accent/40 text-web3-accent' : 'border-white/10 text-gray-500'}`}>
                         {task.locked ? <Lock size={10} /> : <Gift size={11} />}
-                      </div>
+              </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] text-white font-medium">{renderTaskTitle(task)}</div>
                         {task.locked && <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>}
-                      </div>
+            </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
                         {showGo && actionUrl && (
@@ -1359,7 +1359,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] text-white font-medium">{task.title}</div>
                           <div className="text-[10px] text-gray-500">{task.description} · <span className="text-gray-600">{timeLabel}</span></div>
-                        </div>
+            </div>
                         <span className="text-[10px] font-mono text-web3-accent shrink-0 ml-2">+{task.reward} CFP</span>
                       </div>
                       <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden mb-1.5">
@@ -1374,14 +1374,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           ) : (
                             <span>{pct}%</span>
                           )}
-                        </div>
+            </div>
                         {isComplete && isEditable && (
                           <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
                             {claimingTaskId === task.id ? '…' : 'Claim'}
                           </button>
-                        )}
-                      </div>
-                    </div>
+          )}
+          </div>
+        </div>
                     );
                   })}
                   {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
@@ -1458,29 +1458,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       ) : (
         <div className="flex items-center gap-2 mb-6">
-          <Tabs
-            className="flex-1"
-            tabs={[
+        <Tabs
+          className="flex-1"
+          tabs={[
               { id: 'inventory', label: 'Items' },
-              { id: 'expired', label: 'Expired' },
-              { id: 'claimed', label: 'Claimed' },
+            { id: 'expired', label: 'Expired' },
+            { id: 'claimed', label: 'Claimed' },
               { id: 'burnt', label: 'Burnt' },
               { id: 'battles', label: 'Battles' },
-            ]}
-            activeId={tab}
-            onChange={(id) => setTab(id as any)}
-          />
-          {tab === 'inventory' && (
-            <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-              Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-            </button>
-          )}
-          {tab === 'expired' && (
-            <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
-              Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
-            </button>
-          )}
-        </div>
+          ]}
+          activeId={tab}
+          onChange={(id) => setTab(id as any)}
+        />
+            {tab === 'inventory' && (
+              <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+                Price {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+              </button>
+            )}
+        {tab === 'expired' && (
+          <button onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')} className="ml-auto flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest hover:text-white transition">
+            Amount {sortOrder === 'asc' ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+          </button>
+        )}
+          </div>
       )}
 
       <div
@@ -1561,18 +1561,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                   Link {isTonCase ? 'TON' : 'EVM'}
                                 </button>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleClaimToken(item.caseId)}
-                                  disabled={!canClaim || isClaiming}
-                                  className={`w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border transition ${
-                                    canClaim
-                                      ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent'
-                                      : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
-                                  } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
-                                >
-                                  {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
-                                </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClaimToken(item.caseId)}
+                                disabled={!canClaim || isClaiming}
+                                className={`w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border transition ${
+                                  canClaim
+                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent'
+                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                              >
+                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                              </button>
                               )}
                             </div>
                           );
@@ -1614,18 +1614,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                   Link {isTonCase ? 'TON' : 'EVM'} wallet to claim
                                 </button>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleClaimToken(item.caseId)}
-                                  disabled={!canClaim || isClaiming}
-                                  className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
-                                    canClaim
-                                      ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
-                                      : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
-                                  } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
-                                >
-                                  {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
-                                </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClaimToken(item.caseId)}
+                                disabled={!canClaim || isClaiming}
+                                className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                                  canClaim
+                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
+                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                              >
+                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                              </button>
                               )}
                             </div>
                           );

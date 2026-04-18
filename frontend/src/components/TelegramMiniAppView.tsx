@@ -571,7 +571,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   // ── Tab content ──────────────────────────────────────────────────────────────
   const renderTabContent = () => {
     if (activeTab === 'cases') return (
-      <CaseView
+        <CaseView
         cases={cases} onOpenCase={async (caseId, count) => { const items = await onOpenCase(caseId, count); loadRewardTasks(); return items; }} balance={balance}
         onOpenTopUp={onOpenTopUp} userName={user.username}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
@@ -580,7 +580,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
 
     if (activeTab === 'create') return (
-      <CreateCaseView
+        <CreateCaseView
         onCreate={(newCase) => { onCreateCase(newCase); goToTab('cases'); setSuccessToast(`Case "${newCase.name}" created!`); setTimeout(() => setSuccessToast(null), 4000); }}
         creatorName={user.username} balance={balance}
         onOpenTopUp={() => goToTab('topup')} onBalanceUpdate={onBalanceUpdate}
@@ -590,7 +590,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
 
     if (activeTab === 'upgrade') return (
-      <UpgradeView
+        <UpgradeView
         inventory={activeInventory} onUpgrade={async (items, mult) => { const res = await onUpgrade(items, mult); loadRewardTasks(); return res; }}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
@@ -717,7 +717,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
             const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN').sort((a, b) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
             const now = Date.now();
-            return (
+      return (
             <div className="space-y-1.5">
               {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
               {!rewardsLoading && allTasks.length === 0 && (
@@ -753,8 +753,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                       </button>
                     )}
                   </div>
-                </div>
-                );
+        </div>
+      );
               })}
               {cfTasks.map((task: any) => {
                 const progress = task.progress ?? 0;
@@ -816,7 +816,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   title = `Referral reward (10%)`;
                   subtitle = `${who} earned ${formatCfp(pts)} CFP — you received 10%`;
                 }
-                return (
+      return (
                 <div key={claim.id} className="flex items-center justify-between px-3 py-2 rounded-xl border border-white/[0.06] bg-black/15">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] text-white truncate">{title}</div>
@@ -874,7 +874,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           <div className="rounded-2xl p-4 border border-white/[0.06] bg-black/20">
             <div className="text-xs font-medium mb-1 text-gray-500">
               Current balance
-            </div>
+          </div>
             <div className="text-3xl font-black text-white">
               {Number(balance || 0).toFixed(2)} <span className="text-web3-accent">₮</span>
             </div>
@@ -886,24 +886,24 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               <label className="text-xs font-medium block mb-2 text-gray-500">
                 You get (Balance ₮)
               </label>
-              <input
+            <input
                 type="text" inputMode="decimal" value={topUpUsdt}
-                onChange={(e) => handleTopUpUsdtChange(e.target.value)}
+              onChange={(e) => handleTopUpUsdtChange(e.target.value)}
                 placeholder="0.00"
                 className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-              />
+            />
               <div className="mt-2.5 grid grid-cols-4 gap-2">
-                {[5, 10, 25, 50].map((a) => (
-                  <button
+              {[5, 10, 25, 50].map((a) => (
+                <button
                     key={a} type="button"
-                    onClick={() => handleTopUpUsdtChange(String(a))}
+                  onClick={() => handleTopUpUsdtChange(String(a))}
                     className="py-2 rounded-xl border border-web3-accent/20 bg-web3-accent/5 text-web3-accent text-xs font-bold hover:bg-web3-accent/15 active:scale-95 transition"
-                  >
-                    +{a}
-                  </button>
-                ))}
-              </div>
+                >
+                  +{a}
+                </button>
+              ))}
             </div>
+          </div>
 
             <div className="h-px bg-white/[0.06]" />
 
@@ -911,14 +911,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               <label className="text-xs font-medium block mb-2 text-gray-500">
                 You pay (ETH Sepolia)
               </label>
-              <input
+            <input
                 type="text" inputMode="decimal" value={topUpEth}
-                onChange={(e) => handleTopUpEthChange(e.target.value)}
+              onChange={(e) => handleTopUpEthChange(e.target.value)}
                 placeholder="0.000000"
                 className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-              />
+            />
               <div className="mt-1.5 text-xs text-gray-500">
-                {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
+            {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
               </div>
             </div>
           </div>
@@ -929,20 +929,20 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             </div>
           )}
 
-          {topUpPendingHash ? (
-            <button
-              type="button"
-              onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
-              disabled={topUpBusy}
+            {topUpPendingHash ? (
+              <button
+                type="button"
+                onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
+                disabled={topUpBusy}
               className="w-full py-4 rounded-2xl border border-web3-accent/30 bg-web3-accent/10 text-web3-accent text-sm font-bold disabled:opacity-40 active:scale-[0.98] transition"
-            >
+              >
               {topUpBusy ? 'Scanning…' : 'Check deposit'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleTopUpSubmit}
-              disabled={!canTopUp}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleTopUpSubmit}
+                disabled={!canTopUp}
               className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
                 canTopUp
                   ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black'
@@ -950,8 +950,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               }`}
             >
               {topUpBusy ? 'Processing…' : 'Top Up via MetaMask'}
-            </button>
-          )}
+              </button>
+            )}
 
           <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-web3-accent transition">
@@ -977,7 +977,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           <div className="text-center space-y-2">
             <div className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto border border-white/[0.08] bg-web3-accent/10">
               <span className="text-3xl font-black text-web3-accent">CF</span>
-            </div>
+          </div>
             <div className="text-2xl font-black text-white">Casefun</div>
             <div className="text-sm text-gray-400">
               Sign in with Telegram to start playing
@@ -1012,9 +1012,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           {authError && (
             <div className="px-4 py-3 rounded-xl border border-red-500/25 bg-red-500/10 text-sm text-red-300">
               {authError}
-            </div>
-          )}
         </div>
+          )}
+      </div>
       </CenteredShell>
     );
   }
@@ -1022,7 +1022,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   // ── Wallet linking blocker removed (wallet is now optional) ────────────────
 
   // ── Authenticated app shell ──────────────────────────────────────────────────
-  return (
+    return (
     <>
     <Shell>
       {/* ── Top bar ── */}
@@ -1038,7 +1038,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             <Wallet size={14} className="text-web3-accent" />
             <span className="text-[13px] font-black tabular-nums text-web3-accent">{Number(balance || 0).toFixed(2)}</span>
           </button>
-        </div>
+            </div>
       ) : (
         <div className="shrink-0 px-3 pt-2 pb-1.5">
           <div className="flex items-center gap-2.5">
@@ -1051,7 +1051,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-sm font-black bg-web3-accent/10 text-web3-accent">
                   {(user.username || 'U')[0].toUpperCase()}
-                </div>
+            </div>
               )}
             </button>
             <div className="flex-1 min-w-0">
@@ -1059,21 +1059,21 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[14px] font-bold text-white truncate">{user.username || 'User'}</span>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gradient-to-r from-web3-accent/15 to-web3-purple/15 border border-web3-accent/20 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple" style={{ WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundImage: 'linear-gradient(to right, #66FCF1, #8B5CF6)' }}>Lvl {headerLvl.level}</span>
-                </div>
+            </div>
                 <button type="button" onClick={() => goToTab('topup')} className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg active:scale-95 transition" style={{ background: 'rgba(102,252,241,0.08)', border: '1px solid rgba(102,252,241,0.15)' }}>
                   <Wallet size={12} className="text-web3-accent" />
                   <span className="text-[12px] font-black tabular-nums text-web3-accent">{Number(balance || 0).toFixed(2)}</span>
-                </button>
-              </div>
+              </button>
+            </div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <div key={headerCfp} className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple" style={{ width: `${headerLvl.progress}%` }} />
-                </div>
-                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{headerLvl.isMaxLevel ? 'MAX' : `${headerLvl.xpInLevel}/${headerLvl.xpNeeded}`}</span>
-              </div>
             </div>
+                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{headerLvl.isMaxLevel ? 'MAX' : `${headerLvl.xpInLevel}/${headerLvl.xpNeeded}`}</span>
           </div>
+            </div>
         </div>
+      </div>
       )}
 
       {/* ── Scrollable content ── */}
@@ -1081,7 +1081,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         <div className="mx-3 mt-2 px-4 py-3 rounded-xl bg-web3-accent/20 border border-web3-accent/40 text-web3-accent text-xs font-bold flex items-center justify-between animate-fade-in">
           <span>{successToast}</span>
           <button onClick={() => setSuccessToast(null)} className="ml-3 text-web3-accent/60 hover:text-white font-bold">✕</button>
-        </div>
+            </div>
       )}
 
       <div
@@ -1143,7 +1143,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                       {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
                     </span>
                     <span className="text-[10px] font-bold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                      {tab.label}
+                {tab.label}
                     </span>
                   </>
                 ) : (
@@ -1160,7 +1160,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             );
           })}
         </div>
-      </div>
+        </div>
     </Shell>
 
     {feedbackOpen && (
@@ -1171,11 +1171,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             <div className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
               <MessageCircle size={14} className="text-web3-accent" />
               Feedback
-            </div>
+      </div>
             <button type="button" onClick={() => { setFeedbackOpen(false); setFbStatus(null); }} className="w-7 h-7 rounded-lg border border-white/[0.08] bg-black/30 flex items-center justify-center text-gray-400 active:scale-95">
               <X size={14} />
             </button>
-          </div>
+    </div>
 
           <div className="space-y-3">
             <div>

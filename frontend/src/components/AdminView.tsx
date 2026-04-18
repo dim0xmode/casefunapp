@@ -424,7 +424,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
         <div className="bg-black/30 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="text-xs uppercase tracking-widest text-gray-500">{activeTab}</div>
+            <div className="text-xs uppercase tracking-widest text-gray-500">{activeTab}</div>
               {activeTab === 'users' && Array.isArray(data) && (
                 <span className="text-[10px] text-gray-600">{applyUserFilters.length} records</span>
               )}
@@ -820,13 +820,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         onChange={async (e) => {
                           setSaving(user.id);
                           try {
-                            await api.updateAdminUserRole(user.id, e.target.value);
-                            await load();
+                          await api.updateAdminUserRole(user.id, e.target.value);
+                          await load();
                           } catch (err: any) {
                             window.alert(err?.message || 'Failed to update role');
                             await load();
                           } finally {
-                            setSaving(null);
+                          setSaving(null);
                           }
                         }}
                         className="w-full bg-black/40 border border-white/[0.12] rounded-lg px-2 py-1 text-xs"
@@ -1067,11 +1067,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 </div>
               ))}
               {sortedBattles.length > 0 && (
-                <Pagination
-                  currentPage={pages.battles}
-                  totalPages={totalPages(sortedBattles)}
-                  onPageChange={(next) => setPages((prev) => ({ ...prev, battles: next }))}
-                />
+              <Pagination
+                currentPage={pages.battles}
+                totalPages={totalPages(sortedBattles)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, battles: next }))}
+              />
               )}
             </div>
           )}
@@ -1105,11 +1105,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 </div>
               ))}
               {sortedInventory.length > 0 && (
-                <Pagination
-                  currentPage={pages.inventory}
-                  totalPages={totalPages(sortedInventory)}
-                  onPageChange={(next) => setPages((prev) => ({ ...prev, inventory: next }))}
-                />
+              <Pagination
+                currentPage={pages.inventory}
+                totalPages={totalPages(sortedInventory)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, inventory: next }))}
+              />
               )}
             </div>
           )}
@@ -1145,11 +1145,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 </div>
               ))}
               {sortedTransactions.length > 0 && (
-                <Pagination
-                  currentPage={pages.transactions}
-                  totalPages={totalPages(sortedTransactions)}
-                  onPageChange={(next) => setPages((prev) => ({ ...prev, transactions: next }))}
-                />
+              <Pagination
+                currentPage={pages.transactions}
+                totalPages={totalPages(sortedTransactions)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, transactions: next }))}
+              />
               )}
             </div>
           )}
@@ -1333,11 +1333,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     );
                   })}
                   {rtuLedgers.length > 0 && (
-                    <Pagination
-                      currentPage={pages.rtuLedgers}
-                      totalPages={totalPages(rtuLedgers)}
-                      onPageChange={(next) => setPages((prev) => ({ ...prev, rtuLedgers: next }))}
-                    />
+                  <Pagination
+                    currentPage={pages.rtuLedgers}
+                    totalPages={totalPages(rtuLedgers)}
+                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuLedgers: next }))}
+                  />
                   )}
                 </div>
               </div>
@@ -1368,11 +1368,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                   ))}
                   {rtuEvents.length > 0 && (
-                    <Pagination
-                      currentPage={pages.rtuEvents}
-                      totalPages={totalPages(rtuEvents)}
-                      onPageChange={(next) => setPages((prev) => ({ ...prev, rtuEvents: next }))}
-                    />
+                  <Pagination
+                    currentPage={pages.rtuEvents}
+                    totalPages={totalPages(rtuEvents)}
+                    onPageChange={(next) => setPages((prev) => ({ ...prev, rtuEvents: next }))}
+                  />
                   )}
                 </div>
               </div>
@@ -1468,11 +1468,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 </div>
               ))}
               {audit.length > 0 && (
-                <Pagination
-                  currentPage={pages.audit}
-                  totalPages={totalPages(audit)}
-                  onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
-                />
+              <Pagination
+                currentPage={pages.audit}
+                totalPages={totalPages(audit)}
+                onPageChange={(next) => setPages((prev) => ({ ...prev, audit: next }))}
+              />
               )}
             </div>
           )}
@@ -1508,21 +1508,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                     <div className="text-[10px] text-gray-500">{formatDate(item.createdAt)}</div>
                     <div className="flex justify-end gap-1.5 flex-wrap">
-                      <button
-                        onClick={async () => {
-                          setSaving(item.id);
-                          await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
-                          await load();
-                          setSaving(null);
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
-                          item.isRead
-                            ? 'bg-white/5 border-white/10 text-gray-300'
-                            : 'bg-red-500/20 border-red-500/40 text-red-200'
-                        }`}
-                      >
-                        {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
-                      </button>
+                        <button
+                          onClick={async () => {
+                            setSaving(item.id);
+                            await api.updateAdminFeedbackReadStatus(item.id, !item.isRead);
+                            await load();
+                            setSaving(null);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest border ${
+                            item.isRead
+                              ? 'bg-white/5 border-white/10 text-gray-300'
+                              : 'bg-red-500/20 border-red-500/40 text-red-200'
+                          }`}
+                        >
+                          {saving === item.id ? 'Saving...' : item.isRead ? 'Mark Unread' : 'Mark Read'}
+                        </button>
                     </div>
                   </div>
                 );
@@ -1620,9 +1620,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 )}
 
-                <button
+                          <button
                   type="button" disabled={!canCreate}
-                  onClick={async () => {
+                            onClick={async () => {
                     setSaving('new-reward');
                     try {
                       await api.createAdminRewardTask({
@@ -1637,7 +1637,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         } : {}),
                       });
                       setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1, targetCount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
-                      await load();
+                              await load();
                     } catch (err: any) { window.alert(err?.message || 'Failed'); }
                     finally { setSaving(null); }
                   }}
@@ -1904,14 +1904,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     } catch (err) {
                       console.error('PDF generation failed:', err);
                     } finally {
-                      setSaving(null);
+                              setSaving(null);
                     }
-                  }}
+                            }}
                   disabled={saving === 'pdf'}
                   className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50"
-                >
+                          >
                   {saving === 'pdf' ? 'Generating...' : 'Download PDF Report'}
-                </button>
+                          </button>
                 </div>
               </div>
 
@@ -2072,9 +2072,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 pt-1">
-                  <button
+                          <button
                     disabled={!newPromo.code.trim() || !Number(newPromo.amount) || !Number(newPromo.maxUses) || !Number(newPromo.usesPerUser) || saving !== null}
-                    onClick={async () => {
+                            onClick={async () => {
                       setSaving('new-promo');
                       try {
                         await api.createAdminPromoCode({
@@ -2084,17 +2084,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                           usesPerUser: Number(newPromo.usesPerUser),
                         });
                         setNewPromo({ code: '', amount: '', maxUses: '', usesPerUser: '' });
-                        await load();
+                              await load();
                       } catch (err: any) {
                         window.alert(err?.message || 'Failed');
                       } finally {
-                        setSaving(null);
+                              setSaving(null);
                       }
-                    }}
+                            }}
                     className="px-5 py-2.5 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40 transition"
-                  >
+                          >
                     {saving === 'new-promo' ? 'Creating...' : 'Create Promo Code'}
-                  </button>
+                          </button>
                   <span className="text-[10px] text-gray-600">All fields are required</span>
                 </div>
               </div>
@@ -2141,7 +2141,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       >
                         {promo.isActive ? 'Disable' : 'Enable'}
                       </button>
-                    </div>
+                        </div>
                   </div>
                 ))}
               </div>
@@ -2156,9 +2156,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div>
                       <div className="text-[11px] text-white">
                         {act.user?.username || 'Unknown'} — <span className="font-mono text-web3-accent">{act.promo?.code}</span>
-                      </div>
-                      <div className="text-[10px] text-gray-600">{new Date(act.activatedAt).toLocaleString()}</div>
                     </div>
+                      <div className="text-[10px] text-gray-600">{new Date(act.activatedAt).toLocaleString()}</div>
+                  </div>
                     <span className="text-[11px] font-mono text-web3-success font-bold">+{act.amount} ₮</span>
                   </div>
                 ))}
@@ -2171,7 +2171,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-1">
                 <h2 className="text-lg font-bold text-white">Email Mailing</h2>
                 <p className="text-xs text-gray-400">Paste email addresses (one per line or comma-separated). Sends in batches of 50.</p>
-              </div>
+            </div>
 
               <div className="space-y-4">
                 <div>
@@ -2529,10 +2529,10 @@ const UserDetail: React.FC<{
             if (isImmutableBootstrap) return;
             setSaving(true);
             try {
-              await api.updateAdminUserBalance(userId, Number(balanceEdit));
+            await api.updateAdminUserBalance(userId, Number(balanceEdit));
               await reload();
             } finally {
-              setSaving(false);
+            setSaving(false);
             }
           }}
           disabled={saving || isImmutableBootstrap}

@@ -73,6 +73,15 @@ export const deployJetton = async (
   const wallet = await getTreasuryWallet();
   const contract = client.open(wallet);
 
+  const walletBalance = await client.getBalance(wallet.address);
+  const minRequired = toNano('0.3');
+  if (walletBalance < minRequired) {
+    throw new Error(
+      `TON treasury has insufficient balance (${Number(walletBalance) / 1e9} TON). ` +
+      `Need at least 0.3 TON. Fund address: ${wallet.address.toString()}`
+    );
+  }
+
   const jettonContent = beginCell()
     .storeUint(0x01, 8) // on-chain metadata
     .storeStringTail(JSON.stringify({ name, symbol: ticker, decimals: String(_decimals) }))
