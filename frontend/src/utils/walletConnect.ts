@@ -151,7 +151,7 @@ export const connectWallet = async ({
       if (document.visibilityState !== 'visible') return;
       try {
         const sub = provider?.signer?.client?.core?.relayer?.subscriber;
-        if (sub && typeof sub.restart === 'function') sub.restart();
+        if (sub && typeof (sub as any).restart === 'function') (sub as any).restart();
       } catch { /* ok */ }
     };
     document.addEventListener('visibilitychange', visHandler);

@@ -5,8 +5,10 @@ import prisma from '../config/database.js';
 import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { AuthRequest } from '../middleware/auth.js';
-import { verifyTelegramWebAppInitData } from '../utils/telegramAuth.js';
+import { verifyTelegramWebAppInitData, verifyTelegramLoginPayload } from '../utils/telegramAuth.js';
 import { resolveReferrerIdByCode } from '../utils/referral.js';
+import { verifyTonProof } from '../utils/tonAuth.js';
+import { mergeAccounts } from '../services/mergeService.js';
 
 const buildLoginMessage = (nonce: string) => {
   return `CaseFun Login\nNonce: ${nonce}`;
@@ -99,6 +101,8 @@ const toPublicUser = (user: any) => ({
   twitterUsername: user.twitterUsername,
   twitterName: user.twitterName,
   twitterLinkedAt: user.twitterLinkedAt,
+  tonAddress: user.tonAddress ?? null,
+  tonLinkedAt: user.tonLinkedAt ?? null,
   referralCode: user.referralCode ?? null,
   referralConfirmedCount: user.referralConfirmedCount ?? 0,
   referredById: user.referredById ?? null,
@@ -137,6 +141,23 @@ interface TelegramTopUpBrowserLinkSession {
 const TELEGRAM_WALLET_BROWSER_LINK_TTL_MS = 10 * 60 * 1000;
 const telegramWalletBrowserLinkSessions = new Map<string, TelegramWalletBrowserLinkSession>();
 const telegramTopUpBrowserLinkSessions = new Map<string, TelegramTopUpBrowserLinkSession>();
+
+const MERGE_TOKEN_TTL_MS = 5 * 60 * 1000;
+const pendingMergeTokens = new Map<string, { primaryUserId: string; secondaryUserId: string; expiresAt: number }>();
+
+const cleanupMergeTokens = () => {
+  const now = Date.now();
+  for (const [token, data] of pendingMergeTokens.entries()) {
+    if (data.expiresAt <= now) pendingMergeTokens.delete(token);
+  }
+};
+
+const createMergeToken = (primaryUserId: string, secondaryUserId: string): string => {
+  cleanupMergeTokens();
+  const token = crypto.randomBytes(24).toString('hex');
+  pendingMergeTokens.set(token, { primaryUserId, secondaryUserId, expiresAt: Date.now() + MERGE_TOKEN_TTL_MS });
+  return token;
+};
 
 const trimTrailingSlash = (value: string) => String(value || '').replace(/\/+$/, '');
 
@@ -434,6 +455,8 @@ export const loginWithWallet = async (
           ...(referredById ? { referredById } : {}),
         },
       });
+    } else if ((user as any).isBanned) {
+      return next(new AppError('Account is banned', 403));
     } else if (!user.hasLinkedWallet) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -547,6 +570,48 @@ export const loginWithTelegramDev = async (
         telegramFirstName: String(req.body?.telegramFirstName || 'Dev'),
         telegramLastName: String(req.body?.telegramLastName || ''),
         telegramPhotoUrl: null,
+      },
+      { referralCode }
+    );
+
+    await createSessionForUser(user.id, res);
+
+    res.json({
+      status: 'success',
+      data: {
+        user: toPublicUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const loginWithTelegramWidget = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const oldSessionToken = getSessionTokenFromRequest(req);
+    if (oldSessionToken) {
+      await prisma.session.deleteMany({ where: { token: oldSessionToken } }).catch(() => {});
+    }
+
+    const { referralCode, ...telegramPayload } = req.body || {};
+    const telegram = verifyTelegramLoginPayload({
+      payload: telegramPayload,
+      botToken: config.telegramBotToken,
+      maxAgeSeconds: config.telegramAuthMaxAgeSeconds,
+    });
+
+    const user = await upsertUserByTelegramIdentity(
+      {
+        telegramId: telegram.telegramId,
+        telegramUsername: telegram.telegramUsername,
+        telegramFirstName: telegram.telegramFirstName,
+        telegramLastName: telegram.telegramLastName,
+        telegramPhotoUrl: telegram.telegramPhotoUrl,
       },
       { referralCode }
     );
@@ -1140,6 +1205,8 @@ export const getProfile = async (
         twitterUsername: true,
         twitterName: true,
         twitterLinkedAt: true,
+        tonAddress: true,
+        tonLinkedAt: true,
         referralCode: true,
         referralConfirmedCount: true,
         referredById: true,
@@ -1212,6 +1279,174 @@ export const getProfile = async (
         battleHistory: user.battles,
         transactions: user.transactions,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const normalizeTonAddress = (raw: unknown): string => {
+  const addr = String(raw || '').trim();
+  if (!addr) return '';
+  return addr;
+};
+
+const upsertUserByTonAddress = async (
+  tonAddress: string,
+  options?: { referralCode?: string }
+) => {
+  let user = await prisma.user.findUnique({
+    where: { tonAddress },
+  });
+
+  if (!user) {
+    const username = await makeUniqueUsername(`TON_${tonAddress.slice(-8)}`);
+    const placeholderWallet = `ton_${tonAddress.slice(0, 16)}_${crypto.randomBytes(4).toString('hex')}`;
+    const referredById = await resolveReferrerIdByCode(prisma, options?.referralCode);
+
+    user = await prisma.user.create({
+      data: {
+        username,
+        walletAddress: placeholderWallet,
+        hasLinkedWallet: false,
+        walletLinkedAt: null,
+        balance: 0,
+        tonAddress,
+        tonLinkedAt: new Date(),
+        ...(referredById ? { referredById } : {}),
+      },
+    });
+  } else {
+    if (user.isBanned) {
+      throw new AppError('Account is banned', 403);
+    }
+  }
+
+  return user;
+};
+
+export const loginWithTon = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const oldSessionToken = getSessionTokenFromRequest(req);
+    if (oldSessionToken) {
+      await prisma.session.deleteMany({ where: { token: oldSessionToken } }).catch(() => {});
+    }
+
+    const { tonAddress: rawAddress, proof, referralCode } = req.body || {};
+    const tonAddress = normalizeTonAddress(rawAddress);
+    if (!tonAddress) {
+      return next(new AppError('TON address is required', 400));
+    }
+
+    await verifyTonProof(tonAddress, proof);
+
+    const user = await upsertUserByTonAddress(tonAddress, { referralCode });
+    await createSessionForUser(user.id, res);
+
+    res.json({
+      status: 'success',
+      data: { user: toPublicUser(user) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const linkTonWallet = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).userId;
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const { tonAddress: rawAddress, proof } = req.body || {};
+    const tonAddress = normalizeTonAddress(rawAddress);
+    if (!tonAddress) {
+      return next(new AppError('TON address is required', 400));
+    }
+
+    await verifyTonProof(tonAddress, proof);
+
+    const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) {
+      return next(new AppError('User not found', 404));
+    }
+
+    if (currentUser.tonAddress === tonAddress) {
+      return res.json({
+        status: 'success',
+        data: { user: toPublicUser(currentUser) },
+      });
+    }
+
+    const existingOwner = await prisma.user.findUnique({ where: { tonAddress } });
+    if (existingOwner && existingOwner.id !== userId) {
+      const mergeToken = createMergeToken(userId, existingOwner.id);
+      return res.json({
+        status: 'conflict',
+        data: {
+          conflict: true,
+          conflictUserId: existingOwner.id,
+          conflictUsername: existingOwner.username,
+          mergeToken,
+          identifier: 'ton',
+          tonAddress,
+        },
+      });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { tonAddress, tonLinkedAt: new Date() },
+    });
+
+    res.json({
+      status: 'success',
+      data: { user: toPublicUser(updated) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const confirmMerge = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).userId;
+    if (!userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+
+    const { secondaryUserId, mergeToken } = req.body || {};
+    if (!secondaryUserId || secondaryUserId === userId) {
+      return next(new AppError('Invalid merge target', 400));
+    }
+    if (!mergeToken) {
+      return next(new AppError('Merge token required', 400));
+    }
+
+    cleanupMergeTokens();
+    const pending = pendingMergeTokens.get(mergeToken);
+    if (!pending || pending.primaryUserId !== userId || pending.secondaryUserId !== secondaryUserId) {
+      return next(new AppError('Invalid or expired merge token', 403));
+    }
+    const merged = await mergeAccounts(userId, secondaryUserId);
+    pendingMergeTokens.delete(mergeToken);
+
+    res.json({
+      status: 'success',
+      data: { user: toPublicUser(merged) },
     });
   } catch (error) {
     next(error);

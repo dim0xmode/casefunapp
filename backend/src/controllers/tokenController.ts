@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
 import { getTreasuryContract, normalizeAddress } from '../services/blockchain.js';
 import { isCaseExpired, mintCaseIfNeeded } from '../services/tokenService.js';
+import { transferJetton } from '../services/tonService.js';
 
 export const claimToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -21,20 +22,35 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
     if (!user) {
       return next(new AppError('User not found', 404));
     }
-    if (!user.hasLinkedWallet) {
-      return next(new AppError('Link wallet first', 400));
-    }
     if (!caseInfo) {
       return next(new AppError('Case not found', 404));
     }
-    if (!caseInfo.tokenAddress) {
-      return next(new AppError('Token address is not configured', 400));
+
+    const chainType = (caseInfo as any).chainType || 'EVM';
+    const isTon = chainType === 'TON';
+
+    if (isTon) {
+      if (!user.tonAddress) {
+        return next(new AppError('Link TON wallet first', 400));
+      }
+      const tonTokenAddr = (caseInfo as any).tonTokenAddress;
+      if (!tonTokenAddr) {
+        return next(new AppError('TON token address is not configured', 400));
+      }
+    } else {
+      if (!user.hasLinkedWallet || !user.walletAddress) {
+        return next(new AppError('Link EVM wallet first', 400));
+      }
+      if (!caseInfo.tokenAddress) {
+        return next(new AppError('Token address is not configured', 400));
+      }
     }
+
     if (!isCaseExpired(caseInfo.createdAt, caseInfo.openDurationHours)) {
       return next(new AppError('Case is not expired', 400));
     }
 
-    if (!caseInfo.mintedAt) {
+    if (!isTon && !caseInfo.mintedAt) {
       await mintCaseIfNeeded(caseId);
     }
 
@@ -52,24 +68,31 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
       return next(new AppError('Nothing to claim', 400));
     }
 
-    if (!user.walletAddress) {
-      return next(new AppError('Wallet address not set', 400));
-    }
+    let txHash: string;
+    let tokenAddress: string;
 
-    const treasury = getTreasuryContract();
-    if (!treasury) {
-      return next(new AppError('Treasury is not configured', 500));
+    if (isTon) {
+      tokenAddress = (caseInfo as any).tonTokenAddress!;
+      const decimals = caseInfo.tokenDecimals || 9;
+      const jettonAmount = BigInt(Math.round(total * 10 ** decimals));
+      txHash = await transferJetton(tokenAddress, user.tonAddress!, jettonAmount);
+    } else {
+      const treasury = getTreasuryContract();
+      if (!treasury) {
+        return next(new AppError('EVM Treasury is not configured', 500));
+      }
+      tokenAddress = caseInfo.tokenAddress!;
+      const amount = ethers.parseUnits(total.toFixed(6), caseInfo.tokenDecimals || 18);
+      const tx = await treasury.transferToken(tokenAddress, user.walletAddress, amount);
+      await tx.wait(config.confirmations);
+      txHash = tx.hash;
     }
-
-    const amount = ethers.parseUnits(total.toFixed(6), caseInfo.tokenDecimals || 18);
-    const tx = await treasury.transferToken(caseInfo.tokenAddress, user.walletAddress, amount);
-    const receipt = await tx.wait(config.confirmations);
 
     const now = new Date();
     await prisma.$transaction(async (txDb) => {
       await txDb.inventoryItem.updateMany({
         where: { id: { in: claimableItems.map((item) => item.id) } },
-        data: { claimedAt: now, claimedTxHash: tx.hash },
+        data: { claimedAt: now, claimedTxHash: txHash },
       });
 
       await txDb.claim.create({
@@ -77,11 +100,13 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
           userId,
           caseId,
           amount: total,
-          txHash: tx.hash,
-          status: receipt?.status === 1 ? 'completed' : 'pending',
+          txHash,
+          chainType,
+          status: 'completed',
           metadata: {
-            tokenAddress: caseInfo.tokenAddress,
-            wallet: normalizeAddress(user.walletAddress),
+            tokenAddress,
+            wallet: isTon ? user.tonAddress : normalizeAddress(user.walletAddress),
+            chainType,
           },
         },
       });
@@ -94,8 +119,9 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
           currency: caseInfo.tokenTicker || caseInfo.currency,
           metadata: {
             caseId,
-            txHash: tx.hash,
-            tokenAddress: caseInfo.tokenAddress,
+            txHash,
+            tokenAddress,
+            chainType,
           },
         },
       });
@@ -105,8 +131,9 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
       status: 'success',
       data: {
         amount: total,
-        txHash: tx.hash,
-        tokenAddress: caseInfo.tokenAddress,
+        txHash,
+        tokenAddress,
+        chainType,
       },
     });
   } catch (error) {

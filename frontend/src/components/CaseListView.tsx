@@ -112,9 +112,8 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
               {caseData.name}
             </div>
 
-            <div className="flex items-center justify-between gap-2 w-full text-[10px] leading-none px-0.5">
+            <div className="flex items-center justify-center w-full text-[10px] leading-none px-0.5">
               <span className="font-bold text-web3-accent">{caseData.price} ₮</span>
-              <span className="font-bold text-web3-success">{caseData.rtu}%</span>
             </div>
           </div>
         </div>
@@ -164,9 +163,8 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             <div className="text-[10px] uppercase tracking-wider text-gray-400">
               ${caseData.tokenTicker || caseData.currency}
             </div>
-            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-between gap-1.5">
+            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-center">
               <span className="font-black text-xs text-white">{caseData.price} ₮</span>
-              <span className="font-bold text-[10px] text-web3-success">RTU {caseData.rtu}%</span>
             </div>
           </div>
         </div>

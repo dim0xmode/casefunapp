@@ -27,6 +27,9 @@ export const config = {
   telegramAuthClientId: process.env.TELEGRAM_AUTH_CLIENT_ID || '',
   telegramAuthClientSecret: process.env.TELEGRAM_AUTH_CLIENT_SECRET || '',
   telegramAuthMaxAgeSeconds: parseInt(process.env.TELEGRAM_AUTH_MAX_AGE_SECONDS || '86400', 10),
+  tonMnemonic: process.env.TON_MNEMONIC || '',
+  tonEndpoint: process.env.TON_ENDPOINT || 'https://testnet.toncenter.com/api/v2/jsonRPC',
+  tonApiKey: process.env.TON_API_KEY || '',
 };
 
 // Validate required environment variables

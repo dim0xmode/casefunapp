@@ -49,6 +49,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   isTelegramMiniApp = false,
 }) => {
   const [name, setName] = useState('');
+  const [chainType, setChainType] = useState<'EVM' | 'TON'>('EVM');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
   const [rtu, setRtu] = useState('');
@@ -457,6 +458,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
         price: priceValue,
         rtu: rtuValue,
         tokenPrice: tokenPriceValue,
+        chainType,
         openDurationHours,
         imageUrl: imageTrimmed,
         imageMeta,
@@ -483,6 +485,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
         image: resolveAssetUrl(caseData.imageUrl || imageTrimmed),
         imageMeta: caseData.imageMeta || imageMeta,
         rtu: caseData.rtu,
+        chainType: caseData.chainType || chainType,
+        tokenAddress: caseData.tokenAddress,
+        tonTokenAddress: caseData.tonTokenAddress,
+        tokenDecimals: caseData.tokenDecimals,
         openDurationHours: caseData.openDurationHours,
         createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : Date.now(),
         creatorName: caseData.createdBy?.username || creatorName,
@@ -543,6 +549,25 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               isTelegramMiniApp ? 'p-4' : 'p-6 lg:col-span-2'
             }`}
           >
+            <div className="mb-4">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Network</div>
+              <div className="flex gap-2">
+                {(['EVM', 'TON'] as const).map((chain) => (
+                  <button
+                    key={chain}
+                    type="button"
+                    onClick={() => setChainType(chain)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                      chainType === chain
+                        ? 'border-web3-accent bg-web3-accent/10 text-web3-accent'
+                        : 'border-white/[0.08] bg-black/20 text-gray-400 hover:border-white/20'
+                    }`}
+                  >
+                    {chain === 'EVM' ? 'EVM (Ethereum)' : 'TON'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className={`grid grid-cols-1 ${isTelegramMiniApp ? 'gap-3' : 'md:grid-cols-2 gap-4'}`}>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Case Name</div>

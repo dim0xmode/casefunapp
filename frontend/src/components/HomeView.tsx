@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles, Zap, Shield, TrendingUp, Rocket } from 'lucide-react';
 
 interface HomeViewProps {
@@ -6,43 +6,6 @@ interface HomeViewProps {
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
 }
-
-// Animated Counter Component
-const AnimatedCounter: React.FC<{ end: number; suffix?: string; duration?: number }> = ({ 
-  end, 
-  suffix = '', 
-  duration = 2000 
-}) => {
-  const [count, setCount] = useState(0);
-  const countRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          let start = 0;
-          const increment = end / (duration / 16);
-          const timer = setInterval(() => {
-            start += increment;
-            if (start >= end) {
-              setCount(end);
-              clearInterval(timer);
-            } else {
-              setCount(Math.floor(start));
-            }
-          }, 16);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.3 }
-    );
-
-    if (countRef.current) observer.observe(countRef.current);
-    return () => observer.disconnect();
-  }, [end, duration]);
-
-  return <span ref={countRef}>{count}{suffix}</span>;
-};
 
 export const HomeView: React.FC<HomeViewProps> = ({
   onCreateCase,

@@ -72,7 +72,7 @@ export const ImageAdjustModal: React.FC<ImageAdjustModalProps> = ({
     }));
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerUp = (_event: React.PointerEvent<HTMLDivElement>) => {
     if (!frameRef.current || !dragRef.current) return;
     frameRef.current.releasePointerCapture(dragRef.current.pointerId);
     dragRef.current = null;

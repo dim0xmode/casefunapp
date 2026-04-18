@@ -9,7 +9,7 @@ import { ProfileView } from './components/ProfileView';
 import { AdminView } from './components/AdminView';
 import { LiveFeed } from './components/LiveFeed';
 import { TelegramMiniAppSection } from './components/telegram/TelegramMiniAppSection';
-import { WalletConnectModal } from './components/WalletConnectModal';
+import { ConnectModal } from './components/ConnectModal';
 import { TopUpModal } from './components/TopUpModal';
 import { FeedbackWidget } from './components/FeedbackWidget';
 import { ImageWithMeta } from './components/ui/ImageWithMeta';
@@ -90,6 +90,8 @@ const App = () => {
   );
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
+  const [mergePrompt, setMergePrompt] = useState<{ secondaryUserId: string; identifier: string; mergeToken: string } | null>(null);
+  const [isMerging, setIsMerging] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
   const [burntItems, setBurntItems] = useState<Item[]>([]);
   const [claimedItems, setClaimedItems] = useState<Item[]>([]);
@@ -233,6 +235,8 @@ const App = () => {
     createdAt: caseData.createdAt ? new Date(caseData.createdAt).getTime() : undefined,
     creatorName: caseData.createdBy?.username || caseData.creatorName,
     tokenAddress: caseData.tokenAddress,
+    tonTokenAddress: caseData.tonTokenAddress,
+    chainType: caseData.chainType || 'EVM',
     tokenDecimals: caseData.tokenDecimals,
     mintedAt: caseData.mintedAt ? new Date(caseData.mintedAt).getTime() : undefined,
     totalSupply: caseData.totalSupply,
@@ -522,9 +526,10 @@ const App = () => {
       setTelegramError(null);
     } catch (error: any) {
       // Prevent leaving an orphaned about:blank tab if link start fails early.
-      if (botLinkPopup && !botLinkPopup.closed && !botLinkPopupNavigated) {
+      const popup = botLinkPopup as Window | null;
+      if (popup && !popup.closed && !botLinkPopupNavigated) {
         try {
-          botLinkPopup.close();
+          popup.close();
         } catch {
           // ignore popup close failures
         }
@@ -564,13 +569,14 @@ const App = () => {
     setTelegramError(null);
     try {
       const response = await api.unlinkTelegram();
-      if (response.data?.user) {
-        setUser((prev) => ({ ...prev, ...response.data?.user }));
+      const unlinkUser = response.data?.user;
+      if (unlinkUser) {
+        setUser((prev) => ({ ...prev, ...unlinkUser }));
         setProfileView((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
-            user: { ...prev.user, ...response.data.user },
+            user: { ...prev.user, ...unlinkUser },
           };
         });
       }
@@ -928,6 +934,107 @@ const App = () => {
     return loginWithWalletAddress(result.address, result.provider);
   };
 
+  const handleTelegramWidgetLogin = async (tgUser: Record<string, any>) => {
+    try {
+      setIsAuthLoading(true);
+      const response = await api.loginWithTelegramWidget(tgUser, getStoredRefCode());
+      const nextUser = response.data?.user;
+      if (nextUser) {
+        setUser((prev) => ({ ...prev, ...nextUser }));
+        if (typeof nextUser.balance === 'number') setBalance(nextUser.balance);
+        const addr = nextUser.walletAddress || '';
+        if (addr && !addr.startsWith('tg_') && !addr.startsWith('ton_')) {
+          setLastAuthAddress(addr.toLowerCase());
+        } else {
+          setLastAuthAddress(nextUser.id);
+        }
+        clearRefCode();
+        await loadProfile();
+      }
+    } catch (error) {
+      console.error('Telegram widget login failed', error);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleTonLogin = async (tonAddress: string, proof: any) => {
+    try {
+      setIsAuthLoading(true);
+      const response = await api.loginWithTon(tonAddress, proof, getStoredRefCode());
+      const nextUser = response.data?.user;
+      if (nextUser) {
+        setUser((prev) => ({ ...prev, ...nextUser }));
+        if (typeof nextUser.balance === 'number') setBalance(nextUser.balance);
+        setLastAuthAddress(nextUser.id);
+        clearRefCode();
+        await loadProfile();
+      }
+    } catch (error) {
+      console.error('TON login failed', error);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLinkTonWallet = async () => {
+    try {
+      const { TonConnectUI } = await import('@tonconnect/ui');
+      const tonConnectUI = new TonConnectUI({
+        manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
+      });
+      const result = await tonConnectUI.connectWallet();
+      if (!result) return;
+      const account = tonConnectUI.account;
+      if (!account) return;
+
+      const tonProofItem = (result as any).connectItems?.tonProof;
+      const proof = tonProofItem?.proof ?? tonProofItem;
+      const response = await api.linkTonWallet(account.address, proof);
+      const data = response.data as any;
+
+      if (data?.conflict) {
+        setMergePrompt({
+          secondaryUserId: data.conflictUserId,
+          mergeToken: data.mergeToken,
+          identifier: `TON ${account.address.slice(0, 6)}...${account.address.slice(-4)}`,
+        });
+        return;
+      }
+
+      if (data?.user) {
+        setUser((prev) => ({ ...prev, ...data.user }));
+      }
+      await loadProfile();
+    } catch (err: any) {
+      if (err?.message?.includes('User rejected') || err?.message?.includes('dismissed')) return;
+      console.error('Link TON wallet failed', err);
+    }
+  };
+
+  const handleLinkEvmWallet = () => {
+    setIsWalletConnectOpen(true);
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergePrompt) return;
+    setIsMerging(true);
+    try {
+      const response = await api.confirmMerge(mergePrompt.secondaryUserId, mergePrompt.mergeToken);
+      const data = response.data as any;
+      if (data?.user) {
+        setUser((prev) => ({ ...prev, ...data.user }));
+        if (typeof data.user.balance === 'number') setBalance(data.user.balance);
+      }
+      setMergePrompt(null);
+      await loadProfile();
+    } catch (err) {
+      console.error('Merge failed', err);
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
   useEffect(() => {
     if (!walletAddress) {
       return;
@@ -1027,19 +1134,20 @@ const App = () => {
       try {
         const response = await api.linkTwitter(pendingTwitterCode, pendingTwitterState);
         if (cancelled) return;
-        if (!response.data?.user) {
+        const twitterUser = response.data?.user;
+        if (!twitterUser) {
           throw new Error('Failed to link Twitter account.');
         }
-        setUser(prev => ({ ...prev, ...response.data?.user }));
+        setUser(prev => ({ ...prev, ...twitterUser }));
         setProfileView(prev => {
           if (!prev) return prev;
           return {
             ...prev,
-            user: { ...prev.user, ...response.data.user },
+            user: { ...prev.user, ...twitterUser },
           };
         });
-        const linkedUsername = response.data.user.twitterUsername
-          ? `@${response.data.user.twitterUsername}`
+        const linkedUsername = twitterUser.twitterUsername
+          ? `@${twitterUser.twitterUsername}`
           : 'Twitter';
         setTwitterNotice(`${linkedUsername} connected successfully.`);
       } catch (error: any) {
@@ -1220,11 +1328,12 @@ const App = () => {
     }
     const currentName = (user.username || '').trim().toUpperCase();
     const wallet = (user.walletAddress || '').toLowerCase();
-    const isPlaceholder =
+    const isPlaceholder = Boolean(
       !currentName ||
       currentName === 'USER' ||
       currentName.startsWith('USER_') ||
-      (wallet && currentName.toLowerCase() === wallet);
+      (wallet && currentName.toLowerCase() === wallet)
+    );
     setMustSetUsername(isPlaceholder);
     if (isPlaceholder) {
       setUsernameDraft('');
@@ -1281,7 +1390,7 @@ const App = () => {
 
   const handleTabChange = (tab: string, mode: 'push' | 'replace' | 'none' = 'push') => {
     const requiresAuth = tab === 'profile' || tab === 'admin';
-    if (requiresAuth && !lastAuthAddress) {
+    if (requiresAuth && !lastAuthAddress && !user.id) {
       setIsWalletConnectOpen(true);
       setActiveTab('home');
       setProfileView(null);
@@ -1623,12 +1732,13 @@ const App = () => {
 
   const handleUpdateAvatarMeta = async (meta: Record<string, any>) => {
     const response = await api.updateAvatarMeta(meta);
-    if (response.data?.user) {
-      setUser(prev => ({ ...prev, ...response.data.user }));
+    const metaUser = response.data?.user;
+    if (metaUser) {
+      setUser(prev => ({ ...prev, ...metaUser }));
       if (profileView) {
         setProfileView({
           ...profileView,
-          user: { ...profileView.user, ...response.data.user },
+          user: { ...profileView.user, ...metaUser },
         });
       }
     }
@@ -1658,8 +1768,9 @@ const App = () => {
             await new Promise(r => setTimeout(r, 3000));
             try {
               const profile = await api.getProfile();
-              if (profile.data?.user?.twitterUsername) {
-                setUser(prev => ({ ...prev, ...profile.data.user }));
+              const pollUser = profile.data?.user;
+              if (pollUser?.twitterUsername) {
+                setUser(prev => ({ ...prev, ...pollUser }));
                 setTwitterNotice(null);
                 setTwitterBusy(false);
                 return;
@@ -1685,13 +1796,14 @@ const App = () => {
     setTwitterError(null);
     try {
       const response = await api.unlinkTwitter();
-      if (response.data?.user) {
-        setUser(prev => ({ ...prev, ...response.data?.user }));
+      const disconnectedUser = response.data?.user;
+      if (disconnectedUser) {
+        setUser(prev => ({ ...prev, ...disconnectedUser }));
         setProfileView(prev => {
           if (!prev) return prev;
           return {
             ...prev,
-            user: { ...prev.user, ...response.data.user },
+            user: { ...prev.user, ...disconnectedUser },
           };
         });
       }
@@ -1873,7 +1985,7 @@ const App = () => {
             isConnected={isConnected}
             formatAddress={formatAddress}
             isAuthLoading={isAuthLoading}
-            isAuthenticated={Boolean(lastAuthAddress)}
+            isAuthenticated={Boolean(lastAuthAddress || user.id)}
             isAdmin={isAdmin}
           />
         )}
@@ -1886,7 +1998,7 @@ const App = () => {
             {activeTab === 'home' && (
               <HomeView
                 onCreateCase={handleCreateCase}
-                isAuthenticated={Boolean(lastAuthAddress)}
+                isAuthenticated={Boolean(lastAuthAddress || user.id)}
                 onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
               />
             )}
@@ -1947,6 +2059,8 @@ const App = () => {
                   onCreateCase: (newCase: Case) => {
                     setCases(prev => [newCase, ...prev]);
                   },
+                  onLinkEvmWallet: handleLinkEvmWallet,
+                  onLinkTonWallet: handleLinkTonWallet,
                   externalProvider: telegramWalletConnectSession?.provider || null,
                   onConnectWalletForTopUp: async () => {
                     const { connectWallet: wcConnect } = await import('./utils/walletConnect');
@@ -1978,7 +2092,7 @@ const App = () => {
                   balance={balance}
                   onOpenTopUp={handleOpenTopUp}
                   onBalanceUpdate={setBalance}
-                  isAuthenticated={Boolean(lastAuthAddress)}
+                  isAuthenticated={Boolean(lastAuthAddress || user.id)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
                   isAdmin={true}
                   cases={cases}
@@ -1994,7 +2108,7 @@ const App = () => {
                   balance={balance}
                   onOpenTopUp={handleOpenTopUp}
                   userName={user.username}
-                  isAuthenticated={Boolean(lastAuthAddress)}
+                  isAuthenticated={Boolean(lastAuthAddress || user.id)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
                   isAdmin={true}
                 />
@@ -2006,7 +2120,7 @@ const App = () => {
                 <UpgradeView
                   inventory={activeInventory}
                   onUpgrade={handleUpgrade}
-                  isAuthenticated={Boolean(lastAuthAddress)}
+                  isAuthenticated={Boolean(lastAuthAddress || user.id)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
                   isAdmin={true}
                 />
@@ -2024,7 +2138,7 @@ const App = () => {
                   balance={balance}
                   onChargeBattle={handleChargeBattle}
                   onOpenTopUp={handleOpenTopUp}
-                  isAuthenticated={Boolean(lastAuthAddress)}
+                  isAuthenticated={Boolean(lastAuthAddress || user.id)}
                   onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
                   isAdmin={true}
                 />
@@ -2061,6 +2175,8 @@ const App = () => {
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                   onBalanceUpdate={setBalance}
+                  onLinkEvmWallet={handleLinkEvmWallet}
+                  onLinkTonWallet={handleLinkTonWallet}
                 />
               </div>
             )}
@@ -2075,17 +2191,48 @@ const App = () => {
         </main>
       </div>
 
-      <WalletConnectModal
+      <ConnectModal
         isOpen={isWalletConnectOpen}
         onClose={() => setIsWalletConnectOpen(false)}
-        onConnect={handleWalletConnect}
+        onConnectEvm={handleWalletConnect}
+        onLoginTelegramWidget={handleTelegramWidgetLogin}
+        onLoginTon={handleTonLogin}
         connectWithProvider={connectWithProvider}
         isConnecting={isWalletConnecting}
         error={walletError}
         isAuthLoading={isAuthLoading}
         discoveredWallets={discoveredWallets}
         walletConnectConfig={getWalletConnectRuntimeConfig()}
+        telegramBotUsername={import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''}
       />
+
+      {mergePrompt && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setMergePrompt(null)}>
+          <div className="bg-web3-card border border-gray-700 rounded-2xl p-8 max-w-md w-full relative" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-2xl font-black mb-3 text-amber-400">Merge accounts?</h2>
+            <p className="text-gray-300 text-sm mb-4">
+              The wallet <span className="font-mono text-white">{mergePrompt.identifier}</span> is already linked to another account.
+              Merging will combine balances, inventory, and history into your current account.
+            </p>
+            <p className="text-amber-400/80 text-xs mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setMergePrompt(null)}
+                className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 text-sm font-bold hover:bg-gray-700/50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmMerge}
+                disabled={isMerging}
+                className="flex-1 py-3 rounded-xl bg-amber-500 text-black text-sm font-bold hover:bg-amber-400 transition disabled:opacity-50"
+              >
+                {isMerging ? 'Merging...' : 'Confirm merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TopUpModal
         isOpen={isTopUpOpen}
@@ -2098,7 +2245,7 @@ const App = () => {
             await handleReturnToTelegramFromBridge('topup');
           }
         }}
-        isAuthenticated={Boolean(lastAuthAddress)}
+        isAuthenticated={Boolean(lastAuthAddress || user.id)}
         onConnectWallet={() => setIsWalletConnectOpen(true)}
         initialUsdtAmount={topUpInitialUsdt}
         walletAddress={user.walletAddress || walletAddress}
@@ -2226,7 +2373,7 @@ const App = () => {
           </button>
         )}
         <FeedbackWidget
-          isAuthenticated={Boolean(lastAuthAddress)}
+          isAuthenticated={Boolean(lastAuthAddress || user.id)}
           onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
         />
         </>

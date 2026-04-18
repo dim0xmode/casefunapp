@@ -120,6 +120,42 @@ class ApiClient {
     });
   }
 
+  async loginWithTelegramWidget(payload: Record<string, any>, referralCode?: string | null) {
+    const body = { ...payload };
+    const ref = referralCode?.trim();
+    if (ref) body.referralCode = ref;
+
+    return this.request<{ user: any }>('/auth/telegram/web-login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async loginWithTon(tonAddress: string, proof: any, referralCode?: string | null) {
+    const body: Record<string, any> = { tonAddress, proof };
+    const ref = referralCode?.trim();
+    if (ref) body.referralCode = ref;
+
+    return this.request<{ user: any }>('/auth/ton/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async linkTonWallet(tonAddress: string, proof: any) {
+    return this.request<{ user: any }>('/auth/ton/link', {
+      method: 'POST',
+      body: JSON.stringify({ tonAddress, proof }),
+    });
+  }
+
+  async confirmMerge(secondaryUserId: string, mergeToken: string) {
+    return this.request<{ user: any }>('/auth/merge/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ secondaryUserId, mergeToken }),
+    });
+  }
+
   async getReferralCode() {
     return this.request<{ code: string; invitedCount: number }>('/user/referral/code');
   }
@@ -159,7 +195,7 @@ class ApiClient {
   }
 
   async getProfile() {
-    return this.request<{ user: any }>('/auth/profile', { cache: 'no-store' });
+    return this.request<{ user: any; inventory?: any[]; burntItems?: any[]; claimedItems?: any[]; battleHistory?: any[] }>('/auth/profile', { cache: 'no-store' });
   }
 
   async logout() {
@@ -530,7 +566,7 @@ class ApiClient {
   }
 
   async openCase(caseId: string) {
-    return this.request<{ wonDrop: any }>(`/cases/${caseId}/open`, {
+    return this.request<{ wonDrop: any; balance?: number }>(`/cases/${caseId}/open`, {
       method: 'POST',
     });
   }
@@ -581,7 +617,7 @@ class ApiClient {
   }
 
   async getAdminCaseDetail(caseId: string) {
-    return this.request<{ case: any }>(`/admin/cases/${caseId}`);
+    return this.request<{ case: any; stats?: any }>(`/admin/cases/${caseId}`);
   }
 
   async updateAdminCase(caseId: string, payload: any) {

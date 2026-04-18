@@ -35,14 +35,15 @@ export const Header: React.FC<HeaderProps> = ({
   formatAddress = (value) => value || '',
   isAuthLoading = false,
   isAuthenticated = false,
-  isAdmin = false,
+  isAdmin: _isAdmin = false,
 }) => {
   const [soundOpen, setSoundOpen] = useState(false);
   const [audio, setAudio] = useState(getAudioSettings());
   const soundRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    return subscribeAudioSettings(setAudio);
+    const unsub = subscribeAudioSettings(setAudio);
+    return () => { unsub(); };
   }, []);
 
   useEffect(() => {
@@ -192,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           {/* Top-up */}
           <button
-            onClick={onOpenTopUp}
+            onClick={() => onOpenTopUp()}
             className="w-10 h-10 rounded-xl border flex items-center justify-center transition-all bg-web3-accent/20 border-web3-accent/40 text-web3-accent hover:bg-web3-accent/30 hover:scale-105"
             title="Top up"
             aria-label="Top up balance"

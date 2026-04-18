@@ -75,6 +75,8 @@ model User {
   twitterLinkedAt DateTime?
   twitterAccessToken  String?
   twitterRefreshToken String?
+  tonAddress    String?  @unique
+  tonLinkedAt   DateTime?
   rewardPoints  Float    @default(0)
   role          UserRole @default(USER)
   isBanned      Boolean  @default(false)
@@ -131,6 +133,8 @@ model Case {
   payoutUsdt    Float?
   payoutPriceUsdt Float?
   rtu           Float    @default(96) // Return to User %
+  chainType     String   @default("EVM") // "EVM" or "TON"
+  tonTokenAddress String?
   openDurationHours Float?
   isActive      Boolean  @default(true)
   createdById   String
@@ -253,6 +257,7 @@ model Claim {
   caseId    String
   amount    Float
   txHash    String?
+  chainType String   @default("EVM")
   status    String   @default("completed")
   metadata  Json?
   createdAt DateTime @default(now())

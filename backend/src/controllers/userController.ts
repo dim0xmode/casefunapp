@@ -4,7 +4,8 @@ import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
 import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
-import { recordRtuEvent } from '../services/rtuService.js';
+// RTU freeze: import kept for future re-enable
+// import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
 import { checkAndConfirmReferral } from '../utils/referralRewards.js';
@@ -492,37 +493,9 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
     const totalBaseValue = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
     const targetValue = roundToTwo(totalBaseValue * mult);
 
-    let reserveToken = 0;
-    let neededDelta = Math.max(0, targetValue - totalBaseValue);
-    if (baseItem.caseId) {
-      const caseInfo = await prisma.case.findUnique({
-        where: { id: baseItem.caseId },
-      });
-      if (caseInfo?.tokenPrice) {
-        const tokenSymbol = caseInfo.tokenTicker || caseInfo.currency;
-        const ledger = await prisma.rtuLedger.findFirst({
-          where: {
-            caseId: baseItem.caseId,
-            tokenSymbol,
-          },
-        });
-        reserveToken = Math.max(0, Number(ledger?.bufferDebtToken || 0));
-      }
-    }
-
-    // Surplus-aware chance shaping:
-    // - large reserve surplus => noticeably higher chance
-    // - low reserve => noticeably lower chance
-    const coverage = neededDelta <= 1e-9 ? 1 : reserveToken / neededDelta;
-    const surplusBoostFactor = Math.max(0, Math.min(1, (coverage - 1) / 3)); // reserve 1x..4x needed => 0..1
-    const deficitPenaltyFactor = Math.max(0, Math.min(1, (1 - coverage) / 1)); // reserve 100%..0% needed => 0..1
-    const adjustedWinChance = Math.max(
-      MIN_UPGRADE_CHANCE,
-      Math.min(
-        95,
-        winChance + surplusBoostFactor * 24 - deficitPenaltyFactor * 26
-      )
-    );
+    // RTU-based chance shaping disabled (RTU freeze).
+    // Pure probability: winChance = 1/multiplier * 100, no ledger adjustments.
+    const adjustedWinChance = winChance;
     const isSuccess = Math.random() * 100 <= adjustedWinChance;
 
     const result = await prisma.$transaction(async (tx) => {
@@ -563,45 +536,12 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
             success: isSuccess,
             baseWinChance: winChance,
             adjustedWinChance,
-            reserveToken,
-            neededDelta,
-            reserveCoverage: coverage,
           },
         },
       });
 
-      if (baseItem.caseId) {
-        const caseInfo = await tx.case.findUnique({
-          where: { id: baseItem.caseId },
-        });
-        if (caseInfo?.tokenPrice) {
-          const deltaToken = isSuccess ? targetValue - totalBaseValue : -totalBaseValue;
-          await recordRtuEvent(
-            {
-              caseId: baseItem.caseId,
-              userId,
-              tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
-              tokenPriceUsdt: caseInfo.tokenPrice,
-              rtuPercent: caseInfo.rtu,
-              type: 'UPGRADE',
-              deltaSpentUsdt: 0,
-              deltaToken,
-              metadata: {
-                itemIds: requestedIds,
-                targetValue,
-                totalBaseValue,
-                success: isSuccess,
-                baseWinChance: winChance,
-                adjustedWinChance,
-                reserveToken,
-                neededDelta,
-                reserveCoverage: coverage,
-              },
-            },
-            tx
-          );
-        }
-      }
+      // RTU event recording disabled (RTU freeze)
+      // if (baseItem.caseId) { await recordRtuEvent(...) }
 
       return { newItem };
     });
@@ -1343,48 +1283,10 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
         });
         createdItems.push(created);
 
-        if (item.caseId) {
-          const caseInfo = await tx.case.findUnique({ where: { id: item.caseId } });
-          if (caseInfo?.tokenPrice) {
-            await recordRtuEvent(
-              {
-                caseId: item.caseId,
-                userId,
-                tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
-                tokenPriceUsdt: caseInfo.tokenPrice,
-                rtuPercent: caseInfo.rtu,
-                type: 'BATTLE',
-                deltaSpentUsdt: 0,
-                deltaToken: Number(item.value || 0),
-                metadata: { source: 'battle' },
-              },
-              tx
-            );
-          }
-        }
+        // RTU event recording disabled (RTU freeze)
       }
 
-      if (reserveItems.length > 0) {
-        for (const item of reserveItems) {
-          if (!item.caseId) continue;
-          const caseInfo = await tx.case.findUnique({ where: { id: item.caseId } });
-          if (!caseInfo?.tokenPrice) continue;
-          await recordRtuEvent(
-            {
-              caseId: item.caseId,
-              userId,
-              tokenSymbol: caseInfo.tokenTicker || caseInfo.currency,
-              tokenPriceUsdt: caseInfo.tokenPrice,
-              rtuPercent: caseInfo.rtu,
-              type: 'BATTLE',
-              deltaSpentUsdt: 0,
-              deltaToken: -Number(item.value || 0),
-              metadata: { source: 'battle_reserve', mode: parsedProof.payload.mode },
-            },
-            tx
-          );
-        }
-      }
+      // RTU reserve event recording disabled (RTU freeze)
 
       if (lobbyId) {
         await tx.battleLobby.updateMany({

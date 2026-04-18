@@ -38,6 +38,8 @@ export interface Case {
   createdAt?: number;
   imageMeta?: ImageMeta;
   tokenAddress?: string;
+  tonTokenAddress?: string;
+  chainType?: 'EVM' | 'TON';
   tokenDecimals?: number;
   mintedAt?: number;
   totalSupply?: number;
@@ -103,6 +105,8 @@ export interface User {
   twitterUsername?: string | null;
   twitterName?: string | null;
   twitterLinkedAt?: string | number | null;
+  tonAddress?: string | null;
+  tonLinkedAt?: string | number | null;
   referralCode?: string | null;
   referralConfirmedCount?: number;
   /** Set at signup when the user registered via ?ref= */

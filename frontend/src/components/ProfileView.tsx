@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Item, Case, ImageMeta, RewardTask, RewardClaimRecord } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Rocket } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Rocket, Wallet, Link2 } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -67,6 +67,8 @@ interface ProfileViewProps {
   isTelegramMiniApp?: boolean;
   telegramBotUsername?: string;
   onBalanceUpdate?: (balance: number) => void;
+  onLinkEvmWallet?: () => void;
+  onLinkTonWallet?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -90,7 +92,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   twitterError = null,
   onConnectTelegram,
   onDisconnectTelegram,
-  onOpenTelegramMiniApp,
+  onOpenTelegramMiniApp: _onOpenTelegramMiniApp,
   telegramBusy = false,
   telegramError = null,
   isBackgroundAnimated = true,
@@ -98,6 +100,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isTelegramMiniApp = false,
   telegramBotUsername = 'casefun_bot',
   onBalanceUpdate,
+  onLinkEvmWallet,
+  onLinkTonWallet,
 }) => {
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -354,13 +358,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (!inventory || !Array.isArray(inventory)) return [];
     for (const item of inventory) {
       if (!item || !isCaseExpired(item.caseId) || item.claimedAt) continue;
+      const groupKey = item.caseId || item.currency || 'UNKNOWN';
       const currencyKey = item.currency || 'UNKNOWN';
-      const existing = groups.get(currencyKey);
+      const existing = groups.get(groupKey);
       const fallbackImage = item.image || CURRENCY_EMOJI[currencyKey.toUpperCase()] || '🪙';
       if (!existing) {
-        groups.set(currencyKey, {
+        groups.set(groupKey, {
           ...item,
-          id: `expired-${currencyKey}`,
+          id: `expired-${groupKey}`,
           name: `${Number(item.value || 0)} ${currencyKey}`,
           image: item.image || fallbackImage,
           value: Number(item.value || 0),
@@ -368,7 +373,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         });
       } else {
         const nextValue = Number(existing.value || 0) + Number(item.value || 0);
-        groups.set(currencyKey, {
+        groups.set(groupKey, {
           ...existing,
           image: existing.image || fallbackImage,
           value: nextValue,
@@ -1024,19 +1029,58 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
 
-            {user?.hasLinkedWallet && user?.walletAddress && (
+            {user?.hasLinkedWallet && user?.walletAddress && !user.walletAddress.startsWith('tg_') && !user.walletAddress.startsWith('ton_') && (
               <div
-                className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mb-4 hover:border-web3-accent/50 transition-colors cursor-pointer group/wallet"
+                className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mb-2 hover:border-web3-accent/50 transition-colors cursor-pointer group/wallet"
               onClick={() => navigator.clipboard.writeText(user.walletAddress)}
-              title={`Click to copy: ${user.walletAddress}`}
+              title={`EVM: ${user.walletAddress}`}
             >
               <div className="w-2 h-2 rounded-full bg-web3-success shadow-[0_0_5px_#10B981] animate-pulse"></div>
+              <span className="text-[9px] text-gray-500 font-bold uppercase">EVM</span>
                 <span className="font-mono text-web3-accent text-xs font-bold tracking-wide">{formatWalletAddress(user.walletAddress)}</span>
               <Copy size={12} className="text-gray-500 group-hover/wallet:text-web3-accent transition-colors ml-1" />
               </div>
             )}
 
-            <div className="w-full h-[1px] bg-white/5 mb-4"></div>
+            {user?.tonAddress && (
+              <div
+                className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-full border border-gray-700 mb-2 hover:border-blue-400/50 transition-colors cursor-pointer group/wallet"
+                onClick={() => navigator.clipboard.writeText(user.tonAddress!)}
+                title={`TON: ${user.tonAddress}`}
+              >
+                <div className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_5px_#60A5FA] animate-pulse"></div>
+                <span className="text-[9px] text-gray-500 font-bold uppercase">TON</span>
+                <span className="font-mono text-blue-400 text-xs font-bold tracking-wide">{formatWalletAddress(user.tonAddress!)}</span>
+                <Copy size={12} className="text-gray-500 group-hover/wallet:text-blue-400 transition-colors ml-1" />
+              </div>
+            )}
+
+            {isEditable && (!user?.hasLinkedWallet || !user?.walletAddress || user.walletAddress.startsWith('tg_') || user.walletAddress.startsWith('ton_') || !user?.tonAddress) && (
+              <div className="flex gap-2 mb-2 flex-wrap">
+                {(!user?.hasLinkedWallet || !user?.walletAddress || user.walletAddress.startsWith('tg_') || user.walletAddress.startsWith('ton_')) && onLinkEvmWallet && (
+                  <button
+                    type="button"
+                    onClick={onLinkEvmWallet}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-web3-accent/30 text-web3-accent text-[10px] font-bold uppercase tracking-wider hover:bg-web3-accent/10 transition-all"
+                  >
+                    <Link2 size={12} />
+                    Link EVM Wallet
+                  </button>
+                )}
+                {!user?.tonAddress && onLinkTonWallet && (
+                  <button
+                    type="button"
+                    onClick={onLinkTonWallet}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-blue-400/30 text-blue-400 text-[10px] font-bold uppercase tracking-wider hover:bg-blue-400/10 transition-all"
+                  >
+                    <Wallet size={12} />
+                    Link TON Wallet
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="w-full h-[1px] bg-white/5 mb-4 mt-2"></div>
 
             <div className={`grid grid-cols-2 gap-3 w-full ${isTelegramMiniApp ? 'mt-1' : ''}`}>
               <StatCard
@@ -1500,24 +1544,36 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="grid grid-cols-4 gap-2">
                         {pagedExpired.map((item, index) => {
                           const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
-                          const tokenAddress = caseInfo?.tokenAddress || '';
-                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
+                          const tokenAddress = caseInfo?.tokenAddress || caseInfo?.tonTokenAddress || '';
+                          const isTonCase = caseInfo?.chainType === 'TON';
+                          const needsWallet = isTonCase ? !user?.tonAddress : (!user?.hasLinkedWallet || !user?.walletAddress || user.walletAddress.startsWith('tg_') || user.walletAddress.startsWith('ton_'));
+                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress && !needsWallet);
                           const isClaiming = claimingCaseId === item.caseId;
                           return (
                             <div key={`${item.id}-${index}`} className="flex flex-col gap-1">
                               <ItemCard item={item} size="sm" currencyPrefix="$" compactContent className={miniUpgradeIconCardClass} />
-                              <button
-                                type="button"
-                                onClick={() => handleClaimToken(item.caseId)}
-                                disabled={!canClaim || isClaiming}
-                                className={`w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border transition ${
-                                  canClaim
-                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent'
-                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
-                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
-                              >
-                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
-                              </button>
+                              {needsWallet && tokenAddress ? (
+                                <button
+                                  type="button"
+                                  onClick={isTonCase ? onLinkTonWallet : onLinkEvmWallet}
+                                  className="w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border border-amber-500/30 bg-amber-500/10 text-amber-400 transition hover:bg-amber-500/20"
+                                >
+                                  Link {isTonCase ? 'TON' : 'EVM'}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleClaimToken(item.caseId)}
+                                  disabled={!canClaim || isClaiming}
+                                  className={`w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border transition ${
+                                    canClaim
+                                      ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent'
+                                      : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                  } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                                >
+                                  {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1526,8 +1582,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <ItemGrid className="auto-rows-max gap-3">
                         {pagedExpired.map((item, index) => {
                           const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
-                          const tokenAddress = caseInfo?.tokenAddress || '';
-                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress);
+                          const tokenAddress = caseInfo?.tokenAddress || caseInfo?.tonTokenAddress || '';
+                          const isTonCase = caseInfo?.chainType === 'TON';
+                          const needsWallet = isTonCase ? !user?.tonAddress : (!user?.hasLinkedWallet || !user?.walletAddress || user.walletAddress.startsWith('tg_') || user.walletAddress.startsWith('ton_'));
+                          const canClaim = Boolean(isEditable && onClaimToken && item.caseId && tokenAddress && !needsWallet);
                           const isClaiming = claimingCaseId === item.caseId;
                           return (
                             <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-2">
@@ -1547,18 +1605,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                   Copy
                                 </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleClaimToken(item.caseId)}
-                                disabled={!canClaim || isClaiming}
-                                className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
-                                  canClaim
-                                    ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
-                                    : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
-                                } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
-                              >
-                                {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
-                              </button>
+                              {needsWallet && tokenAddress ? (
+                                <button
+                                  type="button"
+                                  onClick={isTonCase ? onLinkTonWallet : onLinkEvmWallet}
+                                  className="w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-amber-500/30 bg-amber-500/10 text-amber-400 transition hover:bg-amber-500/20"
+                                >
+                                  Link {isTonCase ? 'TON' : 'EVM'} wallet to claim
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleClaimToken(item.caseId)}
+                                  disabled={!canClaim || isClaiming}
+                                  className={`w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border transition ${
+                                    canClaim
+                                      ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black border-transparent hover:scale-105'
+                                      : 'bg-gray-700/50 text-gray-400 border-white/[0.08]'
+                                  } ${isClaiming ? 'opacity-70 cursor-wait' : ''}`}
+                                >
+                                  {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
+                                </button>
+                              )}
                             </div>
                           );
                         })}

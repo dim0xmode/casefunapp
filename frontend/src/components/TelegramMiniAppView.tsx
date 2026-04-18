@@ -9,7 +9,6 @@ import {
   Lock,
   MessageCircle,
   PlusCircle,
-  Rocket,
   Swords,
   UserCircle2,
   Wallet,
@@ -97,6 +96,8 @@ interface TelegramMiniAppViewProps {
   onOpenHome: () => void;
   externalProvider?: any;
   onConnectWalletForTopUp?: () => Promise<any>;
+  onLinkEvmWallet?: () => void;
+  onLinkTonWallet?: () => void;
 }
 
 type MiniTab = 'cases' | 'create' | 'upgrade' | 'rewards' | 'battle' | 'profile' | 'topup';
@@ -104,7 +105,7 @@ type MiniTab = 'cases' | 'create' | 'upgrade' | 'rewards' | 'battle' | 'profile'
 type TabDef = {
   id: MiniTab;
   label: string;
-  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+  icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties }>;
 };
 
 const BASE_TABS: TabDef[] = [
@@ -206,7 +207,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   isDevAuthenticating = false,
   showDevLogin = false,
   authError,
-  isLinkingWallet,
+  isLinkingWallet: _isLinkingWallet,
   cases,
   inventory,
   burntItems,
@@ -242,11 +243,13 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   onAuthenticate,
   onDevAuthenticate,
   onOpenTelegramBot,
-  onLinkWallet,
+  onLinkWallet: _onLinkWallet,
   walletDeepLink: _walletDeepLink = null,
   onOpenHome: _onOpenHome,
   externalProvider: _externalProvider,
   onConnectWalletForTopUp: _onConnectWalletForTopUp,
+  onLinkEvmWallet,
+  onLinkTonWallet,
 }) => {
   const [activeTab, setActiveTab] = useState<MiniTab>('cases');
   const [lastPrimaryTab, setLastPrimaryTab] = useState<MiniTab>('cases');
@@ -311,7 +314,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     return () => clearTimeout(timer);
   }, [battleAlert]);
 
-  const hasWallet = Boolean(user.hasLinkedWallet && user.walletAddress);
+  void _isLinkingWallet; void _onLinkWallet;
   const caseMap = useMemo(() => new Map(cases.map((e) => [e.id, e])), [cases]);
 
   const activeCases = useMemo(() => {
@@ -857,6 +860,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           telegramError={telegramError} isBackgroundAnimated={isBackgroundAnimated}
           onToggleBackgroundAnimation={onToggleBackgroundAnimation} isTelegramMiniApp
           telegramBotUsername="casefun_bot" onBalanceUpdate={onBalanceUpdate}
+          onLinkEvmWallet={onLinkEvmWallet} onLinkTonWallet={onLinkTonWallet}
         />
       </div>
     );
@@ -1015,58 +1019,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
   }
 
-  // ── No wallet ────────────────────────────────────────────────────────────────
-  if (!hasWallet) {
-    return (
-      <CenteredShell>
-        <div className="w-full max-w-sm space-y-5">
-          <div className="text-center space-y-2">
-            <div
-              className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto border border-amber-400/20"
-              style={{ background: 'rgba(251, 191, 36, 0.08)' }}
-            >
-              <Wallet size={32} className="text-amber-400" />
-            </div>
-            <div className="text-2xl font-black text-white">
-              Link your wallet
-            </div>
-            <div className="text-sm text-gray-400">
-              Connect an EVM wallet to start playing
-            </div>
-          </div>
-
-          <div className="rounded-2xl p-4 space-y-3 border border-white/[0.06] bg-black/20">
-            <ul className="space-y-2 text-sm text-gray-400">
-              <li className="flex items-center gap-2">
-                <span className="text-web3-accent">→</span>
-                One wallet per account
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-web3-accent">→</span>
-                Use the same wallet on site and mini app
-              </li>
-            </ul>
-            <button
-              type="button" onClick={() => onLinkWallet()} disabled={isLinkingWallet}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl text-sm font-black disabled:opacity-60 active:scale-[0.98] transition bg-gradient-to-r from-web3-accent to-web3-success text-black"
-            >
-              <Wallet size={18} />
-              {isLinkingWallet ? 'Connecting…' : 'Connect Wallet'}
-            </button>
-            <div className="text-center text-xs text-gray-500">
-              MetaMask · Trust · OKX · Coinbase · WalletConnect
-            </div>
-          </div>
-
-          {(authError || telegramError || twitterError) && (
-            <div className="px-4 py-3 rounded-xl border border-red-500/25 bg-red-500/10 text-sm text-red-300">
-              {authError || telegramError || twitterError}
-            </div>
-          )}
-        </div>
-      </CenteredShell>
-    );
-  }
+  // ── Wallet linking blocker removed (wallet is now optional) ────────────────
 
   // ── Authenticated app shell ──────────────────────────────────────────────────
   return (

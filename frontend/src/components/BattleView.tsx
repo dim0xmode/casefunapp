@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Case, Item, ImageMeta } from '../types';
-import { Bot, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Trash2, Sparkles } from 'lucide-react';
+import { Bot, XCircle, User as UserIcon, ChevronRight, Check, ArrowLeft, Trash2, Sparkles, Package } from 'lucide-react';
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
@@ -1359,7 +1359,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const leftName = leftIsUser ? userName : hostName || opponent.name;
   const rightName = leftIsUser ? botName || opponent.name : isSpectator ? (botName || 'Opponent') : userName;
 
-  if (gameState !== 'SETUP') {
+  if (gameState === 'BATTLE' || gameState === 'RESULT') {
     const isResult = gameState === 'RESULT';
     const finalUserTotal = sumUsdt(battleOutcomes.map(r => r.userItem));
     const finalBotTotal = sumUsdt(battleOutcomes.map(r => r.botItem));

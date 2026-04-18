@@ -67,10 +67,11 @@ const getCtx = (): AudioContext | null => {
     if (!sharedCtx) {
       sharedCtx = new Ctx();
     }
-    if (sharedCtx.state === 'suspended') {
-      sharedCtx.resume().catch(() => {});
+    const ctx = sharedCtx!;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
     }
-    return sharedCtx;
+    return ctx;
   } catch {
     return null;
   }

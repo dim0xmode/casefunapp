@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
-import { CaseDrop, RtuLedger } from '@prisma/client';
+import { CaseDrop } from '@prisma/client';
 import prisma from '../config/database.js';
-import { recordRtuEvent } from '../services/rtuService.js';
+// RTU freeze: imports kept for future re-enable
+// import { recordRtuEvent } from '../services/rtuService.js';
+// import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
 import { deployCaseToken } from '../services/tokenService.js';
-import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
+import { deployJetton } from '../services/tonService.js';
 import { saveImage } from '../utils/upload.js';
 import { AppError } from '../middleware/errorHandler.js';
 
@@ -75,59 +77,29 @@ const pickByStoredProbabilities = (drops: CaseDrop[]) => {
   return selected;
 };
 
-const pickDynamicDrop = (
-  drops: CaseDrop[],
-  params: {
-    casePriceUsdt: number;
-    declaredRtuPercent: number;
-    tokenPriceUsdt: number;
-    ledger: RtuLedger | null;
-  }
-) => {
-  if (!drops.length) return null;
+// RTU-based dynamic drop picker — disabled (RTU freeze).
+// Kept for reference; will be re-enabled when RTU formulas are finalised.
+// const pickDynamicDrop = ( ... ) => { ... };
 
-  const sortedDrops = [...drops].sort((a, b) => Number(a.value) - Number(b.value));
-  const currentSpent = Number(params.ledger?.totalSpentUsdt || 0);
-  const currentIssued = Number(params.ledger?.totalTokenIssued || 0);
-  const nextSpent = currentSpent + Number(params.casePriceUsdt || 0);
-  const openTargetRtu = getDynamicOpenRtuPercent(params.declaredRtuPercent);
+const pickByInverseValue = (drops: CaseDrop[]): CaseDrop => {
+  if (drops.length <= 1) return drops[0];
 
-  const targetIssuedAfterOpen =
-    params.tokenPriceUsdt > 0 ? (nextSpent * (openTargetRtu / 100)) / params.tokenPriceUsdt : 0;
-  const declaredAllowedAfterOpen =
-    params.tokenPriceUsdt > 0 ? (nextSpent * (params.declaredRtuPercent / 100)) / params.tokenPriceUsdt : 0;
-
-  const idealDrop = Math.max(0, targetIssuedAfterOpen - currentIssued);
-  const maxSafeDrop = Math.max(0, declaredAllowedAfterOpen - currentIssued);
-
-  const safeDrops =
-    maxSafeDrop > 0
-      ? sortedDrops.filter((drop) => Number(drop.value || 0) <= maxSafeDrop + 1e-9)
-      : [];
-  const candidates =
-    safeDrops.length > 0 ? safeDrops : [sortedDrops[0]];
-
-  const shouldBiasLower = currentIssued >= targetIssuedAfterOpen;
-  const n = Math.max(1, candidates.length);
-  const weights = candidates.map((drop, index) => {
-    const value = Number(drop.value || 0);
-    const distance = Math.abs(value - idealDrop);
-    const base = 1 / (1 + distance);
-    const rank = shouldBiasLower ? (n - index) / n : (index + 1) / n;
-    return Math.max(1e-6, base * (1 + rank * 1.5));
+  const weights = drops.map((drop) => {
+    const v = Number(drop.value || 0);
+    return v > 0 ? 1 / v : 1;
   });
 
-  const totalWeight = weights.reduce((acc, weight) => acc + weight, 0);
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
   if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    return drops[Math.floor(Math.random() * drops.length)];
   }
 
   let random = Math.random() * totalWeight;
-  for (let i = 0; i < candidates.length; i += 1) {
+  for (let i = 0; i < drops.length; i += 1) {
     random -= weights[i];
-    if (random <= 0) return candidates[i];
+    if (random <= 0) return drops[i];
   }
-  return candidates[candidates.length - 1];
+  return drops[drops.length - 1];
 };
 
 export const getAllCases = async (
@@ -300,7 +272,10 @@ export const createCase = async (
       imageMeta,
       openDurationHours,
       drops,
+      chainType: rawChainType,
     } = req.body;
+
+    const chainType = rawChainType === 'TON' ? 'TON' : 'EVM';
 
     if (!name || !currency || !price || !drops || drops.length === 0) {
       return next(new AppError('Missing required fields', 400));
@@ -389,7 +364,14 @@ export const createCase = async (
       return next(new AppError('Insufficient balance', 400));
     }
 
-    const tokenAddress = await deployCaseToken(normalizedName, normalizedTicker);
+    let tokenAddress: string | null = null;
+    let tonTokenAddress: string | null = null;
+
+    if (chainType === 'TON') {
+      tonTokenAddress = await deployJetton(normalizedName, normalizedTicker);
+    } else {
+      tokenAddress = await deployCaseToken(normalizedName, normalizedTicker);
+    }
 
     const newCase = await prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -403,7 +385,7 @@ export const createCase = async (
           type: 'CASE_CREATE',
           amount: -CREATE_CASE_FEE,
           currency: 'USDT',
-          metadata: { name, tokenTicker },
+          metadata: { name, tokenTicker, chainType },
         },
       });
 
@@ -415,10 +397,13 @@ export const createCase = async (
           tokenPrice: tokenPriceValue,
           price: priceValue,
           rtu: rtuValue,
+          chainType,
+          tokenDecimals: chainType === 'TON' ? 9 : 18,
           imageUrl,
           imageMeta,
           openDurationHours,
           tokenAddress,
+          tonTokenAddress,
           createdById: userId,
           drops: {
             create: preparedDrops.map((drop) => ({
@@ -473,6 +458,17 @@ export const openCase = async (
       return next(new AppError('Case not found', 404));
     }
 
+    if (!caseItem.isActive) {
+      return next(new AppError('Case is no longer active', 400));
+    }
+
+    if (caseItem.openDurationHours && caseItem.createdAt) {
+      const expiresAt = caseItem.createdAt.getTime() + caseItem.openDurationHours * 60 * 60 * 1000;
+      if (Date.now() > expiresAt) {
+        return next(new AppError('Case opening period has expired', 400));
+      }
+    }
+
     // Get user
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -495,24 +491,7 @@ export const openCase = async (
     let createdItem: any = null;
     let wonDrop: CaseDrop = caseItem.drops[caseItem.drops.length - 1];
     await prisma.$transaction(async (tx) => {
-      const tokenSymbol = caseItem.tokenTicker || caseItem.currency;
-      const ledger = caseItem.tokenPrice
-        ? await tx.rtuLedger.findFirst({
-            where: { caseId: caseId, tokenSymbol },
-          })
-        : null;
-
-      const dynamicDrop =
-        caseItem.tokenPrice && caseItem.tokenPrice > 0
-          ? pickDynamicDrop(caseItem.drops, {
-              casePriceUsdt: Number(caseItem.price || 0),
-              declaredRtuPercent: Number(caseItem.rtu || 0),
-              tokenPriceUsdt: Number(caseItem.tokenPrice || 0),
-              ledger,
-            })
-          : null;
-
-      wonDrop = dynamicDrop || pickByStoredProbabilities(caseItem.drops);
+      wonDrop = pickByInverseValue(caseItem.drops);
 
       // Deduct case price
       await tx.user.update({
@@ -561,25 +540,8 @@ export const openCase = async (
         },
       });
 
-      if (caseItem.tokenPrice) {
-        await recordRtuEvent(
-          {
-            caseId,
-            userId,
-            tokenSymbol,
-            tokenPriceUsdt: caseItem.tokenPrice,
-            rtuPercent: caseItem.rtu,
-            type: 'OPEN',
-            deltaSpentUsdt: caseItem.price,
-            deltaToken: wonDrop.value,
-            metadata: {
-              wonDropId: wonDrop.id,
-              wonValue: wonDrop.value,
-            },
-          },
-          tx
-        );
-      }
+      // RTU event recording disabled (RTU freeze)
+      // if (caseItem.tokenPrice) { await recordRtuEvent(...) }
     });
 
     const updatedUser = await prisma.user.findUnique({ where: { id: userId } });
