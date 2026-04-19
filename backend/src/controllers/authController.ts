@@ -8,6 +8,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { verifyTelegramWebAppInitData, verifyTelegramLoginPayload } from '../utils/telegramAuth.js';
 import { resolveReferrerIdByCode } from '../utils/referral.js';
 import { verifyTonProof } from '../utils/tonAuth.js';
+import { toFriendlyTonAddress } from '../services/tonService.js';
 import {
   mergeAccounts,
   findMergeConflicts,
@@ -1153,13 +1154,47 @@ const normalizeTonAddress = (raw: unknown): string => {
   return addr;
 };
 
+/**
+ * Look up a user by TON address that may be stored in either the legacy
+ * raw form (`0:hex`) OR the canonical user-friendly form. We try both so
+ * users who linked before the friendly-form migration aren't duplicated.
+ * If found via the legacy raw form, transparently migrate the record to
+ * the friendly form.
+ */
+const findUserByTonAddressAnyForm = async (
+  rawTonAddress: string,
+  friendlyTonAddress: string
+) => {
+  if (friendlyTonAddress) {
+    const byFriendly = await prisma.user.findUnique({ where: { tonAddress: friendlyTonAddress } });
+    if (byFriendly) return byFriendly;
+  }
+  if (rawTonAddress && rawTonAddress !== friendlyTonAddress) {
+    const byRaw = await prisma.user.findUnique({ where: { tonAddress: rawTonAddress } });
+    if (byRaw && friendlyTonAddress) {
+      // Lazy migration: convert legacy raw form to friendly so future lookups hit fast path.
+      try {
+        const migrated = await prisma.user.update({
+          where: { id: byRaw.id },
+          data: { tonAddress: friendlyTonAddress },
+        });
+        return migrated;
+      } catch {
+        return byRaw;
+      }
+    }
+    return byRaw;
+  }
+  return null;
+};
+
 const upsertUserByTonAddress = async (
-  tonAddress: string,
+  rawTonAddress: string,
   options?: { referralCode?: string }
 ) => {
-  let user = await prisma.user.findUnique({
-    where: { tonAddress },
-  });
+  const tonAddress = toFriendlyTonAddress(rawTonAddress) || rawTonAddress;
+
+  let user = await findUserByTonAddressAnyForm(rawTonAddress, tonAddress);
 
   if (!user) {
     const username = await makeUniqueUsername(`TON_${tonAddress.slice(-8)}`);
@@ -1199,14 +1234,15 @@ export const loginWithTon = async (
     }
 
     const { tonAddress: rawAddress, proof, referralCode } = req.body || {};
-    const tonAddress = normalizeTonAddress(rawAddress);
-    if (!tonAddress) {
+    const rawTonAddress = normalizeTonAddress(rawAddress);
+    if (!rawTonAddress) {
       return next(new AppError('TON address is required', 400));
     }
 
-    await verifyTonProof(tonAddress, proof);
+    // Proof was signed over the raw form bytes the wallet sent — verify with raw.
+    await verifyTonProof(rawTonAddress, proof);
 
-    const user = await upsertUserByTonAddress(tonAddress, { referralCode });
+    const user = await upsertUserByTonAddress(rawTonAddress, { referralCode });
     await createSessionForUser(user.id, res);
 
     res.json({
@@ -1230,33 +1266,49 @@ export const linkTonWallet = async (
     }
 
     const { tonAddress: rawAddress, proof } = req.body || {};
-    const tonAddress = normalizeTonAddress(rawAddress);
-    if (!tonAddress) {
+    const rawTonAddress = normalizeTonAddress(rawAddress);
+    if (!rawTonAddress) {
       return next(new AppError('TON address is required', 400));
     }
 
     if (proof) {
       try {
-        await verifyTonProof(tonAddress, proof);
+        await verifyTonProof(rawTonAddress, proof);
       } catch {
         // Proof verification failed but user is already authenticated —
         // TonConnect handshake is sufficient for linking.
       }
     }
 
+    const tonAddress = toFriendlyTonAddress(rawTonAddress) || rawTonAddress;
+
     const currentUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!currentUser) {
       return next(new AppError('User not found', 404));
     }
 
-    if (currentUser.tonAddress === tonAddress) {
+    // Compare against both forms — current user may have been linked under raw form previously.
+    if (
+      currentUser.tonAddress === tonAddress ||
+      currentUser.tonAddress === rawTonAddress
+    ) {
+      // Lazy migration: if record still holds raw form, normalise it now.
+      if (currentUser.tonAddress !== tonAddress) {
+        try {
+          const migrated = await prisma.user.update({
+            where: { id: userId },
+            data: { tonAddress },
+          });
+          return res.json({ status: 'success', data: { user: toPublicUser(migrated) } });
+        } catch { /* fall through to original response */ }
+      }
       return res.json({
         status: 'success',
         data: { user: toPublicUser(currentUser) },
       });
     }
 
-    const existingOwner = await prisma.user.findUnique({ where: { tonAddress } });
+    const existingOwner = await findUserByTonAddressAnyForm(rawTonAddress, tonAddress);
     if (existingOwner && existingOwner.id !== userId) {
       const conflicts = findMergeConflicts(currentUser, existingOwner);
       if (conflicts.length > 0) {

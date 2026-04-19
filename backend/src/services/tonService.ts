@@ -359,17 +359,29 @@ export type TonDepositTx = {
   utime: number;
 };
 
-const normaliseTonAddress = (raw: string): string => {
+const isTestnet = (): boolean => (config.tonEndpoint || '').includes('testnet');
+
+/**
+ * Convert ANY TON address representation (raw `0:hex`, friendly `EQ…`/`UQ…`/`0Q…`/`kQ…`)
+ * into the canonical user-friendly form (non-bounceable, with the correct testnet flag).
+ *
+ * The wallet sends raw form via TonConnect, but users see/copy the friendly form
+ * in their wallet apps. We always store and display friendly so the two match.
+ */
+export const toFriendlyTonAddress = (raw: string): string => {
+  if (!raw) return '';
   try {
-    return Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+    return Address.parse(raw).toString({
+      urlSafe: true,
+      bounceable: false,
+      testOnly: isTestnet(),
+    });
   } catch {
-    try {
-      return Address.parse(raw).toString();
-    } catch {
-      return raw;
-    }
+    return raw;
   }
 };
+
+const normaliseTonAddress = (raw: string): string => toFriendlyTonAddress(raw);
 
 export const tonAddressesEqual = (a: string, b: string): boolean => {
   try {
