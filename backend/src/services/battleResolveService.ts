@@ -1,44 +1,35 @@
 import { CaseDrop } from '@prisma/client';
 import prisma from '../config/database.js';
+import { pickDropByRtu } from './dropProbabilityService.js';
 
 type ResolveMode = 'BOT' | 'PVP';
 
 type PickDebug = {
   chosenValue: number;
+  picker: 'rtu' | 'inverse_value_fallback';
 };
 
 const round2 = (value: number) => Number(value.toFixed(2));
 
-// RTU-based pickBattleDynamicDrop disabled (RTU freeze).
-// Replaced with inverse-value weighted random pick.
-const pickBattleInverseValue = (
-  drops: CaseDrop[]
+const pickBattleDrop = (
+  drops: CaseDrop[],
+  casePrice: number,
+  rtuPercent: number,
+  tokenPriceUsdt: number,
 ): { drop: CaseDrop; debug: PickDebug } => {
   if (drops.length <= 1) {
-    return { drop: drops[0], debug: { chosenValue: round2(Number(drops[0]?.value || 0)) } };
+    return {
+      drop: drops[0],
+      debug: { chosenValue: round2(Number(drops[0]?.value || 0)), picker: 'rtu' },
+    };
   }
-
-  const weights = drops.map((drop) => {
-    const v = Number(drop.value || 0);
-    return v > 0 ? 1 / v : 1;
-  });
-
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  let chosen = drops[drops.length - 1];
-  if (Number.isFinite(totalWeight) && totalWeight > 0) {
-    let random = Math.random() * totalWeight;
-    for (let i = 0; i < drops.length; i += 1) {
-      random -= weights[i];
-      if (random <= 0) {
-        chosen = drops[i];
-        break;
-      }
-    }
-  }
-
+  const result = pickDropByRtu(drops, casePrice, rtuPercent, tokenPriceUsdt);
   return {
-    drop: chosen,
-    debug: { chosenValue: round2(Number(chosen.value || 0)) },
+    drop: result.drop,
+    debug: {
+      chosenValue: round2(Number(result.drop.value || 0)),
+      picker: result.usedFallback ? 'inverse_value_fallback' : 'rtu',
+    },
   };
 };
 
@@ -70,10 +61,12 @@ export const resolveBattleDrops = async (caseIds: string[], mode: ResolveMode) =
     }
     const tokenSymbol = caseItem.tokenTicker || caseItem.currency;
 
-    const userPick = pickBattleInverseValue(caseItem.drops);
-    const opponentPick = pickBattleInverseValue(caseItem.drops);
-
     const tp = Number(caseItem.tokenPrice || 0);
+    const casePrice = Number(caseItem.price || 0);
+    const rtuPercent = Number(caseItem.rtu || 0);
+    const userPick = pickBattleDrop(caseItem.drops, casePrice, rtuPercent, tp);
+    const opponentPick = pickBattleDrop(caseItem.drops, casePrice, rtuPercent, tp);
+
     const userVal = round2(Number(userPick.drop.value || 0));
     const oppVal = round2(Number(opponentPick.drop.value || 0));
 

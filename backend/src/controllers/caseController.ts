@@ -1,11 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { CaseDrop } from '@prisma/client';
 import prisma from '../config/database.js';
-// RTU freeze: chance-shaping logic is disabled, but ledger writes remain so the
-// admin panel keeps showing real-time spend / issuance / surplus per case+token.
 import { recordRtuEvent } from '../services/rtuService.js';
 import { deployCaseToken } from '../services/tokenService.js';
 import { deployJetton } from '../services/tonService.js';
+import { computeRtuDropChances, pickDropByRtu } from '../services/dropProbabilityService.js';
 import { saveImage } from '../utils/upload.js';
 import { AppError } from '../middleware/errorHandler.js';
 
@@ -58,49 +57,10 @@ const canRequestCaseStats = async (req: Request) => {
   return session.user.role === 'ADMIN';
 };
 
-const pickByStoredProbabilities = (drops: CaseDrop[]) => {
-  const totalProbability = drops.reduce((sum, drop) => sum + Number(drop.probability || 0), 0);
-  if (!Number.isFinite(totalProbability) || totalProbability <= 0) {
-    return drops[Math.floor(Math.random() * drops.length)];
-  }
-
-  const random = Math.random() * totalProbability;
-  let cumulativeProbability = 0;
-  let selected = drops[drops.length - 1];
-  for (const drop of drops) {
-    cumulativeProbability += Number(drop.probability || 0);
-    if (random <= cumulativeProbability) {
-      selected = drop;
-      break;
-    }
-  }
-  return selected;
-};
-
-// RTU-based dynamic drop picker — disabled (RTU freeze).
-// Kept for reference; will be re-enabled when RTU formulas are finalised.
-// const pickDynamicDrop = ( ... ) => { ... };
-
-const pickByInverseValue = (drops: CaseDrop[]): CaseDrop => {
-  if (drops.length <= 1) return drops[0];
-
-  const weights = drops.map((drop) => {
-    const v = Number(drop.value || 0);
-    return v > 0 ? 1 / v : 1;
-  });
-
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
-    return drops[Math.floor(Math.random() * drops.length)];
-  }
-
-  let random = Math.random() * totalWeight;
-  for (let i = 0; i < drops.length; i += 1) {
-    random -= weights[i];
-    if (random <= 0) return drops[i];
-  }
-  return drops[drops.length - 1];
-};
+// Drop selection now uses honest RTU-based probabilities — see
+// `pickDropByRtu` in services/dropProbabilityService.ts. The picker falls back
+// to inverse-value weighted random for legacy / degenerate cases that can't be
+// solved with the RTU formula, so drops never get stuck.
 
 export const getAllCases = async (
   req: Request,
@@ -345,6 +305,15 @@ export const createCase = async (
     }
 
     const equalProbability = 100 / preparedDrops.length;
+    const computedChances = computeRtuDropChances(
+      preparedDrops,
+      priceValue,
+      rtuValue,
+      tokenPriceValue,
+    );
+    const dropProbabilities = computedChances
+      ? computedChances.map((value) => Math.round(value * 1000000) / 10000)
+      : preparedDrops.map(() => equalProbability);
 
     const existing = await prisma.case.findFirst({
       where: {
@@ -414,12 +383,12 @@ export const createCase = async (
           tonTokenAddress,
           createdById: userId,
           drops: {
-            create: preparedDrops.map((drop) => ({
+            create: preparedDrops.map((drop, idx) => ({
               name: drop.name,
               value: drop.value,
               currency: drop.currency,
               rarity: drop.rarity,
-              probability: equalProbability,
+              probability: dropProbabilities[idx] ?? equalProbability,
               color: drop.color,
               image: drop.image || null,
             })),
@@ -498,8 +467,16 @@ export const openCase = async (
     // Create transaction and update user balance
     let createdItem: any = null;
     let wonDrop: CaseDrop = caseItem.drops[caseItem.drops.length - 1];
+    let dropPickedByRtu = false;
     await prisma.$transaction(async (tx) => {
-      wonDrop = pickByInverseValue(caseItem.drops);
+      const pickResult = pickDropByRtu(
+        caseItem.drops,
+        Number(caseItem.price),
+        Number(caseItem.rtu),
+        Number(caseItem.tokenPrice || 0),
+      );
+      wonDrop = pickResult.drop;
+      dropPickedByRtu = !pickResult.usedFallback;
 
       // Deduct case price
       await tx.user.update({
@@ -548,8 +525,6 @@ export const openCase = async (
         },
       });
 
-      // RTU chance-shaping is disabled, but record the event so the admin panel
-      // can still observe real spend (USDT) vs token issuance per case.
       if (caseItem.tokenPrice && caseItem.tokenPrice > 0) {
         await recordRtuEvent(
           {
@@ -564,7 +539,7 @@ export const openCase = async (
             metadata: {
               wonDropId: wonDrop.id,
               wonValue: wonDrop.value,
-              rtuFrozen: true,
+              picker: dropPickedByRtu ? 'rtu' : 'inverse_value_fallback',
             },
           },
           tx

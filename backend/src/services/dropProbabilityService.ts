@@ -151,3 +151,126 @@ export const calculateDropProbabilities = (
     probability: roundProbabilityPercent(normalized[idx] * 100),
   }));
 };
+
+/**
+ * Honest RTU-based drop chances:
+ *   1) Target = casePrice * RTU%
+ *   2) Split lots into Loss group (value < Target) and Win group (value > Target)
+ *      using monetary value (drop tokens × token price USDT).
+ *   3) Lot weight = 1 / monetaryValue (cheaper drops are more likely inside group)
+ *   4) Group probabilities solved so that E[lot] = Target:
+ *        Pwin  = (Target - Aloss) / (Awin - Aloss)
+ *        Ploss = 1 - Pwin
+ *      where Aloss/Awin are weighted average monetary values of each group.
+ *   5) Each lot probability = Pgroup × (Wlot / ΣWgroup), normalized to 1.
+ *
+ * Returns probabilities in [0..1] with sum ≈ 1, or null if math fails (caller
+ * should fall back to a simpler picker so drops never get stuck).
+ */
+export const computeRtuDropChances = (
+  drops: { value: number }[],
+  casePriceUsdt: number,
+  rtuPercent: number,
+  tokenPriceUsdt: number,
+): number[] | null => {
+  if (!Array.isArray(drops) || drops.length === 0) return null;
+  if (!Number.isFinite(casePriceUsdt) || casePriceUsdt <= 0) return null;
+  if (!Number.isFinite(rtuPercent) || rtuPercent <= 0 || rtuPercent > 100) return null;
+  if (!Number.isFinite(tokenPriceUsdt) || tokenPriceUsdt <= 0) return null;
+
+  const monetary = drops.map((drop) => Number(drop.value || 0) * tokenPriceUsdt);
+  if (monetary.some((value) => !Number.isFinite(value) || value <= 0)) return null;
+
+  const target = casePriceUsdt * (rtuPercent / 100);
+  const minValue = Math.min(...monetary);
+  const maxValue = Math.max(...monetary);
+  if (target < minValue - EPS || target > maxValue + EPS) return null;
+
+  if (drops.length === 1) return [1];
+
+  const exact: number[] = [];
+  monetary.forEach((value, idx) => {
+    if (Math.abs(value - target) <= EPS) exact.push(idx);
+  });
+  if (exact.length > 0) {
+    const probs = monetary.map(() => 0);
+    const p = 1 / exact.length;
+    exact.forEach((idx) => {
+      probs[idx] = p;
+    });
+    return probs;
+  }
+
+  const lossIdx: number[] = [];
+  const winIdx: number[] = [];
+  monetary.forEach((value, idx) => {
+    if (value < target) lossIdx.push(idx);
+    else winIdx.push(idx);
+  });
+  if (lossIdx.length === 0 || winIdx.length === 0) return null;
+
+  const weights = monetary.map((value) => 1 / value);
+  const sumLossW = lossIdx.reduce((sum, idx) => sum + weights[idx], 0);
+  const sumWinW = winIdx.reduce((sum, idx) => sum + weights[idx], 0);
+  if (sumLossW <= 0 || sumWinW <= 0) return null;
+
+  const avgLoss = lossIdx.reduce((sum, idx) => sum + monetary[idx] * weights[idx], 0) / sumLossW;
+  const avgWin = winIdx.reduce((sum, idx) => sum + monetary[idx] * weights[idx], 0) / sumWinW;
+  const denominator = avgWin - avgLoss;
+  if (denominator <= EPS) return null;
+
+  let pWin = (target - avgLoss) / denominator;
+  if (!Number.isFinite(pWin)) return null;
+  pWin = Math.min(1, Math.max(0, pWin));
+  const pLoss = 1 - pWin;
+
+  const probs = monetary.map((_, idx) => {
+    if (lossIdx.includes(idx)) return pLoss * (weights[idx] / sumLossW);
+    return pWin * (weights[idx] / sumWinW);
+  });
+
+  const sum = probs.reduce((a, b) => a + b, 0);
+  if (!Number.isFinite(sum) || sum <= 0) return null;
+  return probs.map((value) => value / sum);
+};
+
+/**
+ * Picks a drop using the honest RTU-based chances. Falls back to inverse-value
+ * weighted random when the formula can't be solved (e.g. degenerate drops).
+ */
+export const pickDropByRtu = <T extends { value: number }>(
+  drops: T[],
+  casePriceUsdt: number,
+  rtuPercent: number,
+  tokenPriceUsdt: number,
+): { drop: T; probabilities: number[]; usedFallback: boolean } => {
+  if (drops.length === 0) {
+    throw new AppError('Cannot pick drop from empty list', 500);
+  }
+  if (drops.length === 1) {
+    return { drop: drops[0], probabilities: [1], usedFallback: false };
+  }
+
+  let probabilities = computeRtuDropChances(drops, casePriceUsdt, rtuPercent, tokenPriceUsdt);
+  let usedFallback = false;
+
+  if (!probabilities) {
+    usedFallback = true;
+    const inv = drops.map((drop) => {
+      const v = Number(drop.value || 0);
+      return v > 0 ? 1 / v : 1;
+    });
+    const total = inv.reduce((a, b) => a + b, 0);
+    probabilities = total > 0 ? inv.map((value) => value / total) : drops.map(() => 1 / drops.length);
+  }
+
+  const random = Math.random();
+  let cumulative = 0;
+  for (let i = 0; i < drops.length; i += 1) {
+    cumulative += probabilities[i];
+    if (random <= cumulative) {
+      return { drop: drops[i], probabilities, usedFallback };
+    }
+  }
+  return { drop: drops[drops.length - 1], probabilities, usedFallback };
+};

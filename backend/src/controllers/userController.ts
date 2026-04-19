@@ -563,7 +563,7 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
               totalBaseValue,
               targetValue,
               success: isSuccess,
-              rtuFrozen: true,
+              picker: 'random_percent',
             },
           },
           tx
@@ -1367,7 +1367,7 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
               metadata: {
                 mode: parsedProof.payload.mode,
                 result: userWon ? 'WIN' : 'LOSS',
-                rtuFrozen: true,
+                picker: 'rtu',
               },
             },
             tx

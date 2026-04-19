@@ -1249,10 +1249,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'rtu' && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200/90 flex items-start gap-2">
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold uppercase tracking-widest shrink-0">RTU Frozen</span>
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-200/90 flex items-start gap-2">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-bold uppercase tracking-widest shrink-0">RTU Active</span>
                 <span>
-                  Chance-shaping is disabled — drops use plain weighted random (1/value for opens & battles; 1/multiplier for upgrades). Ledger numbers below are <strong>observational only</strong>: they show real USDT spend, token issuance and the surplus/deficit that the RTU engine <em>would</em> track if re-enabled. Manual adjustments still write to the ledger but do not affect drop chances.
+                  Case opens & battles use the <strong>honest RTU formula</strong>: drops are split into Loss/Win groups around <code>Target = price × RTU%</code>, weighted by <code>1/value</code>, and group probabilities solved so that expected drop ≈ Target. Upgrades remain a flat random %. Numbers below show real USDT spend vs token issuance and the resulting surplus/deficit per case. Manual adjustments write to the ledger only.
                 </span>
               </div>
               <div className="text-xs text-gray-500 mb-2">Return-To-User (RTU) engine. Tracks how much USDT was spent per case and how many tokens were issued. Buffer debt shows the deficit/surplus between ideal and actual token issuance. Use manual adjustment to correct ledger imbalances.</div>
