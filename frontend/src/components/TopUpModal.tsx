@@ -56,6 +56,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [isTonSubmitting, setIsTonSubmitting] = useState(false);
   const [tonStatus, setTonStatus] = useState<string | null>(null);
   const [tonPending, setTonPending] = useState<{ sentAtUnix: number; expectedTon: number } | null>(null);
+  const [tonNetworkMismatch, setTonNetworkMismatch] = useState(false);
 
   const chainId = Number(import.meta.env.VITE_CHAIN_ID || 11155111);
   const treasuryAddress = String(import.meta.env.VITE_TREASURY_ADDRESS || '');
@@ -403,18 +404,31 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
     setIsTonSubmitting(true);
     setTonStatus(null);
+    setTonNetworkMismatch(false);
     try {
-      const { sendTonTransfer } = await import('../utils/tonConnect');
+      const { sendTonTransfer, TonNetworkMismatchError } = await import('../utils/tonConnect');
       const sentAtUnix = Math.floor(Date.now() / 1000);
       const nano = BigInt(Math.floor(parsedTon * 1e9));
       setTonStatus('Opening TON wallet…');
-      await sendTonTransfer(tonTreasury, nano, 'casefun-topup', tonTreasuryNetwork);
+      try {
+        await sendTonTransfer(tonTreasury, nano, 'casefun-topup', tonTreasuryNetwork);
+      } catch (err: any) {
+        if (err instanceof TonNetworkMismatchError) {
+          setTonNetworkMismatch(true);
+          setTonStatus(err.message);
+          return;
+        }
+        throw err;
+      }
       setTonPending({ sentAtUnix, expectedTon: parsedTon });
       setTonStatus('Transaction signed. Confirming on chain…');
       await pollTonDeposit(sentAtUnix, parsedTon);
     } catch (err: any) {
       const msg = String(err?.message || err);
-      if (/reject|cancel|dismiss/i.test(msg)) {
+      if (/wrong network/i.test(msg)) {
+        setTonNetworkMismatch(true);
+        setTonStatus(`Your TON wallet is on the wrong network. Switch to ${tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'} account in your wallet and reconnect.`);
+      } else if (/reject|cancel|dismiss/i.test(msg)) {
         setTonStatus('Cancelled in wallet');
       } else {
         setTonStatus(msg || 'TON top up failed');
@@ -597,12 +611,39 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             <div className="text-[10px] uppercase tracking-widest text-gray-500">
               {tonPrice ? `1 TON ≈ ${tonPrice.toFixed(2)} ₮` : tonPriceError || 'Loading TON price...'}
             </div>
+            {tonNetworkMismatch && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed">
+                Your TON wallet is on the wrong network. We need <b>{tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}</b>.
+                <br />
+                In Tonkeeper: <b>Settings → enable “Show Testnet account”</b>, switch to that account, then press Reconnect below.
+              </div>
+            )}
             {tonStatus && (
               <div className="text-[11px] uppercase tracking-widest text-gray-400">{tonStatus}</div>
             )}
             <div className="flex gap-3">
               <PrimaryButton variant="ghost" onClick={onClose} className="flex-1">Cancel</PrimaryButton>
-              {tonPending ? (
+              {tonNetworkMismatch ? (
+                <PrimaryButton
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={isTonSubmitting}
+                  onClick={async () => {
+                    try {
+                      const { disconnectTon } = await import('../utils/tonConnect');
+                      await disconnectTon();
+                    } catch {
+                      // ignore
+                    }
+                    setTonNetworkMismatch(false);
+                    setTonStatus('Disconnected. Tap "Top up" again to reconnect.');
+                    onLinkTonWallet?.();
+                  }}
+                >
+                  Reconnect TON
+                </PrimaryButton>
+              ) : tonPending ? (
                 <PrimaryButton type="button" onClick={handleTonCheckStatus} variant="secondary" className="flex-1" disabled={isTonSubmitting}>
                   Check status
                 </PrimaryButton>

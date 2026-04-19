@@ -91,6 +91,28 @@ const networkToChain = (n?: TonNetwork): string | undefined => {
   return undefined;
 };
 
+export class TonNetworkMismatchError extends Error {
+  walletNetwork: 'mainnet' | 'testnet' | 'unknown';
+  required: TonNetwork;
+  constructor(required: TonNetwork, walletNetwork: 'mainnet' | 'testnet' | 'unknown') {
+    super(
+      required === 'testnet'
+        ? 'Your TON wallet is connected to Mainnet. Switch to Testnet account in your wallet (Tonkeeper → Settings → Active accounts → enable Testnet) and reconnect.'
+        : 'Your TON wallet is connected to Testnet. Switch to Mainnet account and reconnect.'
+    );
+    this.name = 'TonNetworkMismatchError';
+    this.required = required;
+    this.walletNetwork = walletNetwork;
+  }
+}
+
+const detectAccountNetwork = (chain?: string | number | null): 'mainnet' | 'testnet' | 'unknown' => {
+  const v = String(chain ?? '');
+  if (v === '-239') return 'mainnet';
+  if (v === '-3') return 'testnet';
+  return 'unknown';
+};
+
 export const sendTonTransfer = async (
   destinationAddress: string,
   amountNano: bigint,
@@ -99,6 +121,13 @@ export const sendTonTransfer = async (
 ): Promise<TonSendResult> => {
   const ui = await getOrConnectTonUI();
   if (!ui.connected) throw new Error('TON wallet not connected');
+
+  if (network) {
+    const walletNet = detectAccountNetwork(ui.account?.chain as any);
+    if (walletNet !== 'unknown' && walletNet !== network) {
+      throw new TonNetworkMismatchError(network, walletNet);
+    }
+  }
 
   let payload: string | undefined;
   if (comment) {
@@ -119,6 +148,24 @@ export const sendTonTransfer = async (
       },
     ],
   };
-  const result = await ui.sendTransaction(tx);
-  return { boc: result.boc };
+  try {
+    const result = await ui.sendTransaction(tx);
+    return { boc: result.boc };
+  } catch (err: any) {
+    const msg = String(err?.message || err || '');
+    if (/wrong network/i.test(msg)) {
+      const walletNet = detectAccountNetwork(ui.account?.chain as any);
+      throw new TonNetworkMismatchError(network ?? 'testnet', walletNet);
+    }
+    throw err;
+  }
+};
+
+export const disconnectTon = async (): Promise<void> => {
+  if (!instance) return;
+  try {
+    await instance.disconnect();
+  } catch {
+    // already disconnected
+  }
 };
