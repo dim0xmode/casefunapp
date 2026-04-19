@@ -6,7 +6,7 @@ import { AdminActionButton } from './ui/AdminActionButton';
 import { ImageAdjustModal } from './ui/ImageAdjustModal';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { api, resolveAssetUrl } from '../services/api';
-import { formatShortfallUp } from '../utils/number';
+import { formatShortfallUp, sanitizeDecimalInput, formatDecimal } from '../utils/number';
 
 const RARITY_COLORS: Record<Rarity, string> = {
   [Rarity.COMMON]: '#9CA3AF',
@@ -317,8 +317,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     if (!Number.isFinite(rtuValueNumber) || rtuValueNumber <= 0) return null;
     if (!Number.isFinite(tokenPriceValueNumber) || tokenPriceValueNumber <= 0) return null;
 
-    const minAllowedToken = priceValueNumber * 0.5;
-    const maxAllowedToken = priceValueNumber * 15;
+    const minAllowedToken = (priceValueNumber * 0.5) / tokenPriceValueNumber;
+    const maxAllowedToken = (priceValueNumber * 15) / tokenPriceValueNumber;
     const validDropValues = normalizedDrops
       .map((drop) => Number(drop.value))
       .filter((value) => Number.isFinite(value) && value > 0);
@@ -627,10 +627,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Open Price (₮)</div>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  min={1}
+                  onChange={(e) => setPrice(sanitizeDecimalInput(e.target.value))}
                   placeholder="e.g. 10"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
@@ -660,10 +660,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Token Price</div>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={tokenPrice}
-                  onChange={(e) => setTokenPrice(e.target.value)}
-                  min={0.0001}
+                  onChange={(e) => setTokenPrice(sanitizeDecimalInput(e.target.value))}
                   placeholder="e.g. 0.25"
                   className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] focus:outline-none focus:border-web3-accent/50 backdrop-blur-xl"
                 />
@@ -854,9 +854,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                       {index + 1}
                     </div>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={drop.value}
-                      onChange={(e) => updateDrop(drop.id, { value: e.target.value })}
+                      onChange={(e) => updateDrop(drop.id, { value: sanitizeDecimalInput(e.target.value) })}
                       className="flex-1 px-3 py-2 rounded-lg bg-black/35 border border-white/[0.12] text-sm"
                       placeholder="Drop value (token amount)"
                     />
@@ -884,9 +885,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                   </div>
                   <div className="grid grid-cols-1 gap-3">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={drop.value}
-                      onChange={(e) => updateDrop(drop.id, { value: e.target.value })}
+                      onChange={(e) => updateDrop(drop.id, { value: sanitizeDecimalInput(e.target.value) })}
                       className="px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl"
                       placeholder="e.g. 100"
                     />
@@ -906,10 +908,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                 }`}>
                   <div>{rtuHelper.hint}</div>
                   <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                    Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+                    Minimum drop (required): {'<='} {formatDecimal(rtuHelper.minAllowedToken)} tokens
                   </div>
                   <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                    Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
+                    Maximum drop (required): {'>='} {formatDecimal(rtuHelper.maxAllowedToken)} tokens
                   </div>
                 </div>
               )}
@@ -933,10 +935,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                 }`}>
                   <div>{rtuHelper.hint}</div>
                   <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                    Minimum drop (required): {'<='} {rtuHelper.minAllowedToken.toFixed(4)} tokens
+                    Minimum drop (required): {'<='} {formatDecimal(rtuHelper.minAllowedToken)} tokens
                   </div>
                   <div className="mt-1 text-[10px] tracking-wide text-gray-300">
-                    Maximum drop (required): {'>='} {rtuHelper.maxAllowedToken.toFixed(4)} tokens
+                    Maximum drop (required): {'>='} {formatDecimal(rtuHelper.maxAllowedToken)} tokens
                   </div>
                 </div>
               )}

@@ -1008,7 +1008,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="w-full max-w-[240px] mt-2 mb-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-web3-accent to-web3-purple">Lvl {lvl.level}</span>
-                  <span className="text-[10px] text-gray-500 tabular-nums">{lvl.isMaxLevel ? 'MAX' : `${lvl.xpInLevel} / ${lvl.xpNeeded}`}</span>
+                  <span className="text-[10px] text-gray-500 tabular-nums">{lvl.isMaxLevel ? 'MAX' : `${formatCfp(lvl.xpInLevel)} / ${lvl.xpNeeded}`}</span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <div className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple transition-all duration-700" style={{ width: `${lvl.progress}%` }} />

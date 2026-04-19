@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Case } from '../types';
 import { SearchInput } from './ui/SearchInput';
 import { ImageWithMeta } from './ui/ImageWithMeta';
+import { formatDecimal } from '../utils/number';
 
 interface CaseListViewProps {
   cases: Case[];
@@ -127,7 +128,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             </div>
 
             <div className="flex items-center justify-center w-full text-[10px] leading-none px-0.5">
-              <span className="font-bold text-web3-accent">{caseData.price} ₮</span>
+              <span className="font-bold text-web3-accent">{formatDecimal(Number(caseData.price))} ₮</span>
             </div>
           </div>
         </div>
@@ -179,7 +180,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
               ${caseData.tokenTicker || caseData.currency}
             </div>
             <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-web3-accent/20 to-web3-purple/20 border border-web3-accent/30 flex items-center justify-center">
-              <span className="font-black text-xs text-white">{caseData.price} ₮</span>
+              <span className="font-black text-xs text-white">{formatDecimal(Number(caseData.price))} ₮</span>
             </div>
           </div>
         </div>

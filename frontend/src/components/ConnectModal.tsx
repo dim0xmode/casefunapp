@@ -19,6 +19,8 @@ interface ConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode?: ConnectModalMode;
+  /** When set, only this auth method is shown (no chain tabs) — used for direct "Link EVM"/"Link TON" buttons */
+  lockChain?: 'evm' | 'ton';
   onConnectEvm: (result: ConnectedWalletResult) => Promise<boolean>;
   onLinkEvm?: (result: ConnectedWalletResult) => Promise<boolean>;
   onLoginTelegramWidget: (payload: Record<string, any>) => Promise<void>;
@@ -52,6 +54,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
   isOpen,
   onClose,
   mode = 'login',
+  lockChain,
   onConnectEvm,
   onLinkEvm,
   onLoginTelegramWidget,
@@ -67,7 +70,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
   referralCode,
 }) => {
   const isLinkMode = mode === 'link';
-  const defaultTab: AuthMethod = isLinkMode ? 'evm' : 'telegram';
+  const defaultTab: AuthMethod = lockChain ? lockChain : (isLinkMode ? 'evm' : 'telegram');
   const [activeMethod, setActiveMethod] = useState<AuthMethod>(defaultTab);
   const [localConnecting, setLocalConnecting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -81,9 +84,11 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
       setLocalConnecting(false);
       setTgLoginState('idle');
       pollRef.current = false;
-      setActiveMethod(isLinkMode ? 'evm' : 'telegram');
+      setActiveMethod(lockChain ? lockChain : (isLinkMode ? 'evm' : 'telegram'));
+    } else if (lockChain) {
+      setActiveMethod(lockChain);
     }
-  }, [isOpen, isLinkMode]);
+  }, [isOpen, isLinkMode, lockChain]);
 
   if (!isOpen) return null;
 
@@ -94,7 +99,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     return onConnectEvm(result);
   };
 
-  const connectViaWalletConnect = async () => {
+  const connectViaWalletConnect = async (walletKey?: string) => {
     if (!walletConnectConfig?.projectId) {
       setLocalError('WalletConnect is not configured.');
       return;
@@ -102,12 +107,19 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     setLocalConnecting(true);
     setLocalError(null);
     try {
-      const { connectWallet: wcConnect } = await import('../utils/walletConnect');
-      const session = await wcConnect({
-        projectId: walletConnectConfig.projectId,
-        chainId: walletConnectConfig.chainId,
-        rpcUrl: walletConnectConfig.rpcUrl,
-      });
+      const wc = await import('../utils/walletConnect');
+      const session = walletKey
+        ? await wc.connectWalletDirect({
+            projectId: walletConnectConfig.projectId,
+            chainId: walletConnectConfig.chainId,
+            rpcUrl: walletConnectConfig.rpcUrl,
+            walletKey,
+          })
+        : await wc.connectWallet({
+            projectId: walletConnectConfig.projectId,
+            chainId: walletConnectConfig.chainId,
+            rpcUrl: walletConnectConfig.rpcUrl,
+          });
       const ok = await handleEvmResult({
         address: session.address,
         provider: session.provider,
@@ -145,7 +157,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     if (discovered && connectWithProvider) {
       await connectViaInjected(discovered);
     } else {
-      await connectViaWalletConnect();
+      await connectViaWalletConnect(matchKey);
     }
   };
 
@@ -239,28 +251,40 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
           <X size={24} />
         </button>
 
-        <h2 className="text-3xl font-black mb-4">{isLinkMode ? 'Link Wallet' : 'Connect'}</h2>
+        <h2 className="text-3xl font-black mb-4">
+          {lockChain === 'evm'
+            ? 'Link EVM Wallet'
+            : lockChain === 'ton'
+            ? 'Link TON Wallet'
+            : isLinkMode
+            ? 'Link Wallet'
+            : 'Connect'}
+        </h2>
         <p className="text-gray-400 mb-6 text-sm">
-          {isLinkMode
+          {lockChain
+            ? 'Pick your wallet to link.'
+            : isLinkMode
             ? 'Link a wallet to your account for deposits and claims.'
             : 'Choose how you want to sign in to CaseFun.'}
         </p>
 
-        <div className="flex gap-1 mb-6 bg-black/30 rounded-xl p-1">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveMethod(tab.id); setLocalError(null); }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
-                activeMethod === tab.id
-                  ? 'bg-web3-accent text-black'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {!lockChain && (
+          <div className="flex gap-1 mb-6 bg-black/30 rounded-xl p-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { setActiveMethod(tab.id); setLocalError(null); }}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                  activeMethod === tab.id
+                    ? 'bg-web3-accent text-black'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {activeMethod === 'telegram' && !isLinkMode && (
           <div className="text-center">
@@ -338,7 +362,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
                 })}
               </div>
             </div>
-            <Button onClick={connectViaWalletConnect} disabled={busy} className="w-full py-4 text-lg">
+            <Button onClick={() => connectViaWalletConnect()} disabled={busy} className="w-full py-4 text-lg">
               {localConnecting ? 'Connecting...' : isAuthLoading ? 'Signing...' : 'Connect via QR Code'}
             </Button>
           </>

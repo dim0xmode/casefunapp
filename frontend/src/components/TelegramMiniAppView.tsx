@@ -1069,7 +1069,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <div key={headerCfp} className="h-full rounded-full bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple" style={{ width: `${headerLvl.progress}%` }} />
             </div>
-                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{headerLvl.isMaxLevel ? 'MAX' : `${headerLvl.xpInLevel}/${headerLvl.xpNeeded}`}</span>
+                <span className="text-[9px] text-gray-500 tabular-nums shrink-0">{headerLvl.isMaxLevel ? 'MAX' : `${formatCfp(headerLvl.xpInLevel)}/${headerLvl.xpNeeded}`}</span>
           </div>
             </div>
         </div>

@@ -4,7 +4,7 @@ import { ArrowLeft, Package, ChevronRight, ChevronsRight, Zap } from 'lucide-rea
 import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { AdminActionButton } from './ui/AdminActionButton';
-import { formatShortfallUp, formatTokenValue } from '../utils/number';
+import { formatShortfallUp, formatTokenValue, formatDecimal } from '../utils/number';
 
 // Open Modes
 type OpenMode = 'normal' | 'fast' | 'instant';
@@ -285,7 +285,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
           {/* Left Side: Price and RTU */}
           <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
-              <span className="text-xs font-bold text-gray-300">{cost} ₮</span>
+              <span className="text-xs font-bold text-gray-300">{formatDecimal(Number(cost))} ₮</span>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
               <span className="text-xs font-bold text-gray-400">RTU</span>

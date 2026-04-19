@@ -91,6 +91,7 @@ const App = () => {
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
   const [connectModalMode, setConnectModalMode] = useState<'login' | 'link'>('login');
+  const [connectModalLockChain, setConnectModalLockChain] = useState<'evm' | 'ton' | undefined>(undefined);
   const [mergePrompt, setMergePrompt] = useState<{ secondaryUserId: string; identifier: string; mergeToken: string } | null>(null);
   const [isMerging, setIsMerging] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
@@ -1019,6 +1020,7 @@ const App = () => {
 
   const handleLinkEvmWallet = () => {
     setConnectModalMode('link');
+    setConnectModalLockChain('evm');
     setIsWalletConnectOpen(true);
   };
 
@@ -2246,8 +2248,9 @@ const App = () => {
 
       <ConnectModal
         isOpen={isWalletConnectOpen}
-        onClose={() => { setIsWalletConnectOpen(false); setConnectModalMode('login'); }}
+        onClose={() => { setIsWalletConnectOpen(false); setConnectModalMode('login'); setConnectModalLockChain(undefined); }}
         mode={connectModalMode}
+        lockChain={connectModalLockChain}
         onConnectEvm={handleWalletConnect}
         onLinkEvm={handleLinkEvmWalletResult}
         onLoginTelegramWidget={handleTelegramWidgetLogin}

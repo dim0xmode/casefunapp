@@ -29,6 +29,42 @@ export const formatShortfallUp = (value: number): string => {
 };
 
 /**
+ * Sanitize a numeric text input:
+ *  - converts comma to dot
+ *  - strips non-digit/dot chars
+ *  - keeps only the first dot
+ *  - auto-prefixes a dot when typing "012" -> "0.12" (digit after leading zero)
+ *  - clamps to N decimal places (default 5)
+ */
+export const sanitizeDecimalInput = (raw: string, maxDecimals = 5): string => {
+  let s = String(raw ?? '').replace(/,/g, '.').replace(/[^\d.]/g, '');
+  const firstDot = s.indexOf('.');
+  if (firstDot !== -1) {
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+  }
+  if (s.length > 1 && s[0] === '0' && s[1] !== '.') {
+    s = '0.' + s.slice(1);
+  }
+  const dot = s.indexOf('.');
+  if (dot !== -1 && s.length - dot - 1 > maxDecimals) {
+    s = s.slice(0, dot + 1 + maxDecimals);
+  }
+  return s;
+};
+
+/**
+ * Round a number to at most N decimal places, stripping trailing zeros.
+ * Returns a clean string for display.
+ */
+export const formatDecimal = (value: number, maxDecimals = 5): string => {
+  if (!Number.isFinite(value)) return '0';
+  const factor = Math.pow(10, maxDecimals);
+  const rounded = Math.round(value * factor) / factor;
+  if (rounded === 0) return '0';
+  return rounded.toFixed(maxDecimals).replace(/0+$/, '').replace(/\.$/, '');
+};
+
+/**
  * Format a token value preserving all significant digits, stripping
  * trailing zeros AND floating-point noise (e.g. 0.060000000000005 → "0.06").
  */

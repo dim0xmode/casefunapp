@@ -180,6 +180,120 @@ export const connectWallet = async ({
 export const hasInjectedProvider = (): boolean =>
   typeof window !== 'undefined' && Boolean((window as any).ethereum);
 
+const WC_DIRECT_LINK_MAP: Record<string, string> = {
+  metamask: 'https://metamask.app.link/wc?uri=',
+  trust: 'https://link.trustwallet.com/wc?uri=',
+  rainbow: 'https://rnbwapp.com/wc?uri=',
+  coinbase: 'https://go.cb-w.com/wc?uri=',
+  okx: 'okx://main/wc?uri=',
+  ledger: 'ledgerlive://wc?uri=',
+};
+
+const openWalletDeeplink = (url: string): void => {
+  const tg = (window as any)?.Telegram?.WebApp;
+  if (tg?.openLink) {
+    try { tg.openLink(url, { try_instant_view: false }); return; } catch { /* fall through */ }
+    try { tg.openLink(url); return; } catch { /* fall through */ }
+  }
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {
+    try { window.location.href = url; } catch { /* give up */ }
+  }
+};
+
+/**
+ * Connect via WalletConnect with a single explicit wallet target.
+ * Skips the WC modal entirely — opens the wallet app directly via deep link.
+ * Use this when the user has already picked a wallet in our own UI.
+ */
+export const connectWalletDirect = async ({
+  projectId,
+  chainId,
+  rpcUrl,
+  walletKey,
+  onStatus,
+}: ConnectParams & { walletKey: string }): Promise<WalletConnectSession> => {
+  if (!projectId) throw new Error('WalletConnect not configured. Set VITE_WALLETCONNECT_PROJECT_ID.');
+  const linkPrefix = WC_DIRECT_LINK_MAP[walletKey.toLowerCase()];
+  if (!linkPrefix) {
+    return connectWallet({ projectId, chainId, rpcUrl, onStatus });
+  }
+
+  onStatus?.('Cleaning up…');
+  clearStaleWcStorage();
+
+  onStatus?.('Initializing WalletConnect…');
+  const restoreWindowOpen = patchWindowOpenForTelegram();
+
+  let visHandler: (() => void) | null = null;
+
+  try {
+    const provider = await EthereumProvider.init({
+      projectId,
+      chains: [1],
+      optionalChains: [1, chainId],
+      showQrModal: false,
+      metadata: {
+        name: 'Casefun',
+        description: 'Casefun – open cases, upgrade items, battle',
+        url: 'https://casefun.net',
+        icons: ['https://casefun.net/favicon.ico'],
+      },
+      methods: ['eth_requestAccounts', 'eth_accounts', 'personal_sign', 'eth_signTypedData_v4'],
+      optionalMethods: ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'eth_sendTransaction'],
+      rpcMap: { 1: 'https://cloudflare-eth.com', ...(rpcUrl ? { [chainId]: rpcUrl } : {}) },
+    });
+
+    if (provider.session) {
+      onStatus?.('Clearing old session…');
+      try { await provider.disconnect(); } catch { /* ok */ }
+    }
+
+    let opened = false;
+    provider.on('display_uri', (uri: string) => {
+      if (opened) return;
+      opened = true;
+      const fullUrl = linkPrefix + encodeURIComponent(uri);
+      onStatus?.('Opening wallet…');
+      openWalletDeeplink(fullUrl);
+    });
+
+    visHandler = () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const sub = provider?.signer?.client?.core?.relayer?.subscriber;
+        if (sub && typeof (sub as any).restart === 'function') (sub as any).restart();
+      } catch { /* ok */ }
+    };
+    document.addEventListener('visibilitychange', visHandler);
+
+    await provider.connect();
+    onStatus?.('Connected! Getting address…');
+
+    const address = await getConnectedAddress(provider);
+    if (!address) {
+      await provider.disconnect().catch(() => {});
+      throw new Error('Connected but no address returned.');
+    }
+
+    return {
+      provider,
+      address,
+      disconnect: async () => { await provider.disconnect().catch(() => {}); },
+    };
+  } finally {
+    restoreWindowOpen?.();
+    if (visHandler) document.removeEventListener('visibilitychange', visHandler);
+  }
+};
+
 /**
  * Try to restore an existing WalletConnect session from localStorage
  * without showing any UI. Returns a usable provider or null.

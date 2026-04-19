@@ -17,6 +17,30 @@ export const getTonClient = (): TonClient => {
   return _client;
 };
 
+/**
+ * Retry a TON RPC call with exponential backoff for transient failures
+ * (rate limits 429, network blips, gateway errors). Toncenter limits
+ * anonymous tier to ~1 RPS — without an API key we WILL hit 429.
+ */
+const retryTonCall = async <T>(fn: () => Promise<T>, attempts = 6, initialDelayMs = 1500): Promise<T> => {
+  let lastError: any;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      const status = err?.response?.status ?? err?.status;
+      const message = String(err?.message || err?.response?.data?.error || '');
+      const isRateLimited = status === 429 || /429|rate ?limit|too many/i.test(message);
+      const isTransient = isRateLimited || status === 502 || status === 503 || status === 504 || /ECONNRESET|ETIMEDOUT|fetch failed/i.test(message);
+      if (!isTransient || i === attempts - 1) throw err;
+      const delay = initialDelayMs * Math.pow(2, i) + Math.random() * 500;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+};
+
 export const getTonKeypair = async () => {
   if (!_keypair) {
     if (!config.tonMnemonic) {
@@ -131,7 +155,7 @@ export const getTonTreasuryStatus = async (): Promise<{
   }
   const client = getTonClient();
   const wallet = await getTonTreasuryWallet();
-  const balance = await client.getBalance(wallet.address);
+  const balance = await retryTonCall(() => client.getBalance(wallet.address));
   return {
     address: wallet.address.toRawString(),
     addressFriendly: wallet.address.toString({ bounceable: false, testOnly: (config.tonEndpoint || '').includes('testnet') }),
@@ -156,7 +180,7 @@ export const deployJetton = async (
   const wallet = await getTonTreasuryWallet();
   const contract = client.open(wallet);
 
-  const walletBalance = await client.getBalance(wallet.address);
+  const walletBalance = await retryTonCall(() => client.getBalance(wallet.address));
   const minRequired = toNano('0.3');
   if (walletBalance < minRequired) {
     throw new Error(
@@ -174,8 +198,8 @@ export const deployJetton = async (
   const init = { code: minterCode, data: minterData };
   const minterAddress = contractAddress(0, init);
 
-  const seqno = await contract.getSeqno();
-  await contract.sendTransfer({
+  const seqno = await retryTonCall(() => contract.getSeqno());
+  await retryTonCall(() => contract.sendTransfer({
     seqno,
     secretKey: keypair.secretKey,
     messages: [
@@ -187,13 +211,14 @@ export const deployJetton = async (
         bounce: false,
       }),
     ],
-  });
+  }));
 
   // Wait for the minter contract to be deployed and active.
+  // Polls every 3s (avoids 1RPS toncenter limit when no API key is set).
   for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
     try {
-      const state = await client.getContractState(minterAddress);
+      const state = await retryTonCall(() => client.getContractState(minterAddress));
       if (state.state === 'active') {
         return minterAddress.toString();
       }
@@ -230,8 +255,8 @@ export const mintJetton = async (
     toNano('0.01') // forward_ton_amount (notification)
   );
 
-  const seqno = await contract.getSeqno();
-  await contract.sendTransfer({
+  const seqno = await retryTonCall(() => contract.getSeqno());
+  await retryTonCall(() => contract.sendTransfer({
     seqno,
     secretKey: keypair.secretKey,
     messages: [
@@ -241,13 +266,17 @@ export const mintJetton = async (
         body,
       }),
     ],
-  });
+  }));
 
   for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const newSeqno = await contract.getSeqno();
-    if (newSeqno > seqno) {
-      return `ton_mint_${Date.now()}_${seqno}`;
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const newSeqno = await retryTonCall(() => contract.getSeqno());
+      if (newSeqno > seqno) {
+        return `ton_mint_${Date.now()}_${seqno}`;
+      }
+    } catch {
+      // Network blip — keep polling.
     }
   }
   return `ton_mint_pending_${seqno}`;
@@ -270,9 +299,9 @@ export const transferJetton = async (
   const masterAddr = Address.parse(jettonMasterAddress);
   const destAddr = Address.parse(toAddress);
 
-  const result = await client.runMethod(masterAddr, 'get_wallet_address', [
+  const result = await retryTonCall(() => client.runMethod(masterAddr, 'get_wallet_address', [
     { type: 'slice', cell: beginCell().storeAddress(wallet.address).endCell() },
-  ]);
+  ]));
   const myJettonWallet = result.stack.readAddress();
 
   const transferBody = beginCell()
@@ -286,8 +315,8 @@ export const transferJetton = async (
     .storeBit(false) // forward_payload (none)
     .endCell();
 
-  const seqno = await contract.getSeqno();
-  await contract.sendTransfer({
+  const seqno = await retryTonCall(() => contract.getSeqno());
+  await retryTonCall(() => contract.sendTransfer({
     seqno,
     secretKey: keypair.secretKey,
     messages: [
@@ -297,13 +326,17 @@ export const transferJetton = async (
         body: transferBody,
       }),
     ],
-  });
+  }));
 
   for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const newSeqno = await contract.getSeqno();
-    if (newSeqno > seqno) {
-      return `ton_tx_${Date.now()}_${seqno}`;
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const newSeqno = await retryTonCall(() => contract.getSeqno());
+      if (newSeqno > seqno) {
+        return `ton_tx_${Date.now()}_${seqno}`;
+      }
+    } catch {
+      // Network blip — keep polling.
     }
   }
   return `ton_tx_pending_${seqno}`;
