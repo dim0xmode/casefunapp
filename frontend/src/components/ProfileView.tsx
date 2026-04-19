@@ -1080,9 +1080,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             )}
 
-            <div className="w-full h-[1px] bg-white/5 mb-4 mt-2"></div>
+            <div className="w-full h-[1px] bg-white/5 mb-2 mt-1"></div>
 
-            <div className={`grid grid-cols-2 gap-3 w-full ${isTelegramMiniApp ? 'mt-1' : ''}`}>
+            <div className="grid grid-cols-2 gap-3 w-full">
               <StatCard
                 label="Cases Opened"
                 value={user?.stats?.casesOpened || 0}
