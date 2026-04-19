@@ -1061,7 +1061,40 @@ const App = () => {
     }
   };
 
-  const handleLinkEvmWallet = () => {
+  const handleLinkEvmWallet = async () => {
+    // In the Telegram Mini App, our intermediate "Pick your wallet" modal
+    // adds a step where Android then deep-links straight into MetaMask and
+    // gets stuck on infinite "connecting…". WalletConnect's own modal
+    // routes the deep-link correctly per-platform (iOS/Android), so we
+    // skip our modal entirely here and hand off to the WC modal directly.
+    if (isTelegramWebViewContext() && !hasInjectedEthereumProvider()) {
+      const cfg = getWalletConnectRuntimeConfig();
+      if (!cfg.projectId) {
+        console.error('WalletConnect project ID not configured');
+        return;
+      }
+      try {
+        setIsAuthLoading(true);
+        const wc = await import('./utils/walletConnect');
+        const session = await wc.connectWallet({
+          projectId: cfg.projectId,
+          chainId: cfg.chainId,
+          rpcUrl: cfg.rpcUrl,
+        });
+        await handleLinkEvmWalletResult({
+          address: session.address,
+          provider: session.provider,
+          disconnect: session.disconnect,
+        });
+      } catch (err: any) {
+        if (err?.message?.includes('User rejected') || err?.message?.includes('dismissed')) return;
+        console.error('Link EVM wallet (mini app) failed', err);
+      } finally {
+        setIsAuthLoading(false);
+      }
+      return;
+    }
+
     setConnectModalMode('link');
     setConnectModalLockChain('evm');
     setIsWalletConnectOpen(true);
