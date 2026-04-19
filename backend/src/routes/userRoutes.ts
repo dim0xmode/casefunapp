@@ -23,10 +23,8 @@ import {
   startTelegramBotLink,
   getTelegramBotLinkStatus,
   getTelegramBotInfo,
-  unlinkTelegramAccount,
   getTwitterConnectUrl,
   linkTwitterAccount,
-  unlinkTwitterAccount,
 } from '../controllers/userController.js';
 import { getReferralCode } from '../controllers/referralController.js';
 import {
@@ -62,10 +60,10 @@ router.post('/telegram/link-web', linkTelegramWebAccount);
 router.post('/telegram/link-bot/start', startTelegramBotLink);
 router.get('/telegram/link-bot/status', getTelegramBotLinkStatus);
 router.get('/telegram/bot-info', getTelegramBotInfo);
-router.delete('/telegram/link', unlinkTelegramAccount);
+// Self-unlinking is intentionally disabled — admins manage unlinks via the
+// /api/admin/users/:id/connections/:channel endpoint.
 router.get('/twitter/connect-url', getTwitterConnectUrl);
 router.post('/twitter/link', linkTwitterAccount);
-router.delete('/twitter/link', unlinkTwitterAccount);
 router.post('/feedback', createFeedbackMessage);
 router.get('/feedback/early-access/status', getEarlyAccessRequestStatus);
 router.get('/referral/code', getReferralCode);

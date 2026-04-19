@@ -138,7 +138,12 @@ export type RewardTaskType =
   | 'CREATE_BATTLES'
   | 'JOIN_BATTLES'
   | 'CLAIM_TOKENS'
-  | 'CREATE_CASES';
+  | 'CREATE_CASES'
+  | 'DEPOSIT_AMOUNT_EVM'
+  | 'DEPOSIT_AMOUNT_TON'
+  | 'DEPOSIT_COUNT_ANY'
+  | 'DEPOSIT_COUNT_EVM'
+  | 'DEPOSIT_COUNT_TON';
 
 export interface RewardTask {
   id: string;
@@ -153,6 +158,8 @@ export interface RewardTask {
   locked: boolean;
   category?: string;
   targetCount?: number;
+  targetAmount?: number | null;
+  unit?: 'count' | 'usdt';
   progress?: number;
   onCooldown?: boolean;
   cooldownEndsAt?: string | null;

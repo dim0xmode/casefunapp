@@ -46,6 +46,11 @@ enum RewardTaskType {
   JOIN_BATTLES
   CLAIM_TOKENS
   CREATE_CASES
+  DEPOSIT_AMOUNT_EVM
+  DEPOSIT_AMOUNT_TON
+  DEPOSIT_COUNT_ANY
+  DEPOSIT_COUNT_EVM
+  DEPOSIT_COUNT_TON
 }
 
 enum BattleLobbyStatus {
@@ -456,6 +461,7 @@ model RewardTask {
   updatedAt           DateTime        @updatedAt
   category            String          @default("SOCIAL")
   targetCount         Int?
+  targetAmount        Float?
   targetCaseId        String?
   repeatIntervalHours Int?
   activeUntil         DateTime?

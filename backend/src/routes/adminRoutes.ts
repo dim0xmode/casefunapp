@@ -7,6 +7,7 @@ import {
   updateUserBan,
   updateUserBalance,
   deleteUser,
+  unlinkUserConnection,
   listCases,
   getCaseDetail,
   updateCase,
@@ -46,6 +47,7 @@ router.patch('/users/:id/role', updateUserRole);
 router.patch('/users/:id/ban', updateUserBan);
 router.patch('/users/:id/balance', updateUserBalance);
 router.delete('/users/:id', deleteUser);
+router.delete('/users/:id/connections/:channel', unlinkUserConnection);
 
 router.get('/cases', listCases);
 router.get('/cases/:id', getCaseDetail);

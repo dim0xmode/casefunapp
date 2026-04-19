@@ -92,7 +92,30 @@ const App = () => {
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
   const [connectModalMode, setConnectModalMode] = useState<'login' | 'link'>('login');
   const [connectModalLockChain, setConnectModalLockChain] = useState<'evm' | 'ton' | undefined>(undefined);
-  const [mergePrompt, setMergePrompt] = useState<{ secondaryUserId: string; identifier: string; mergeToken: string } | null>(null);
+  const [mergePrompt, setMergePrompt] = useState<{
+    secondaryUserId: string;
+    identifier: string;
+    mergeToken: string;
+    preview?: {
+      balance: number;
+      rewardPoints: number;
+      inventoryCount: number;
+      openingsCount: number;
+      battlesCount: number;
+      casesCreated: number;
+      hasAvatar: boolean;
+      username: string;
+      avatarUrl?: string | null;
+      identifiers: {
+        telegram?: { id: string; username: string | null };
+        evm?: string;
+        ton?: string;
+        twitter?: { id: string; username: string | null };
+      };
+    } | null;
+  } | null>(null);
+  const [mergeAvatarChoice, setMergeAvatarChoice] = useState<'primary' | 'secondary'>('primary');
+  const [mergeUsernameChoice, setMergeUsernameChoice] = useState<'primary' | 'secondary'>('primary');
   const [isMerging, setIsMerging] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
   const [burntItems, setBurntItems] = useState<Item[]>([]);
@@ -496,15 +519,32 @@ const App = () => {
             while (Date.now() - startedAt < timeoutMs) {
               await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
               const status = await api.getTelegramBotLinkStatus(token);
-              if (status.data?.linked && status.data?.user?.telegramId) {
+              const data = status.data as any;
+              if (data?.linked && data?.user?.telegramId) {
                 if (botLinkPopup && !botLinkPopup.closed) {
                   botLinkPopup.close();
                 }
-                return { status: 'success' as const, data: { user: status.data.user } };
+                return { status: 'success' as const, data: { user: data.user } };
               }
-              if (status.data?.failed) {
+              if (data?.mergeRequired && data?.mergeToken && data?.conflictUserId) {
+                if (botLinkPopup && !botLinkPopup.closed) {
+                  botLinkPopup.close();
+                }
+                setMergePrompt({
+                  secondaryUserId: data.conflictUserId,
+                  mergeToken: data.mergeToken,
+                  identifier: data.conflictUsername
+                    ? `Telegram (${data.conflictUsername})`
+                    : 'Telegram',
+                  preview: data.preview ?? null,
+                });
+                setMergeAvatarChoice('primary');
+                setMergeUsernameChoice('primary');
+                return { status: 'success' as const, data: { user: data.user } };
+              }
+              if (data?.failed) {
                 throw new Error(
-                  status.data.reason ||
+                  data.reason ||
                     'Telegram link failed. Start a new link from profile and try again.'
                 );
               }
@@ -1004,7 +1044,10 @@ const App = () => {
           secondaryUserId: data.conflictUserId,
           mergeToken: data.mergeToken,
           identifier: `TON ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`,
+          preview: data.preview ?? null,
         });
+        setMergeAvatarChoice('primary');
+        setMergeUsernameChoice('primary');
         return;
       }
 
@@ -1074,7 +1117,14 @@ const App = () => {
     if (!mergePrompt) return;
     setIsMerging(true);
     try {
-      const response = await api.confirmMerge(mergePrompt.secondaryUserId, mergePrompt.mergeToken);
+      const response = await api.confirmMerge(
+        mergePrompt.secondaryUserId,
+        mergePrompt.mergeToken,
+        {
+          preferAvatarFrom: mergeAvatarChoice,
+          preferUsernameFrom: mergeUsernameChoice,
+        }
+      );
       const data = response.data as any;
       if (data?.user) {
         setUser((prev) => ({ ...prev, ...data.user }));
@@ -2266,33 +2316,129 @@ const App = () => {
         referralCode={getStoredRefCode()}
       />
 
-      {mergePrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setMergePrompt(null)}>
-          <div className="bg-web3-card border border-gray-700 rounded-2xl p-8 max-w-md w-full relative" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-2xl font-black mb-3 text-amber-400">Merge accounts?</h2>
-            <p className="text-gray-300 text-sm mb-4">
-              The wallet <span className="font-mono text-white">{mergePrompt.identifier}</span> is already linked to another account.
-              Merging will combine balances, inventory, and history into your current account.
-            </p>
-            <p className="text-amber-400/80 text-xs mb-6">This action cannot be undone.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setMergePrompt(null)}
-                className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 text-sm font-bold hover:bg-gray-700/50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmMerge}
-                disabled={isMerging}
-                className="flex-1 py-3 rounded-xl bg-amber-500 text-black text-sm font-bold hover:bg-amber-400 transition disabled:opacity-50"
-              >
-                {isMerging ? 'Merging...' : 'Confirm merge'}
-              </button>
+      {mergePrompt && (() => {
+        const preview = mergePrompt.preview;
+        const primaryHasAvatar = !!user?.avatar;
+        const secondaryHasAvatar = !!preview?.avatarUrl;
+        const showAvatarChooser = primaryHasAvatar && secondaryHasAvatar;
+        const eitherHasTelegram = !!user?.telegramId || !!preview?.identifiers.telegram;
+        const showUsernameChooser = !eitherHasTelegram && !!preview?.username && preview.username !== user?.username;
+        const fmt = (n: number) => Number(n || 0).toFixed(2);
+        return (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[90] flex items-center justify-center p-4" onClick={() => setMergePrompt(null)}>
+            <div className="bg-web3-card border border-gray-700 rounded-2xl p-6 max-w-md w-full relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h2 className="text-2xl font-black mb-2 text-amber-400">Merge accounts?</h2>
+              <p className="text-gray-300 text-sm mb-4">
+                <span className="font-mono text-white">{mergePrompt.identifier}</span> is already linked to another casefun profile.
+                Merging will combine everything into your current account.
+              </p>
+
+              {preview && (
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3 mb-4 text-xs">
+                  <div className="text-gray-400 mb-2 font-semibold uppercase tracking-wider">Will be added to your account</div>
+                  <div className="grid grid-cols-2 gap-y-1 text-gray-200">
+                    <span className="text-gray-400">Balance</span>
+                    <span className="text-right font-mono text-white">+{fmt(preview.balance)} ₮</span>
+                    <span className="text-gray-400">Reward points</span>
+                    <span className="text-right font-mono text-white">+{preview.rewardPoints}</span>
+                    <span className="text-gray-400">Inventory items</span>
+                    <span className="text-right font-mono text-white">+{preview.inventoryCount}</span>
+                    <span className="text-gray-400">Cases opened</span>
+                    <span className="text-right font-mono text-white">+{preview.openingsCount}</span>
+                    <span className="text-gray-400">Battles</span>
+                    <span className="text-right font-mono text-white">+{preview.battlesCount}</span>
+                    <span className="text-gray-400">Cases created</span>
+                    <span className="text-right font-mono text-white">+{preview.casesCreated}</span>
+                  </div>
+                  {(preview.identifiers.evm || preview.identifiers.ton || preview.identifiers.twitter || preview.identifiers.telegram) && (
+                    <div className="mt-3 pt-3 border-t border-white/10">
+                      <div className="text-gray-400 mb-1 font-semibold uppercase tracking-wider">Linked identities transferred</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {preview.identifiers.telegram && (
+                          <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30">TG @{preview.identifiers.telegram.username || preview.identifiers.telegram.id}</span>
+                        )}
+                        {preview.identifiers.evm && (
+                          <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">EVM {preview.identifiers.evm.slice(0, 6)}…{preview.identifiers.evm.slice(-4)}</span>
+                        )}
+                        {preview.identifiers.ton && (
+                          <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">TON {preview.identifiers.ton.slice(0, 6)}…{preview.identifiers.ton.slice(-4)}</span>
+                        )}
+                        {preview.identifiers.twitter && (
+                          <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/30">𝕏 @{preview.identifiers.twitter.username || preview.identifiers.twitter.id}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {showAvatarChooser && (
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-2 font-semibold uppercase tracking-wider">Pick avatar to keep</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMergeAvatarChoice('primary')}
+                      className={`flex items-center gap-2 p-2 rounded-lg border transition ${mergeAvatarChoice === 'primary' ? 'border-amber-400 bg-amber-400/10' : 'border-white/10 hover:border-white/20'}`}
+                    >
+                      <img src={user?.avatar || ''} alt="current" className="w-10 h-10 rounded-full object-cover" />
+                      <span className="text-xs text-gray-200">Current</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMergeAvatarChoice('secondary')}
+                      className={`flex items-center gap-2 p-2 rounded-lg border transition ${mergeAvatarChoice === 'secondary' ? 'border-amber-400 bg-amber-400/10' : 'border-white/10 hover:border-white/20'}`}
+                    >
+                      <img src={preview?.avatarUrl || ''} alt="other" className="w-10 h-10 rounded-full object-cover" />
+                      <span className="text-xs text-gray-200">From other acc</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showUsernameChooser && (
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 mb-2 font-semibold uppercase tracking-wider">Pick username to keep</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMergeUsernameChoice('primary')}
+                      className={`px-3 py-2 rounded-lg border text-sm font-mono truncate transition ${mergeUsernameChoice === 'primary' ? 'border-amber-400 bg-amber-400/10 text-white' : 'border-white/10 text-gray-300 hover:border-white/20'}`}
+                    >
+                      {user?.username || 'current'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMergeUsernameChoice('secondary')}
+                      className={`px-3 py-2 rounded-lg border text-sm font-mono truncate transition ${mergeUsernameChoice === 'secondary' ? 'border-amber-400 bg-amber-400/10 text-white' : 'border-white/10 text-gray-300 hover:border-white/20'}`}
+                    >
+                      {preview?.username}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-amber-400/80 text-xs mb-4">This action cannot be undone.</p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setMergePrompt(null)}
+                  className="flex-1 py-3 rounded-xl border border-gray-600 text-gray-300 text-sm font-bold hover:bg-gray-700/50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmMerge}
+                  disabled={isMerging}
+                  className="flex-1 py-3 rounded-xl bg-amber-500 text-black text-sm font-bold hover:bg-amber-400 transition disabled:opacity-50"
+                >
+                  {isMerging ? 'Merging...' : 'Confirm merge'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <TopUpModal
         isOpen={isTopUpOpen}

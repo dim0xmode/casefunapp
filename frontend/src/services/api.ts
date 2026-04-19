@@ -169,10 +169,19 @@ class ApiClient {
     }>(`/auth/telegram/web-login/status?token=${encodeURIComponent(token)}`);
   }
 
-  async confirmMerge(secondaryUserId: string, mergeToken: string) {
+  async confirmMerge(
+    secondaryUserId: string,
+    mergeToken: string,
+    options?: { preferAvatarFrom?: 'primary' | 'secondary'; preferUsernameFrom?: 'primary' | 'secondary' }
+  ) {
     return this.request<{ user: any }>('/auth/merge/confirm', {
       method: 'POST',
-      body: JSON.stringify({ secondaryUserId, mergeToken }),
+      body: JSON.stringify({
+        secondaryUserId,
+        mergeToken,
+        ...(options?.preferAvatarFrom ? { preferAvatarFrom: options.preferAvatarFrom } : {}),
+        ...(options?.preferUsernameFrom ? { preferUsernameFrom: options.preferUsernameFrom } : {}),
+      }),
     });
   }
 
@@ -653,6 +662,12 @@ class ApiClient {
     });
   }
 
+  async unlinkAdminUserConnection(userId: string, channel: 'telegram' | 'evm' | 'ton' | 'twitter') {
+    return this.request<{ user: any }>(`/admin/users/${userId}/connections/${channel}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getAdminCases() {
     return this.request<{ cases: any[] }>('/admin/cases');
   }
@@ -766,7 +781,7 @@ class ApiClient {
     return this.request<{ tasks: any[] }>('/admin/rewards/tasks');
   }
 
-  async createAdminRewardTask(payload: { type: string; title: string; description: string; targetUrl?: string; reward?: number; sortOrder?: number; targetCount?: number; targetCaseId?: string; repeatIntervalHours?: number; activeUntil?: string }) {
+  async createAdminRewardTask(payload: { type: string; title: string; description: string; targetUrl?: string; reward?: number; sortOrder?: number; targetCount?: number; targetAmount?: number; targetCaseId?: string; repeatIntervalHours?: number; activeUntil?: string }) {
     return this.request<{ task: any }>('/admin/rewards/tasks', {
       method: 'POST',
       body: JSON.stringify(payload),

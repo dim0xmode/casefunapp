@@ -785,9 +785,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                     </div>
                   ) : <div className="text-xs text-gray-600 mt-0.5">Not linked</div>}
                 </div>
-                <button type="button" onClick={() => user?.twitterId ? onDisconnectTwitter?.() : onConnectTwitter?.()} disabled={twitterBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.twitterId ? 'border-red-500/25 text-red-400' : 'border-web3-accent/25 text-web3-accent'} ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
-                  {twitterBusy ? '…' : user?.twitterId ? 'Disconnect' : 'Connect'}
-                </button>
+                {!user?.twitterId && (
+                  <button type="button" onClick={() => onConnectTwitter?.()} disabled={twitterBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 border-web3-accent/25 text-web3-accent ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                    {twitterBusy ? '…' : 'Connect'}
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
@@ -805,9 +807,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                     </div>
                   ) : <div className="text-xs text-gray-600 mt-0.5">Not linked</div>}
                 </div>
-                <button type="button" onClick={() => user?.telegramId ? onDisconnectTelegram?.() : onConnectTelegram?.()} disabled={telegramBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.telegramId ? 'border-red-500/25 text-red-400' : 'border-web3-accent/25 text-web3-accent'} ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
-                  {telegramBusy ? '…' : user?.telegramId ? 'Disconnect' : 'Connect'}
-                </button>
+                {!user?.telegramId && (
+                  <button type="button" onClick={() => onConnectTelegram?.()} disabled={telegramBusy} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 border-web3-accent/25 text-web3-accent ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                    {telegramBusy ? '…' : 'Connect'}
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/20">
@@ -910,12 +914,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       );
               })}
               {cfTasks.map((task: any) => {
-                const progress = task.progress ?? 0;
-                const target = task.targetCount ?? 1;
-                const pct = Math.min(100, Math.round((progress / target) * 100));
+                const isUsdt = task.unit === 'usdt';
+                const target = isUsdt ? Number(task.targetAmount || task.targetCount || 0) : Number(task.targetCount ?? 1);
+                const progress = Number(task.progress ?? 0);
+                const pct = target > 0 ? Math.min(100, Math.round((progress / target) * 100)) : 0;
                 const isComplete = progress >= target && !task.onCooldown;
                 const isCooldown = task.onCooldown && task.cooldownEndsAt;
                 const isDone = task.claimed && !task.onCooldown;
+                const fmt = (v: number) => isUsdt ? `${v.toFixed(2)} USDT` : `${Math.floor(v)}`;
                 const timeLabel = task.activeUntil ? `Until ${new Date(task.activeUntil).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}` : 'Always active';
                 let cooldownLabel = '';
                 if (isCooldown) {
@@ -936,7 +942,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-[10px] text-gray-500">
-                      {isCooldown ? <span className="text-yellow-500">Next in {cooldownLabel}</span> : isDone ? <span className="text-gray-600">Completed</span> : <span>{pct}%</span>}
+                      {isCooldown ? <span className="text-yellow-500">Next in {cooldownLabel}</span> : isDone ? <span className="text-gray-600">Completed</span> : <span>{fmt(progress)} / {fmt(target)} · {pct}%</span>}
                     </div>
                     {isComplete && (
                       <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">

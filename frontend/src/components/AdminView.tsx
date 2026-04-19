@@ -99,6 +99,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     targetUrl: '',
     reward: 1,
     targetCount: '',
+    targetAmount: '',
     targetCaseId: '',
     repeatIntervalHours: '',
     activeUntil: '',
@@ -1211,6 +1212,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
           {!loading && !error && activeTab === 'rtu' && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200/90 flex items-start gap-2">
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold uppercase tracking-widest shrink-0">RTU Frozen</span>
+                <span>
+                  Chance-shaping is disabled — drops use plain weighted random (1/value for opens & battles; 1/multiplier for upgrades). Ledger numbers below are <strong>observational only</strong>: they show real USDT spend, token issuance and the surplus/deficit that the RTU engine <em>would</em> track if re-enabled. Manual adjustments still write to the ledger but do not affect drop chances.
+                </span>
+              </div>
               <div className="text-xs text-gray-500 mb-2">Return-To-User (RTU) engine. Tracks how much USDT was spent per case and how many tokens were issued. Buffer debt shows the deficit/surplus between ideal and actual token issuance. Use manual adjustment to correct ledger imbalances.</div>
               <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Battle Resolve Preview</div>
@@ -1349,41 +1356,108 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   className="w-24 px-2 py-1 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
                 />
               </div>
+              {rtuLedgers.length > 0 && (() => {
+                let totalSpent = 0;
+                let totalIssuedUsdt = 0;
+                let totalDebtUsdt = 0;
+                for (const l of rtuLedgers) {
+                  const sp = Number(l.totalSpentUsdt || 0);
+                  const iss = Number(l.totalTokenIssued || 0);
+                  const tp = Number(l.tokenPriceUsdt || 0);
+                  totalSpent += sp;
+                  totalIssuedUsdt += iss * tp;
+                  totalDebtUsdt += Number(l.bufferDebtToken || 0) * tp;
+                }
+                const totalSurplus = totalSpent - totalIssuedUsdt;
+                const totalActualRtu = totalSpent > 0 ? (totalIssuedUsdt / totalSpent) * 100 : 0;
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Spent (USDT)</div>
+                      <div className="text-base font-bold text-white">{formatTokenValue(totalSpent)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Issued (USDT)</div>
+                      <div className="text-base font-bold text-white">{formatTokenValue(totalIssuedUsdt)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Surplus (USDT)</div>
+                      <div className={`text-base font-bold ${totalSurplus < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {totalSurplus >= 0 ? '+' : ''}{formatTokenValue(totalSurplus)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Avg Actual RTU</div>
+                      <div className="text-base font-bold text-white">{totalActualRtu.toFixed(1)}%</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Buffer Debt (USDT)</div>
+                      <div className={`text-base font-bold ${totalDebtUsdt < 0 ? 'text-red-400' : 'text-amber-300'}`}>
+                        {formatTokenValue(totalDebtUsdt)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Ledgers</div>
                 <div className="space-y-2">
-                  <div className="hidden md:grid grid-cols-8 gap-3 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                  <div className="hidden md:grid grid-cols-11 gap-2 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                     <div className="col-span-2">Case ID</div>
                     <div>Token</div>
                     <div>Price (USDT)</div>
-                    <div>RTU %</div>
+                    <div>Declared RTU</div>
+                    <div>Actual RTU</div>
                     <div>Spent (USDT)</div>
-                    <div>Issued</div>
+                    <div>Issued (token)</div>
+                    <div>Issued (USDT)</div>
+                    <div>Surplus (USDT)</div>
                     <div>Buffer Debt</div>
                   </div>
                   {rtuLedgers.length === 0 && (
                     <div className="text-sm text-gray-500 py-4 text-center">No ledgers.</div>
                   )}
                   {paginate(rtuLedgers, 'rtuLedgers').map((ledger: any) => {
+                    const spent = Number(ledger.totalSpentUsdt || 0);
+                    const issuedToken = Number(ledger.totalTokenIssued || 0);
+                    const tokenPrice = Number(ledger.tokenPriceUsdt || 0);
+                    const issuedUsdt = issuedToken * tokenPrice;
+                    const actualRtuPct = spent > 0 ? (issuedUsdt / spent) * 100 : 0;
+                    // Surplus = what stayed with us (positive = profit, negative = paid out more than collected)
+                    const surplusUsdt = spent - issuedUsdt;
+                    const debtToken = Number(ledger.bufferDebtToken || 0);
                     const alert =
-                      rtuAlertThreshold > 0 &&
-                      Math.abs(Number(ledger.bufferDebtToken || 0)) >= rtuAlertThreshold;
+                      rtuAlertThreshold > 0 && Math.abs(debtToken) >= rtuAlertThreshold;
+                    const declared = Number(ledger.rtuPercent || 0);
+                    const rtuDelta = actualRtuPct - declared;
                     return (
                     <div
                       key={ledger.id}
-                      className={`grid grid-cols-1 md:grid-cols-8 gap-3 items-center rounded-xl p-3 text-xs ${
+                      className={`grid grid-cols-1 md:grid-cols-11 gap-2 items-center rounded-xl p-3 text-xs ${
                         alert
                           ? 'bg-red-500/10 border border-red-500/40 text-red-300'
                           : 'bg-black/30 border border-white/[0.08] text-gray-400'
                       }`}
                     >
                       <div className="md:col-span-2 font-mono truncate">{ledger.caseId}</div>
-                      <div>{ledger.tokenSymbol}</div>
-                      <div>{ledger.tokenPriceUsdt}</div>
-                      <div>{ledger.rtuPercent}%</div>
-                      <div>{formatTokenValue(ledger.totalSpentUsdt)}</div>
-                      <div>{formatTokenValue(ledger.totalTokenIssued)}</div>
-                      <div className={alert ? 'font-bold' : ''}>{formatTokenValue(ledger.bufferDebtToken)}</div>
+                      <div className="text-gray-200">{ledger.tokenSymbol}</div>
+                      <div>{tokenPrice}</div>
+                      <div>{declared}%</div>
+                      <div className={Math.abs(rtuDelta) > 5 ? 'font-bold text-amber-300' : ''}>
+                        {actualRtuPct.toFixed(1)}%
+                        {spent > 0 && (
+                          <span className="ml-1 text-[10px] opacity-60">
+                            ({rtuDelta >= 0 ? '+' : ''}{rtuDelta.toFixed(1)})
+                          </span>
+                        )}
+                      </div>
+                      <div>{formatTokenValue(spent)}</div>
+                      <div>{formatTokenValue(issuedToken)}</div>
+                      <div>{formatTokenValue(issuedUsdt)}</div>
+                      <div className={surplusUsdt < 0 ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                        {surplusUsdt >= 0 ? '+' : ''}{formatTokenValue(surplusUsdt)}
+                      </div>
+                      <div className={alert ? 'font-bold' : ''}>{formatTokenValue(debtToken)}</div>
                     </div>
                     );
                   })}
@@ -1591,12 +1665,18 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           {!loading && !error && activeTab === 'rewards' && (
             <div className="space-y-4">
               {(() => {
-                const isCaseFun = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS','CREATE_CASES'].includes(newRewardTask.type);
+                const DEPOSIT_AMOUNT_TYPES_FE = ['DEPOSIT_AMOUNT_EVM','DEPOSIT_AMOUNT_TON'];
+                const DEPOSIT_COUNT_TYPES_FE = ['DEPOSIT_COUNT_ANY','DEPOSIT_COUNT_EVM','DEPOSIT_COUNT_TON'];
+                const COUNT_TYPES_FE = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS','CREATE_CASES', ...DEPOSIT_COUNT_TYPES_FE];
+                const isCaseFun = [...COUNT_TYPES_FE, ...DEPOSIT_AMOUNT_TYPES_FE].includes(newRewardTask.type);
+                const isAmountTask = DEPOSIT_AMOUNT_TYPES_FE.includes(newRewardTask.type);
+                const isCountTask = COUNT_TYPES_FE.includes(newRewardTask.type);
                 const needsUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
                 const canCreate = saving === null
                   && (!needsUrl || newRewardTask.targetUrl.trim())
-                  && (!isCaseFun || Number(newRewardTask.targetCount) > 0);
+                  && (!isCountTask || Number(newRewardTask.targetCount) > 0)
+                  && (!isAmountTask || Number(newRewardTask.targetAmount) > 0);
                 return (
               <div className="rounded-xl border border-white/[0.08] bg-black/20 p-5 space-y-4">
                 <div className="text-sm font-bold text-white">Create Reward Task</div>
@@ -1605,7 +1685,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <label className="text-[11px] text-gray-400 font-medium">Task Type</label>
                     <select
                       value={newRewardTask.type}
-                      onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '', targetCount: '', targetCaseId: '' }))}
+                      onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '', targetCount: '', targetAmount: '', targetCaseId: '' }))}
                       className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
                     >
                       <optgroup label="Social">
@@ -1623,6 +1703,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <option value="JOIN_BATTLES">Play battles</option>
                         <option value="CLAIM_TOKENS">Claim tokens</option>
                         <option value="CREATE_CASES">Create cases</option>
+                      </optgroup>
+                      <optgroup label="Deposits">
+                        <option value="DEPOSIT_AMOUNT_EVM">Deposit X USDT via EVM</option>
+                        <option value="DEPOSIT_AMOUNT_TON">Deposit X USDT via TON</option>
+                        <option value="DEPOSIT_COUNT_ANY">Make N deposits (any chain)</option>
+                        <option value="DEPOSIT_COUNT_EVM">Make N EVM deposits</option>
+                        <option value="DEPOSIT_COUNT_TON">Make N TON deposits</option>
                       </optgroup>
                     </select>
                   </div>
@@ -1642,11 +1729,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
                 {isCaseFun && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] text-gray-400 font-medium">Target Count</label>
-                      <input value={newRewardTask.targetCount} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetCount: e.target.value }))} type="number" min={1} placeholder="e.g. 5" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
-                      <div className="text-[10px] text-gray-600">How many actions to complete the task</div>
-                    </div>
+                    {isAmountTask ? (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-gray-400 font-medium">Target Amount (USDT)</label>
+                        <input value={newRewardTask.targetAmount} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetAmount: e.target.value }))} type="number" min={0} step="0.01" placeholder="e.g. 10" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                        <div className="text-[10px] text-gray-600">Cumulative USDT the user must deposit on the selected chain</div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-gray-400 font-medium">Target Count</label>
+                        <input value={newRewardTask.targetCount} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetCount: e.target.value }))} type="number" min={1} placeholder="e.g. 5" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                        <div className="text-[10px] text-gray-600">How many actions to complete the task</div>
+                      </div>
+                    )}
                     {needsCaseId && (
                       <div className="space-y-1.5">
                         <label className="text-[11px] text-gray-400 font-medium">Case ID</label>
@@ -1685,13 +1780,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         targetUrl: newRewardTask.targetUrl || undefined,
                         reward: newRewardTask.reward, sortOrder: 100,
                         ...(isCaseFun ? {
-                          targetCount: Number(newRewardTask.targetCount) || 1,
+                          ...(isAmountTask
+                            ? { targetAmount: Number(newRewardTask.targetAmount) || 0 }
+                            : { targetCount: Number(newRewardTask.targetCount) || 1 }),
                           targetCaseId: newRewardTask.targetCaseId || undefined,
                           repeatIntervalHours: Number(newRewardTask.repeatIntervalHours) || undefined,
                           activeUntil: newRewardTask.activeUntil || undefined,
                         } : {}),
                       });
-                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1, targetCount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
+                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1, targetCount: '', targetAmount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
                               await load();
                     } catch (err: any) { window.alert(err?.message || 'Failed'); }
                     finally { setSaving(null); }
@@ -1708,7 +1805,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
                 {((data as any)?.tasks || []).map((task: any) => {
-                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases' };
+                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases', DEPOSIT_AMOUNT_EVM: 'Deposit USDT (EVM)', DEPOSIT_AMOUNT_TON: 'Deposit USDT (TON)', DEPOSIT_COUNT_ANY: 'Deposits (any chain)', DEPOSIT_COUNT_EVM: 'Deposits (EVM)', DEPOSIT_COUNT_TON: 'Deposits (TON)' };
+                  const isDepositAmount = task.type === 'DEPOSIT_AMOUNT_EVM' || task.type === 'DEPOSIT_AMOUNT_TON';
                   const isCF = task.category === 'CASEFUN';
                   const isEditing = editingTask?.id === task.id;
                   return (
@@ -1721,7 +1819,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         </div>
                         <div className="text-[10px] text-gray-500 mt-0.5">
                           +{task.reward} CFP · <span className="text-gray-400">{task.claimCount ?? 0} claims</span>
-                          {isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
+                          {isCF && isDepositAmount && task.targetAmount ? ` · ${Number(task.targetAmount).toFixed(2)} USDT target` : isCF && task.targetCount ? ` · ${task.targetCount}× target` : ''}
                           {isCF && task.repeatIntervalHours != null && task.repeatIntervalHours === 0 ? ' · instant repeat' : isCF && task.repeatIntervalHours ? ` · repeats every ${task.repeatIntervalHours}h` : isCF ? ' · one-time' : ''}
                           {task.activeUntil ? ` · until ${new Date(task.activeUntil).toLocaleDateString()}` : ''}
                           {task.isDefault ? ' · Default' : ''}
@@ -1729,7 +1827,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         {task.targetUrl && <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <button type="button" onClick={() => setEditingTask(isEditing ? null : { id: task.id, reward: task.reward, targetUrl: task.targetUrl || '', targetCount: task.targetCount || '', repeatIntervalHours: task.repeatIntervalHours ?? '', activeUntil: task.activeUntil ? new Date(task.activeUntil).toISOString().slice(0, 16) : '' })} className="text-[10px] px-2 py-1 rounded-lg border border-web3-accent/30 text-web3-accent">
+                        <button type="button" onClick={() => setEditingTask(isEditing ? null : { id: task.id, reward: task.reward, targetUrl: task.targetUrl || '', targetCount: task.targetCount || '', targetAmount: task.targetAmount || '', repeatIntervalHours: task.repeatIntervalHours ?? '', activeUntil: task.activeUntil ? new Date(task.activeUntil).toISOString().slice(0, 16) : '' })} className="text-[10px] px-2 py-1 rounded-lg border border-web3-accent/30 text-web3-accent">
                           {isEditing ? 'Cancel' : 'Edit'}
                         </button>
                         <button type="button" onClick={async () => { setSaving(task.id); try { await api.updateAdminRewardTask(task.id, { isActive: !task.isActive }); await load(); } catch (err: any) { window.alert(err?.message || 'Failed'); } finally { setSaving(null); } }} disabled={saving === task.id} className={`text-[10px] px-2 py-1 rounded-lg border ${task.isActive ? 'border-web3-success/30 text-web3-success' : 'border-gray-600 text-gray-500'}`}>
@@ -1754,10 +1852,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         )}
                         {isCF && (
                           <>
-                            <div className="space-y-1">
-                              <label className="text-[10px] text-gray-500">Target Count</label>
-                              <input type="number" min={1} value={editingTask.targetCount} onChange={(e) => setEditingTask((p: any) => ({ ...p, targetCount: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
-                            </div>
+                            {isDepositAmount ? (
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-500">Target USDT</label>
+                                <input type="number" min={0} step="0.01" value={editingTask.targetAmount} onChange={(e) => setEditingTask((p: any) => ({ ...p, targetAmount: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <label className="text-[10px] text-gray-500">Target Count</label>
+                                <input type="number" min={1} value={editingTask.targetCount} onChange={(e) => setEditingTask((p: any) => ({ ...p, targetCount: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
+                              </div>
+                            )}
                             <div className="space-y-1">
                               <label className="text-[10px] text-gray-500">Repeat (hours)</label>
                               <input type="number" min={0} value={editingTask.repeatIntervalHours} onChange={(e) => setEditingTask((p: any) => ({ ...p, repeatIntervalHours: e.target.value }))} placeholder="0 = one-time" className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
@@ -1775,7 +1880,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                               const updates: any = { reward: editingTask.reward };
                               if (!isCF) updates.targetUrl = editingTask.targetUrl || null;
                               if (isCF) {
-                                if (editingTask.targetCount) updates.targetCount = Number(editingTask.targetCount);
+                                if (isDepositAmount) {
+                                  if (editingTask.targetAmount) updates.targetAmount = Number(editingTask.targetAmount);
+                                } else if (editingTask.targetCount) {
+                                  updates.targetCount = Number(editingTask.targetCount);
+                                }
                                 updates.repeatIntervalHours = Number(editingTask.repeatIntervalHours) || null;
                                 updates.activeUntil = editingTask.activeUntil || null;
                               }
@@ -2374,6 +2483,127 @@ type UserDetailTab =
   | 'feedback'
   | 'rewards';
 
+const shortAddr = (a?: string | null): string => {
+  if (!a) return '';
+  if (a.length <= 12) return a;
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+};
+
+const isPlaceholderEvm = (a?: string | null): boolean =>
+  !a || a.startsWith('tg_') || a.startsWith('ton_') || a.startsWith('merged_') || a.startsWith('unlinked_');
+
+const ConnectionsBlock: React.FC<{
+  user: any;
+  isImmutable: boolean;
+  onUnlinked: () => void;
+}> = ({ user, isImmutable, onUnlinked }) => {
+  const [busy, setBusy] = React.useState<string | null>(null);
+
+  const evmLinked = !!user?.hasLinkedWallet && !isPlaceholderEvm(user?.walletAddress);
+  const tonLinked = !!user?.tonAddress;
+  const tgLinked = !!user?.telegramId;
+  const twLinked = !!user?.twitterUsername || !!user?.twitterId;
+
+  const totalLinked = (evmLinked ? 1 : 0) + (tonLinked ? 1 : 0) + (tgLinked ? 1 : 0) + (twLinked ? 1 : 0);
+
+  const doUnlink = async (channel: 'telegram' | 'evm' | 'ton' | 'twitter', label: string) => {
+    if (totalLinked <= 1) {
+      window.alert('Cannot unlink the last identifier — the user would have no way to log in.');
+      return;
+    }
+    if (!window.confirm(`Unlink ${label} from "${user.username}"? This is irreversible.`)) return;
+    setBusy(channel);
+    try {
+      await api.unlinkAdminUserConnection(user.id, channel);
+      onUnlinked();
+    } catch (err: any) {
+      window.alert(err?.message || 'Unlink failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const Row: React.FC<{
+    label: string;
+    value: React.ReactNode;
+    linked: boolean;
+    channel: 'telegram' | 'evm' | 'ton' | 'twitter';
+    disabled?: boolean;
+    disabledTitle?: string;
+  }> = ({ label, value, linked, channel, disabled, disabledTitle }) => (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="text-gray-500 w-20 shrink-0">{label}:</span>
+      <span className="flex-1 min-w-0 truncate">{linked ? value : <span className="text-gray-600">—</span>}</span>
+      {linked && (
+        <button
+          type="button"
+          onClick={() => doUnlink(channel, label)}
+          disabled={busy !== null || disabled}
+          title={disabled ? disabledTitle : `Unlink ${label}`}
+          className="shrink-0 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider bg-red-500/15 text-red-300 border border-red-500/40 hover:bg-red-500/25 disabled:opacity-40"
+        >
+          {busy === channel ? '…' : 'Unlink'}
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2 space-y-1.5">
+      <div className="text-[10px] uppercase tracking-widest text-gray-500">Connections</div>
+      <Row
+        label="Telegram"
+        linked={tgLinked}
+        channel="telegram"
+        value={
+          <span className="text-gray-200">
+            {user.telegramUsername ? `@${user.telegramUsername}` : user.telegramFirstName || user.telegramId}
+            {user.telegramLinkedAt ? ` · ${formatDate(user.telegramLinkedAt)}` : ''}
+          </span>
+        }
+      />
+      <Row
+        label="EVM"
+        linked={evmLinked}
+        channel="evm"
+        disabled={isImmutable}
+        disabledTitle="Bootstrap admin EVM cannot be unlinked"
+        value={
+          <span className="text-gray-200 font-mono">
+            {shortAddr(user.walletAddress)}
+            {user.walletLinkedAt ? ` · ${formatDate(user.walletLinkedAt)}` : ''}
+          </span>
+        }
+      />
+      <Row
+        label="TON"
+        linked={tonLinked}
+        channel="ton"
+        value={
+          <span className="text-gray-200 font-mono">
+            {shortAddr(user.tonAddress)}
+            {user.tonLinkedAt ? ` · ${formatDate(user.tonLinkedAt)}` : ''}
+          </span>
+        }
+      />
+      <Row
+        label="X / Twitter"
+        linked={twLinked}
+        channel="twitter"
+        value={
+          <span className="text-gray-200">
+            @{user.twitterUsername || user.twitterId}
+            {user.twitterLinkedAt ? ` · ${formatDate(user.twitterLinkedAt)}` : ''}
+          </span>
+        }
+      />
+      <div className="text-[10px] text-gray-600 pt-1 border-t border-white/[0.06]">
+        At least one identifier must remain. Audit log records every change.
+      </div>
+    </div>
+  );
+};
+
 const UserDetail: React.FC<{
   userId: string;
   isBootstrapAdmin: boolean;
@@ -2480,32 +2710,11 @@ const UserDetail: React.FC<{
         )}
       </div>
 
-      <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2 space-y-1.5">
-        <div className="text-[10px] uppercase tracking-widest text-gray-500">Linked accounts</div>
-        <div className="text-[11px]">
-          <span className="text-gray-500">X / Twitter:</span>{' '}
-          {u.twitterUsername ? (
-            <span className="text-gray-200">
-              @{u.twitterUsername}
-              {u.twitterName ? ` (${u.twitterName})` : ''}
-              {u.twitterLinkedAt ? ` · linked ${formatDate(u.twitterLinkedAt)}` : ''}
-            </span>
-          ) : (
-            <span className="text-gray-600">—</span>
-          )}
-        </div>
-        <div className="text-[11px]">
-          <span className="text-gray-500">Telegram:</span>{' '}
-          {u.telegramId ? (
-            <span className="text-gray-200">
-              {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramFirstName || u.telegramId}
-              {u.telegramLinkedAt ? ` · linked ${formatDate(u.telegramLinkedAt)}` : ''}
-            </span>
-          ) : (
-            <span className="text-gray-600">—</span>
-          )}
-        </div>
-      </div>
+      <ConnectionsBlock
+        user={u}
+        isImmutable={isImmutableBootstrap}
+        onUnlinked={reload}
+      />
 
       {refIn && (
         <div className="rounded-lg border border-white/[0.08] bg-black/25 p-2 space-y-1">

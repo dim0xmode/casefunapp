@@ -2,15 +2,20 @@ import { randomBytes } from 'crypto';
 import prisma from '../config/database.js';
 import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { createMergeToken } from './mergeTokenStore.js';
+import { findMergeConflicts, buildMergeConflictMessage } from './mergeService.js';
 
 interface TelegramLinkSession {
   userId: string;
   issuedAt: number;
   expiresAt: number;
-  state: 'PENDING' | 'LINKED' | 'FAILED';
+  state: 'PENDING' | 'LINKED' | 'FAILED' | 'MERGE_PENDING';
   failureCode?: 'ALREADY_LINKED' | 'TARGET_USER_MISSING' | 'INTERNAL_ERROR';
   failureMessage?: string;
   consumedAt?: number;
+  mergeToken?: string;
+  mergeSecondaryUserId?: string;
+  mergeSecondaryUsername?: string;
 }
 
 interface TelegramBotUpdate {
@@ -263,12 +268,18 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
   try {
     const targetUser = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { id: true },
     });
     if (!targetUser) {
       const failureMessage = 'The website account was not found. Please log in and try again.';
       markSessionFailed(linkToken, session, 'TARGET_USER_MISSING', failureMessage);
       await sendBotMessage(chatId, failureMessage);
+      return;
+    }
+    if (targetUser.telegramId && targetUser.telegramId !== telegramId) {
+      const failureMessage =
+        'Your casefun account already has a different Telegram linked. Contact support to unlink it before connecting another one.';
+      markSessionFailed(linkToken, session, 'ALREADY_LINKED', failureMessage);
+      await sendBotMessage(chatId, failureMessage).catch(() => {});
       return;
     }
 
@@ -277,13 +288,32 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
         telegramId,
         NOT: { id: session.userId },
       },
-      select: { id: true },
     });
     if (existing) {
-      const failureMessage =
-        'This Telegram account is already linked to another casefun account. Unlink it there first or use a different Telegram account.';
-      markSessionFailed(linkToken, session, 'ALREADY_LINKED', failureMessage);
-      await sendBotMessage(chatId, failureMessage);
+      // Telegram already attached to another casefun account → check
+      // whether the two accounts can actually merge. If any other identity
+      // slot conflicts (different EVM/TON/Twitter), block immediately and
+      // tell the user to contact support.
+      const conflicts = findMergeConflicts(targetUser, existing);
+      if (conflicts.length > 0) {
+        const failureMessage = buildMergeConflictMessage(conflicts);
+        markSessionFailed(linkToken, session, 'ALREADY_LINKED', failureMessage);
+        await sendBotMessage(chatId, failureMessage).catch(() => {});
+        return;
+      }
+
+      // Safe merge — issue token and let frontend confirm.
+      const mergeToken = createMergeToken(session.userId, existing.id);
+      session.state = 'MERGE_PENDING';
+      session.mergeToken = mergeToken;
+      session.mergeSecondaryUserId = existing.id;
+      session.mergeSecondaryUsername = existing.username;
+      session.consumedAt = Date.now();
+      telegramLinkSessions.set(linkToken, session);
+      await sendBotMessage(
+        chatId,
+        'This Telegram account already has a casefun profile. Return to the website to confirm merging it with your current account.'
+      ).catch(() => {});
       return;
     }
 

@@ -4,8 +4,9 @@ import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
 import { getRarityByValue, RARITY_COLORS } from '../utils/rarity.js';
-// RTU freeze: import kept for future re-enable
-// import { recordRtuEvent } from '../services/rtuService.js';
+// RTU freeze: chance-shaping is disabled, but ledger writes remain so the
+// admin "RTU" tab keeps showing real-time spend / issuance / surplus per case.
+import { recordRtuEvent } from '../services/rtuService.js';
 import { saveImage } from '../utils/upload.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
 import { checkAndConfirmReferral } from '../utils/referralRewards.js';
@@ -19,6 +20,7 @@ import {
   getTelegramBotLinkTokenPayload,
   getTelegramBotPublicInfo,
 } from '../services/telegramLinkBotService.js';
+import { getMergePreview } from '../services/mergeService.js';
 
 const roundToTwo = (value: number) => Number(value.toFixed(2));
 const FEEDBACK_TOPICS = ['BUG_REPORT', 'EARLY_ACCESS', 'PARTNERSHIP'] as const;
@@ -473,8 +475,9 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
       return next(new AppError('All selected cards must be from the same token/case', 400));
     }
 
+    let caseInfo: Awaited<ReturnType<typeof prisma.case.findUnique>> | null = null;
     if (baseItem.caseId) {
-      const caseInfo = await prisma.case.findUnique({
+      caseInfo = await prisma.case.findUnique({
         where: { id: baseItem.caseId },
       });
       if (caseInfo?.openDurationHours && caseInfo.createdAt) {
@@ -540,8 +543,32 @@ export const upgradeItem = async (req: Request, res: Response, next: NextFunctio
         },
       });
 
-      // RTU event recording disabled (RTU freeze)
-      // if (baseItem.caseId) { await recordRtuEvent(...) }
+      // RTU chance-shaping is disabled, but observe net token flow per case
+      // for the admin panel: burnt items reduce supply; a successful upgrade
+      // mints back targetValue. Spent USDT is 0 — pure token-for-token op.
+      if (baseItem.caseId && caseInfo?.tokenPrice && caseInfo.tokenPrice > 0) {
+        const issuedDelta = isSuccess ? targetValue - totalBaseValue : -totalBaseValue;
+        await recordRtuEvent(
+          {
+            caseId: baseItem.caseId,
+            userId,
+            tokenSymbol: caseInfo.tokenTicker || baseItem.currency,
+            tokenPriceUsdt: Number(caseInfo.tokenPrice),
+            rtuPercent: Number(caseInfo.rtu),
+            type: 'UPGRADE',
+            deltaSpentUsdt: 0,
+            deltaToken: issuedDelta,
+            metadata: {
+              multiplier: mult,
+              totalBaseValue,
+              targetValue,
+              success: isSuccess,
+              rtuFrozen: true,
+            },
+          },
+          tx
+        );
+      }
 
       return { newItem };
     });
@@ -881,6 +908,26 @@ export const getTelegramBotLinkStatus = async (req: Request, res: Response, next
       });
     }
 
+    if (session.state === 'MERGE_PENDING') {
+      const preview = session.mergeSecondaryUserId
+        ? await getMergePreview(session.mergeSecondaryUserId)
+        : null;
+      return res.json({
+        status: 'success',
+        data: {
+          linked: false,
+          failed: false,
+          mergeRequired: true,
+          mergeToken: session.mergeToken,
+          conflictUserId: session.mergeSecondaryUserId,
+          conflictUsername: session.mergeSecondaryUsername,
+          identifier: 'telegram',
+          preview,
+          user: buildPublicUser(user),
+        },
+      });
+    }
+
     res.json({
       status: 'success',
       data: {
@@ -910,6 +957,10 @@ export const getTelegramBotInfo = async (req: Request, res: Response, next: Next
   }
 };
 
+// NOTE: This handler is no longer routed. Self-unlinking of identifiers is
+// disabled across the product — admins manage unlinks via the
+// /admin/users/:id/connections/:channel endpoint and audit log. The function
+// is retained only to avoid breaking imports during incremental rollouts.
 export const unlinkTelegramAccount = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = String((req as any).userId || '').trim();
@@ -1282,11 +1333,47 @@ export const recordBattle = async (req: Request, res: Response, next: NextFuncti
           },
         });
         createdItems.push(created);
-
-        // RTU event recording disabled (RTU freeze)
       }
 
-      // RTU reserve event recording disabled (RTU freeze)
+      // RTU chance-shaping is frozen, but record per-round metrics so admin can
+      // see real spend vs. token issuance per case in battles. We aggregate
+      // materialized tokens per caseId, paired with case.price as the user's
+      // stake. Reserves (BOT loss returns) are not materialized → not counted.
+      const battleCaseIds = parsedProof.payload.caseIds.filter(Boolean);
+      if (battleCaseIds.length) {
+        const caseRows = await tx.case.findMany({
+          where: { id: { in: Array.from(new Set(battleCaseIds)) } },
+          select: { id: true, price: true, tokenTicker: true, tokenPrice: true, rtu: true, currency: true },
+        });
+        const caseById = new Map(caseRows.map((row) => [row.id, row]));
+        const issuedByCase = new Map<string, number>();
+        for (const item of wonItems) {
+          if (!item.caseId) continue;
+          issuedByCase.set(item.caseId, (issuedByCase.get(item.caseId) || 0) + Number(item.value || 0));
+        }
+        for (const caseId of battleCaseIds) {
+          const row = caseById.get(caseId);
+          if (!row || !row.tokenPrice || row.tokenPrice <= 0) continue;
+          await recordRtuEvent(
+            {
+              caseId: row.id,
+              userId,
+              tokenSymbol: row.tokenTicker || row.currency,
+              tokenPriceUsdt: Number(row.tokenPrice),
+              rtuPercent: Number(row.rtu),
+              type: 'BATTLE',
+              deltaSpentUsdt: Number(row.price),
+              deltaToken: Number(issuedByCase.get(caseId) || 0),
+              metadata: {
+                mode: parsedProof.payload.mode,
+                result: userWon ? 'WIN' : 'LOSS',
+                rtuFrozen: true,
+              },
+            },
+            tx
+          );
+        }
+      }
 
       if (lobbyId) {
         await tx.battleLobby.updateMany({

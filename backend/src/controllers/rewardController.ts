@@ -241,10 +241,40 @@ const verifyTelegramSubscription = async (
   }
 };
 
-const CASEFUN_TYPES = new Set([
+// Deposit task types — progress is measured against either a count of
+// confirmed deposits (DEPOSIT_COUNT_*) or an aggregated USDT amount
+// (DEPOSIT_AMOUNT_*). Both share the same code path and are tracked on
+// the existing RewardTask + RewardClaim infrastructure.
+const DEPOSIT_TYPES = new Set([
+  'DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON',
+  'DEPOSIT_COUNT_ANY', 'DEPOSIT_COUNT_EVM', 'DEPOSIT_COUNT_TON',
+]);
+
+const DEPOSIT_AMOUNT_TYPES = new Set(['DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON']);
+
+const CASEFUN_ACTION_TYPES = new Set([
   'OPEN_CASES', 'OPEN_SPECIFIC_CASE', 'DO_UPGRADES',
   'CREATE_BATTLES', 'JOIN_BATTLES', 'CLAIM_TOKENS', 'CREATE_CASES',
 ]);
+
+// Any non-social, action-tracked task — including deposits — uses the
+// same progress / cooldown machinery as legacy CaseFun tasks.
+const CASEFUN_TYPES = new Set<string>([
+  ...CASEFUN_ACTION_TYPES,
+  ...DEPOSIT_TYPES,
+]);
+
+const isDepositAmountType = (type: string) => DEPOSIT_AMOUNT_TYPES.has(type);
+const isDepositCountType = (type: string) => DEPOSIT_TYPES.has(type) && !DEPOSIT_AMOUNT_TYPES.has(type);
+
+const getTaskTarget = (task: { type: string; targetCount: number | null; targetAmount: number | null }): number => {
+  if (isDepositAmountType(task.type)) {
+    return Number(task.targetAmount || 0) || 0;
+  }
+  return Number(task.targetCount || 0) || 1;
+};
+
+const getTaskUnit = (type: string): 'count' | 'usdt' => (isDepositAmountType(type) ? 'usdt' : 'count');
 
 const countUserActions = async (
   userId: string,
@@ -267,6 +297,34 @@ const countUserActions = async (
       return prisma.claim.count({ where: { userId, status: 'completed', createdAt: { gte: since } } });
     case 'CREATE_CASES':
       return prisma.case.count({ where: { createdById: userId, createdAt: { gte: since } } });
+
+    case 'DEPOSIT_COUNT_ANY':
+      return prisma.deposit.count({
+        where: { userId, status: 'confirmed', createdAt: { gte: since } },
+      });
+    case 'DEPOSIT_COUNT_EVM':
+      return prisma.deposit.count({
+        where: { userId, status: 'confirmed', chainType: 'EVM', createdAt: { gte: since } },
+      });
+    case 'DEPOSIT_COUNT_TON':
+      return prisma.deposit.count({
+        where: { userId, status: 'confirmed', chainType: 'TON', createdAt: { gte: since } },
+      });
+    case 'DEPOSIT_AMOUNT_EVM': {
+      const agg = await prisma.deposit.aggregate({
+        _sum: { amountUsdt: true },
+        where: { userId, status: 'confirmed', chainType: 'EVM', createdAt: { gte: since } },
+      });
+      return Number(agg._sum.amountUsdt || 0);
+    }
+    case 'DEPOSIT_AMOUNT_TON': {
+      const agg = await prisma.deposit.aggregate({
+        _sum: { amountUsdt: true },
+        where: { userId, status: 'confirmed', chainType: 'TON', createdAt: { gte: since } },
+      });
+      return Number(agg._sum.amountUsdt || 0);
+    }
+
     default:
       return 0;
   }
@@ -327,6 +385,8 @@ export const listRewardTasks = async (
         const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
         const isInstantRepeat = task.repeatIntervalHours === 0;
         const lastClaimAt = claimInfo?.claimedAt;
+        const unit = getTaskUnit(task.type);
+        const target = getTaskTarget(task);
 
         let onCooldown = false;
         let cooldownEndsAt: Date | null = null;
@@ -341,8 +401,10 @@ export const listRewardTasks = async (
             id: task.id, type: task.type, title: task.title,
             description: task.description, reward: task.reward,
             category: task.category,
-            targetCount: task.targetCount || 1,
-            progress: task.targetCount || 1,
+            targetCount: target,
+            targetAmount: task.targetAmount,
+            unit,
+            progress: target,
             claimed: true, completed: true, locked: false,
             onCooldown: false, cooldownEndsAt: null,
             activeUntil: task.activeUntil,
@@ -350,23 +412,30 @@ export const listRewardTasks = async (
           };
         }
 
-        const since = isRepeatable && lastClaimAt && !onCooldown
-          ? lastClaimAt
-          : isRepeatable && lastClaimAt && onCooldown
-            ? lastClaimAt
+        // BUG FIX: while on cooldown, the next-cycle progress bar must NOT
+        // count actions performed during cooldown. We freeze progress at 0
+        // until cooldown ends, then start counting from cooldownEndsAt
+        // forward. Without this, daily/weekly tasks would silently fill up
+        // again while still locked, which the user reported as a bug.
+        let progress = 0;
+        if (userId && !onCooldown) {
+          const countSince = isRepeatable && lastClaimAt
+            // After cooldown end (or instant repeat), count from last claim;
+            // for instant repeat that's effectively the previous claim moment.
+            ? (cooldownEndsAt && cooldownEndsAt < now ? cooldownEndsAt : lastClaimAt)
             : task.createdAt;
-
-        const countSince = onCooldown ? lastClaimAt! : (isRepeatable && lastClaimAt ? lastClaimAt : task.createdAt);
-        const progress = userId ? await countUserActions(userId, task.type, countSince, task.targetCaseId) : 0;
-        const targetCount = task.targetCount || 1;
+          progress = await countUserActions(userId, task.type, countSince, task.targetCaseId);
+        }
 
         return {
           id: task.id, type: task.type, title: task.title,
           description: task.description, reward: task.reward,
           category: task.category,
-          targetCount,
-          progress: Math.min(progress, targetCount),
-          claimed: false, completed: progress >= targetCount && !onCooldown,
+          targetCount: target,
+          targetAmount: task.targetAmount,
+          unit,
+          progress: Math.min(progress, target),
+          claimed: false, completed: progress >= target && !onCooldown,
           locked: false,
           onCooldown,
           cooldownEndsAt,
@@ -462,19 +531,27 @@ export const claimReward = async (
         return next(new AppError('Reward already claimed', 409));
       }
 
+      let cooldownEnd: Date | null = null;
       if (isRepeatable && !isInstantRepeat && lastClaim) {
-        const cooldownEnd = new Date(lastClaim.claimedAt.getTime() + task.repeatIntervalHours! * 3600_000);
+        cooldownEnd = new Date(lastClaim.claimedAt.getTime() + task.repeatIntervalHours! * 3600_000);
         if (cooldownEnd > now) {
           return next(new AppError('Task is on cooldown', 400));
         }
       }
 
-      const since = isRepeatable && lastClaim ? lastClaim.claimedAt : task.createdAt;
+      // Mirror listRewardTasks: count progress only after cooldown ended,
+      // not during, so the next-cycle progress reflects post-cooldown actions.
+      const since = isRepeatable && lastClaim
+        ? (cooldownEnd && cooldownEnd > lastClaim.claimedAt ? cooldownEnd : lastClaim.claimedAt)
+        : task.createdAt;
       const progress = await countUserActions(userId, task.type, since, task.targetCaseId);
-      const targetCount = task.targetCount || 1;
+      const target = getTaskTarget(task);
+      const unit = getTaskUnit(task.type);
 
-      if (progress < targetCount) {
-        return next(new AppError(`Progress: ${progress}/${targetCount} — keep going!`, 400));
+      if (progress < target) {
+        const formatProgress = (value: number) =>
+          unit === 'usdt' ? `${value.toFixed(2)} USDT` : String(Math.floor(value));
+        return next(new AppError(`Progress: ${formatProgress(progress)}/${formatProgress(target)} — keep going!`, 400));
       }
     } else {
       // Social tasks — one-time only
@@ -648,7 +725,11 @@ export const adminCreateRewardTask = async (
   try {
     const adminId = (req as any).userId;
     const { type, title, description, targetUrl, reward, sortOrder,
-            targetCount, targetCaseId, repeatIntervalHours, activeUntil } = req.body || {};
+            targetCount, targetAmount, targetCaseId, repeatIntervalHours, activeUntil } = req.body || {};
+
+    const targetCountNum = Number(targetCount) || 0;
+    const targetAmountNum = Number(targetAmount) || 0;
+    const formatAmount = (value: number) => (Number.isInteger(value) ? value.toString() : value.toFixed(2));
 
     const SOCIAL_PRESETS: Record<string, { title: string; description: string }> = {
       LINK_TWITTER: { title: 'Link Twitter', description: 'Connect your X account' },
@@ -661,13 +742,33 @@ export const adminCreateRewardTask = async (
     };
 
     const CASEFUN_PRESETS: Record<string, { title: string; description: string }> = {
-      OPEN_CASES: { title: `Open ${targetCount || 1} cases`, description: 'Open cases to earn rewards' },
-      OPEN_SPECIFIC_CASE: { title: `Open a specific case ${targetCount || 1} times`, description: 'Open the designated case' },
-      DO_UPGRADES: { title: `Complete ${targetCount || 1} upgrades`, description: 'Upgrade your tokens' },
-      CREATE_BATTLES: { title: `Create ${targetCount || 1} battles`, description: 'Create battle lobbies' },
-      JOIN_BATTLES: { title: `Play ${targetCount || 1} battles`, description: 'Participate in battles' },
-      CLAIM_TOKENS: { title: `Claim ${targetCount || 1} tokens`, description: 'Claim tokens from cases' },
-      CREATE_CASES: { title: `Create ${targetCount || 1} cases`, description: 'Create your own cases' },
+      OPEN_CASES: { title: `Open ${targetCountNum || 1} cases`, description: 'Open cases to earn rewards' },
+      OPEN_SPECIFIC_CASE: { title: `Open a specific case ${targetCountNum || 1} times`, description: 'Open the designated case' },
+      DO_UPGRADES: { title: `Complete ${targetCountNum || 1} upgrades`, description: 'Upgrade your tokens' },
+      CREATE_BATTLES: { title: `Create ${targetCountNum || 1} battles`, description: 'Create battle lobbies' },
+      JOIN_BATTLES: { title: `Play ${targetCountNum || 1} battles`, description: 'Participate in battles' },
+      CLAIM_TOKENS: { title: `Claim ${targetCountNum || 1} tokens`, description: 'Claim tokens from cases' },
+      CREATE_CASES: { title: `Create ${targetCountNum || 1} cases`, description: 'Create your own cases' },
+      DEPOSIT_AMOUNT_EVM: {
+        title: `Deposit ${formatAmount(targetAmountNum || 1)} USDT via EVM`,
+        description: 'Top up your CaseFun balance using an EVM chain',
+      },
+      DEPOSIT_AMOUNT_TON: {
+        title: `Deposit ${formatAmount(targetAmountNum || 1)} USDT via TON`,
+        description: 'Top up your CaseFun balance using TON',
+      },
+      DEPOSIT_COUNT_ANY: {
+        title: `Make ${targetCountNum || 1} deposits`,
+        description: 'Top up your balance from any supported chain',
+      },
+      DEPOSIT_COUNT_EVM: {
+        title: `Make ${targetCountNum || 1} EVM deposits`,
+        description: 'Top up your balance via an EVM chain',
+      },
+      DEPOSIT_COUNT_TON: {
+        title: `Make ${targetCountNum || 1} TON deposits`,
+        description: 'Top up your balance via TON',
+      },
     };
 
     const allPresets = { ...SOCIAL_PRESETS, ...CASEFUN_PRESETS };
@@ -676,11 +777,16 @@ export const adminCreateRewardTask = async (
     }
 
     const isCaseFun = CASEFUN_TYPES.has(type);
+    const isAmountTask = isDepositAmountType(type);
+    const isCountTask = isCaseFun && !isAmountTask;
     if (!isCaseFun && ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(type) && !targetUrl) {
       return next(new AppError('Target URL is required for tweet tasks', 400));
     }
-    if (isCaseFun && (!targetCount || Number(targetCount) < 1)) {
-      return next(new AppError('Target count is required for CaseFun tasks', 400));
+    if (isCountTask && (!targetCountNum || targetCountNum < 1)) {
+      return next(new AppError('Target count is required for this task type', 400));
+    }
+    if (isAmountTask && (!targetAmountNum || targetAmountNum <= 0)) {
+      return next(new AppError('Target USDT amount is required for deposit-amount tasks', 400));
     }
 
     const preset = allPresets[type];
@@ -699,7 +805,8 @@ export const adminCreateRewardTask = async (
         sortOrder: Number(sortOrder) || 100,
         createdById: adminId,
         category: isCaseFun ? 'CASEFUN' : 'SOCIAL',
-        targetCount: isCaseFun ? Math.max(1, Number(targetCount) || 1) : null,
+        targetCount: isCountTask ? Math.max(1, targetCountNum) : null,
+        targetAmount: isAmountTask ? targetAmountNum : null,
         targetCaseId: type === 'OPEN_SPECIFIC_CASE' && targetCaseId ? String(targetCaseId) : null,
         repeatIntervalHours: repeatIntervalHours != null && repeatIntervalHours !== '' ? Math.max(0, Number(repeatIntervalHours)) : null,
         activeUntil: activeUntil ? new Date(activeUntil) : null,
@@ -741,6 +848,10 @@ export const adminUpdateRewardTask = async (
       data.sortOrder = Number(req.body.sortOrder) || 0;
     if (req.body.targetCount !== undefined)
       data.targetCount = req.body.targetCount ? Math.max(1, Number(req.body.targetCount)) : null;
+    if (req.body.targetAmount !== undefined) {
+      const ta = Number(req.body.targetAmount);
+      data.targetAmount = Number.isFinite(ta) && ta > 0 ? ta : null;
+    }
     if (req.body.repeatIntervalHours !== undefined) {
       const rih = req.body.repeatIntervalHours;
       data.repeatIntervalHours = rih !== null && rih !== '' && rih !== undefined ? Math.max(0, Number(rih)) : null;

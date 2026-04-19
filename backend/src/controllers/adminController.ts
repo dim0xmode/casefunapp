@@ -417,6 +417,124 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+type UnlinkChannel = 'telegram' | 'evm' | 'ton' | 'twitter';
+
+const isPlaceholderEvmWallet = (addr: string | null | undefined): boolean => {
+  if (!addr) return true;
+  return addr.startsWith('tg_') || addr.startsWith('ton_') || addr.startsWith('merged_');
+};
+
+/** Counts how many "real" identifiers a user has (TG, EVM, TON, Twitter). */
+const countIdentifiers = (u: {
+  telegramId: string | null;
+  walletAddress: string | null;
+  hasLinkedWallet: boolean;
+  tonAddress: string | null;
+  twitterId: string | null;
+}): number => {
+  let n = 0;
+  if (u.telegramId) n++;
+  if (u.hasLinkedWallet && !isPlaceholderEvmWallet(u.walletAddress)) n++;
+  if (u.tonAddress) n++;
+  if (u.twitterId) n++;
+  return n;
+};
+
+export const unlinkUserConnection = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const adminId = (req as any).userId;
+    const id = normalizeParam(req.params.id);
+    const channel = String(normalizeParam(req.params.channel) || '').toLowerCase() as UnlinkChannel;
+
+    if (!id) return next(new AppError('User id is required', 400));
+    if (!['telegram', 'evm', 'ton', 'twitter'].includes(channel)) {
+      return next(new AppError('Invalid channel', 400));
+    }
+
+    const target = await prisma.user.findUnique({ where: { id } });
+    if (!target) return next(new AppError('User not found', 404));
+
+    const bootstrapSet = getBootstrapWalletSet();
+    if (channel === 'evm' && isBootstrapWallet(target.walletAddress, bootstrapSet)) {
+      return next(new AppError(IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR, 403));
+    }
+
+    const slotIsEmpty =
+      (channel === 'telegram' && !target.telegramId) ||
+      (channel === 'twitter' && !target.twitterId) ||
+      (channel === 'ton' && !target.tonAddress) ||
+      (channel === 'evm' && (!target.hasLinkedWallet || isPlaceholderEvmWallet(target.walletAddress)));
+    if (slotIsEmpty) {
+      return next(new AppError('That channel is not linked', 400));
+    }
+
+    const remainingAfter = countIdentifiers(target) - 1;
+    if (remainingAfter < 1) {
+      return next(
+        new AppError(
+          'Cannot unlink the last identifier — the user would have no way to log in. Delete the account instead.',
+          400
+        )
+      );
+    }
+
+    const data: Record<string, any> = {};
+    const meta: Record<string, any> = { previous: {} };
+
+    if (channel === 'telegram') {
+      meta.previous = {
+        telegramId: target.telegramId,
+        telegramUsername: target.telegramUsername,
+      };
+      Object.assign(data, {
+        telegramId: null,
+        telegramUsername: null,
+        telegramFirstName: null,
+        telegramLastName: null,
+        telegramPhotoUrl: null,
+        telegramLinkedAt: null,
+      });
+    } else if (channel === 'twitter') {
+      meta.previous = {
+        twitterId: target.twitterId,
+        twitterUsername: target.twitterUsername,
+      };
+      Object.assign(data, {
+        twitterId: null,
+        twitterUsername: null,
+        twitterName: null,
+        twitterLinkedAt: null,
+        twitterAccessToken: null,
+        twitterRefreshToken: null,
+      });
+    } else if (channel === 'ton') {
+      meta.previous = { tonAddress: target.tonAddress };
+      Object.assign(data, { tonAddress: null, tonLinkedAt: null });
+    } else if (channel === 'evm') {
+      meta.previous = { walletAddress: target.walletAddress };
+      // walletAddress has UNIQUE constraint and is non-nullable in our schema —
+      // store a placeholder so the slot is freed for future links.
+      const placeholder =
+        (target.telegramId && `tg_${target.telegramId}`) ||
+        (target.tonAddress && `ton_${target.tonAddress}`) ||
+        `unlinked_${target.id}_${Date.now()}`;
+      Object.assign(data, {
+        walletAddress: placeholder,
+        hasLinkedWallet: false,
+        walletLinkedAt: null,
+      });
+    }
+
+    const updated = await prisma.user.update({ where: { id }, data });
+
+    await logAdminAction(adminId, `USER_UNLINK_${channel.toUpperCase()}`, meta, 'User', id);
+
+    res.json({ status: 'success', data: { user: updated } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const listCases = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rows = await prisma.case.findMany({

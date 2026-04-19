@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { CaseDrop } from '@prisma/client';
 import prisma from '../config/database.js';
-// RTU freeze: imports kept for future re-enable
-// import { recordRtuEvent } from '../services/rtuService.js';
-// import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
+// RTU freeze: chance-shaping logic is disabled, but ledger writes remain so the
+// admin panel keeps showing real-time spend / issuance / surplus per case+token.
+import { recordRtuEvent } from '../services/rtuService.js';
 import { deployCaseToken } from '../services/tokenService.js';
 import { deployJetton } from '../services/tonService.js';
 import { saveImage } from '../utils/upload.js';
@@ -548,8 +548,28 @@ export const openCase = async (
         },
       });
 
-      // RTU event recording disabled (RTU freeze)
-      // if (caseItem.tokenPrice) { await recordRtuEvent(...) }
+      // RTU chance-shaping is disabled, but record the event so the admin panel
+      // can still observe real spend (USDT) vs token issuance per case.
+      if (caseItem.tokenPrice && caseItem.tokenPrice > 0) {
+        await recordRtuEvent(
+          {
+            caseId: caseItem.id,
+            userId,
+            tokenSymbol: caseItem.tokenTicker || caseItem.currency,
+            tokenPriceUsdt: Number(caseItem.tokenPrice),
+            rtuPercent: Number(caseItem.rtu),
+            type: 'OPEN',
+            deltaSpentUsdt: Number(caseItem.price),
+            deltaToken: Number(wonDrop.value || 0),
+            metadata: {
+              wonDropId: wonDrop.id,
+              wonValue: wonDrop.value,
+              rtuFrozen: true,
+            },
+          },
+          tx
+        );
+      }
     });
 
     const updatedUser = await prisma.user.findUnique({ where: { id: userId } });

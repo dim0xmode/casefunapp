@@ -8,7 +8,13 @@ import { AuthRequest } from '../middleware/auth.js';
 import { verifyTelegramWebAppInitData, verifyTelegramLoginPayload } from '../utils/telegramAuth.js';
 import { resolveReferrerIdByCode } from '../utils/referral.js';
 import { verifyTonProof } from '../utils/tonAuth.js';
-import { mergeAccounts } from '../services/mergeService.js';
+import {
+  mergeAccounts,
+  findMergeConflicts,
+  buildMergeConflictMessage,
+  getMergePreview,
+} from '../services/mergeService.js';
+import { createMergeToken, consumeMergeToken } from '../services/mergeTokenStore.js';
 import {
   createTelegramWebLogin,
   getTelegramWebLoginStatus,
@@ -146,23 +152,6 @@ interface TelegramTopUpBrowserLinkSession {
 const TELEGRAM_WALLET_BROWSER_LINK_TTL_MS = 10 * 60 * 1000;
 const telegramWalletBrowserLinkSessions = new Map<string, TelegramWalletBrowserLinkSession>();
 const telegramTopUpBrowserLinkSessions = new Map<string, TelegramTopUpBrowserLinkSession>();
-
-const MERGE_TOKEN_TTL_MS = 5 * 60 * 1000;
-const pendingMergeTokens = new Map<string, { primaryUserId: string; secondaryUserId: string; expiresAt: number }>();
-
-const cleanupMergeTokens = () => {
-  const now = Date.now();
-  for (const [token, data] of pendingMergeTokens.entries()) {
-    if (data.expiresAt <= now) pendingMergeTokens.delete(token);
-  }
-};
-
-const createMergeToken = (primaryUserId: string, secondaryUserId: string): string => {
-  cleanupMergeTokens();
-  const token = crypto.randomBytes(24).toString('hex');
-  pendingMergeTokens.set(token, { primaryUserId, secondaryUserId, expiresAt: Date.now() + MERGE_TOKEN_TTL_MS });
-  return token;
-};
 
 const trimTrailingSlash = (value: string) => String(value || '').replace(/\/+$/, '');
 
@@ -663,147 +652,71 @@ export const linkWalletToCurrentAccount = async (
       return next(new AppError('Invalid signature', 401));
     }
 
-    const sessionToken = getSessionTokenFromRequest(req);
-    const linkedUser = await prisma.$transaction(async (tx) => {
-      const currentUser = await tx.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          walletAddress: true,
-          hasLinkedWallet: true,
-          walletLinkedAt: true,
-          balance: true,
-          telegramId: true,
-          telegramUsername: true,
-          telegramFirstName: true,
-          telegramLastName: true,
-          telegramPhotoUrl: true,
-          telegramLinkedAt: true,
-        },
-      });
-      if (!currentUser) {
-        throw new AppError('User not found', 404);
-      }
-
-      if (currentUser.hasLinkedWallet && currentUser.walletAddress === normalizedAddress) {
-        await tx.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
-        const sameUser = await tx.user.findUnique({ where: { id: currentUser.id } });
-        if (!sameUser) throw new AppError('User not found', 404);
-        return sameUser;
-      }
-      if (currentUser.hasLinkedWallet && currentUser.walletAddress !== normalizedAddress) {
-        throw new AppError('Wallet is already linked for this account', 409);
-      }
-
-      const walletOwner = await tx.user.findUnique({
-        where: { walletAddress: normalizedAddress },
-        select: {
-          id: true,
-          telegramId: true,
-          walletLinkedAt: true,
-        },
-      });
-
-      let targetUserId = currentUser.id;
-      if (walletOwner && walletOwner.id !== currentUser.id) {
-        if (!currentUser.telegramId) {
-          throw new AppError('Telegram account is not linked', 409);
-        }
-        if (walletOwner.telegramId && walletOwner.telegramId !== currentUser.telegramId) {
-          throw new AppError(
-            `Wallet ${normalizedAddress} is already linked to another Telegram account. Switch account in wallet app or unlink it first.`,
-            409
-          );
-        }
-
-        const [
-          inventoryCount,
-          openingsCount,
-          transactionsCount,
-          battlesCount,
-          depositsCount,
-          claimsCount,
-          feedbackCount,
-        ] = await Promise.all([
-          tx.inventoryItem.count({ where: { userId: currentUser.id } }),
-          tx.caseOpening.count({ where: { userId: currentUser.id } }),
-          tx.transaction.count({ where: { userId: currentUser.id } }),
-          tx.battle.count({ where: { userId: currentUser.id } }),
-          tx.deposit.count({ where: { userId: currentUser.id } }),
-          tx.claim.count({ where: { userId: currentUser.id } }),
-          tx.feedbackMessage.count({ where: { userId: currentUser.id } }),
-        ]);
-        const hasActivity =
-          Number(currentUser.balance || 0) > 0 ||
-          inventoryCount > 0 ||
-          openingsCount > 0 ||
-          transactionsCount > 0 ||
-          battlesCount > 0 ||
-          depositsCount > 0 ||
-          claimsCount > 0 ||
-          feedbackCount > 0;
-        if (hasActivity) {
-          throw new AppError('Wallet is already linked to another active account', 409);
-        }
-
-        // Release telegram unique fields from temporary telegram-only account first.
-        await tx.user.update({
-          where: { id: currentUser.id },
-          data: {
-            telegramId: null,
-            telegramUsername: null,
-            telegramFirstName: null,
-            telegramLastName: null,
-            telegramPhotoUrl: null,
-            telegramLinkedAt: null,
-          },
-        });
-
-        await tx.user.update({
-          where: { id: walletOwner.id },
-          data: {
-            telegramId: currentUser.telegramId,
-            telegramUsername: currentUser.telegramUsername,
-            telegramFirstName: currentUser.telegramFirstName,
-            telegramLastName: currentUser.telegramLastName,
-            telegramPhotoUrl: currentUser.telegramPhotoUrl,
-            telegramLinkedAt: currentUser.telegramLinkedAt || new Date(),
-            hasLinkedWallet: true,
-            walletLinkedAt: walletOwner.walletLinkedAt || new Date(),
-          },
-        });
-
-        if (sessionToken) {
-          await tx.session.updateMany({
-            where: { token: sessionToken, userId: currentUser.id },
-            data: { userId: walletOwner.id, lastSeenAt: new Date() },
-          });
-        }
-
-        await tx.session.deleteMany({ where: { userId: currentUser.id } });
-        await tx.user.delete({ where: { id: currentUser.id } });
-        targetUserId = walletOwner.id;
-      } else {
-        await tx.user.update({
-          where: { id: currentUser.id },
-          data: {
-            walletAddress: normalizedAddress,
-            hasLinkedWallet: true,
-            walletLinkedAt: new Date(),
-          },
-        });
-      }
-
-      await tx.walletNonce.deleteMany({
-        where: { walletAddress: normalizedAddress },
-      });
-
-      const targetUser = await tx.user.findUnique({ where: { id: targetUserId } });
-      if (!targetUser) {
-        throw new AppError('User not found', 404);
-      }
-      return targetUser;
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        walletAddress: true,
+        hasLinkedWallet: true,
+        telegramId: true,
+        tonAddress: true,
+        twitterId: true,
+      },
     });
+    if (!currentUser) {
+      return next(new AppError('User not found', 404));
+    }
+
+    if (currentUser.hasLinkedWallet && currentUser.walletAddress === normalizedAddress) {
+      await prisma.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
+      return res.json({ status: 'success', data: { user: toPublicUser(currentUser) } });
+    }
+    if (currentUser.hasLinkedWallet && currentUser.walletAddress !== normalizedAddress) {
+      return next(new AppError('Wallet is already linked for this account', 409));
+    }
+
+    const walletOwner = await prisma.user.findUnique({
+      where: { walletAddress: normalizedAddress },
+      select: {
+        id: true,
+        telegramId: true,
+        tonAddress: true,
+        twitterId: true,
+      },
+    });
+
+    let linkedUser;
+    if (walletOwner && walletOwner.id !== currentUser.id) {
+      // Security: linking an EVM wallet that's already attached to another
+      // account merges the two. Require the current account to own a TG so
+      // strangers can't grab someone else's wallet history just by signing.
+      if (!currentUser.telegramId) {
+        return next(new AppError('Telegram account is required to merge with an existing wallet account', 409));
+      }
+      const [fullCurrent, fullOwner] = await Promise.all([
+        prisma.user.findUnique({ where: { id: currentUser.id } }),
+        prisma.user.findUnique({ where: { id: walletOwner.id } }),
+      ]);
+      if (!fullCurrent || !fullOwner) return next(new AppError('User not found', 404));
+      const conflicts = findMergeConflicts(fullCurrent, fullOwner);
+      if (conflicts.length > 0) {
+        return next(new AppError(buildMergeConflictMessage(conflicts), 409));
+      }
+
+      // Full merge: currentUser remains, walletOwner is absorbed.
+      linkedUser = await mergeAccounts(currentUser.id, walletOwner.id);
+      await prisma.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
+    } else {
+      linkedUser = await prisma.user.update({
+        where: { id: currentUser.id },
+        data: {
+          walletAddress: normalizedAddress,
+          hasLinkedWallet: true,
+          walletLinkedAt: new Date(),
+        },
+      });
+      await prisma.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
+    }
 
     res.json({
       status: 'success',
@@ -859,14 +772,9 @@ export const linkWalletFromTelegram = async (
         id: true,
         walletAddress: true,
         hasLinkedWallet: true,
-        walletLinkedAt: true,
-        balance: true,
         telegramId: true,
-        telegramUsername: true,
-        telegramFirstName: true,
-        telegramLastName: true,
-        telegramPhotoUrl: true,
-        telegramLinkedAt: true,
+        tonAddress: true,
+        twitterId: true,
         isBanned: true,
       },
     });
@@ -887,89 +795,38 @@ export const linkWalletFromTelegram = async (
       return next(new AppError('A different wallet is already linked to this account', 409));
     }
 
-    const sessionToken = getSessionTokenFromRequest(req);
-    const linkedUser = await prisma.$transaction(async (tx) => {
-      const walletOwner = await tx.user.findUnique({
-        where: { walletAddress: normalizedAddress },
-        select: { id: true, telegramId: true, walletLinkedAt: true },
-      });
+    const walletOwner = await prisma.user.findUnique({
+      where: { walletAddress: normalizedAddress },
+      select: {
+        id: true,
+        telegramId: true,
+        tonAddress: true,
+        twitterId: true,
+      },
+    });
 
-      let targetUserId = currentUser.id;
-      if (walletOwner && walletOwner.id !== currentUser.id) {
-        if (walletOwner.telegramId && walletOwner.telegramId !== currentUser.telegramId) {
-          throw new AppError(
-            'This wallet is already linked to another Telegram account.',
-            409
-          );
-        }
-
-        const [
-          inventoryCount, openingsCount, transactionsCount,
-          battlesCount, depositsCount, claimsCount, feedbackCount,
-        ] = await Promise.all([
-          tx.inventoryItem.count({ where: { userId: currentUser.id } }),
-          tx.caseOpening.count({ where: { userId: currentUser.id } }),
-          tx.transaction.count({ where: { userId: currentUser.id } }),
-          tx.battle.count({ where: { userId: currentUser.id } }),
-          tx.deposit.count({ where: { userId: currentUser.id } }),
-          tx.claim.count({ where: { userId: currentUser.id } }),
-          tx.feedbackMessage.count({ where: { userId: currentUser.id } }),
-        ]);
-        const hasActivity =
-          Number(currentUser.balance || 0) > 0 ||
-          inventoryCount > 0 || openingsCount > 0 || transactionsCount > 0 ||
-          battlesCount > 0 || depositsCount > 0 || claimsCount > 0 || feedbackCount > 0;
-        if (hasActivity) {
-          throw new AppError('Wallet is already linked to another active account', 409);
-        }
-
-        await tx.user.update({
-          where: { id: currentUser.id },
-          data: {
-            telegramId: null, telegramUsername: null,
-            telegramFirstName: null, telegramLastName: null,
-            telegramPhotoUrl: null, telegramLinkedAt: null,
-          },
-        });
-
-        await tx.user.update({
-          where: { id: walletOwner.id },
-          data: {
-            telegramId: currentUser.telegramId,
-            telegramUsername: currentUser.telegramUsername,
-            telegramFirstName: currentUser.telegramFirstName,
-            telegramLastName: currentUser.telegramLastName,
-            telegramPhotoUrl: currentUser.telegramPhotoUrl,
-            telegramLinkedAt: currentUser.telegramLinkedAt || new Date(),
-            hasLinkedWallet: true,
-            walletLinkedAt: walletOwner.walletLinkedAt || new Date(),
-          },
-        });
-
-        if (sessionToken) {
-          await tx.session.updateMany({
-            where: { token: sessionToken, userId: currentUser.id },
-            data: { userId: walletOwner.id, lastSeenAt: new Date() },
-          });
-        }
-        await tx.session.deleteMany({ where: { userId: currentUser.id } });
-        await tx.user.delete({ where: { id: currentUser.id } });
-        targetUserId = walletOwner.id;
-      } else {
-        await tx.user.update({
-          where: { id: currentUser.id },
-          data: { walletAddress: normalizedAddress, hasLinkedWallet: true, walletLinkedAt: new Date() },
-        });
+    let linkedUser;
+    if (walletOwner && walletOwner.id !== currentUser.id) {
+      const [fullCurrent, fullOwner] = await Promise.all([
+        prisma.user.findUnique({ where: { id: currentUser.id } }),
+        prisma.user.findUnique({ where: { id: walletOwner.id } }),
+      ]);
+      if (!fullCurrent || !fullOwner) return next(new AppError('User not found', 404));
+      const conflicts = findMergeConflicts(fullCurrent, fullOwner);
+      if (conflicts.length > 0) {
+        return next(new AppError(buildMergeConflictMessage(conflicts), 409));
       }
 
-      await tx.walletNonce.deleteMany({
-        where: { walletAddress: normalizedAddress },
+      // Full merge: currentUser stays, walletOwner is absorbed.
+      linkedUser = await mergeAccounts(currentUser.id, walletOwner.id);
+      await prisma.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
+    } else {
+      linkedUser = await prisma.user.update({
+        where: { id: currentUser.id },
+        data: { walletAddress: normalizedAddress, hasLinkedWallet: true, walletLinkedAt: new Date() },
       });
-
-      const targetUser = await tx.user.findUnique({ where: { id: targetUserId } });
-      if (!targetUser) throw new AppError('User not found', 404);
-      return targetUser;
-    });
+      await prisma.walletNonce.deleteMany({ where: { walletAddress: normalizedAddress } });
+    }
 
     res.json({ status: 'success', data: { user: toPublicUser(linkedUser) } });
   } catch (error: any) {
@@ -1401,7 +1258,12 @@ export const linkTonWallet = async (
 
     const existingOwner = await prisma.user.findUnique({ where: { tonAddress } });
     if (existingOwner && existingOwner.id !== userId) {
+      const conflicts = findMergeConflicts(currentUser, existingOwner);
+      if (conflicts.length > 0) {
+        return next(new AppError(buildMergeConflictMessage(conflicts), 409));
+      }
       const mergeToken = createMergeToken(userId, existingOwner.id);
+      const preview = await getMergePreview(existingOwner.id);
       return res.json({
         status: 'conflict',
         data: {
@@ -1411,6 +1273,7 @@ export const linkTonWallet = async (
           mergeToken,
           identifier: 'ton',
           tonAddress,
+          preview,
         },
       });
     }
@@ -1440,7 +1303,7 @@ export const confirmMerge = async (
       return next(new AppError('Authentication required', 401));
     }
 
-    const { secondaryUserId, mergeToken } = req.body || {};
+    const { secondaryUserId, mergeToken, preferAvatarFrom, preferUsernameFrom } = req.body || {};
     if (!secondaryUserId || secondaryUserId === userId) {
       return next(new AppError('Invalid merge target', 400));
     }
@@ -1448,13 +1311,16 @@ export const confirmMerge = async (
       return next(new AppError('Merge token required', 400));
     }
 
-    cleanupMergeTokens();
-    const pending = pendingMergeTokens.get(mergeToken);
-    if (!pending || pending.primaryUserId !== userId || pending.secondaryUserId !== secondaryUserId) {
+    const allowedSide = (v: any): 'primary' | 'secondary' | undefined =>
+      v === 'primary' || v === 'secondary' ? v : undefined;
+
+    if (!consumeMergeToken(String(mergeToken), userId, String(secondaryUserId))) {
       return next(new AppError('Invalid or expired merge token', 403));
     }
-    const merged = await mergeAccounts(userId, secondaryUserId);
-    pendingMergeTokens.delete(mergeToken);
+    const merged = await mergeAccounts(userId, secondaryUserId, {
+      preferAvatarFrom: allowedSide(preferAvatarFrom),
+      preferUsernameFrom: allowedSide(preferUsernameFrom),
+    });
 
     res.json({
       status: 'success',

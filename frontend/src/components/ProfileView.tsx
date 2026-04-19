@@ -87,11 +87,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onUpdateAvatarMeta,
   onClaimToken,
   onConnectTwitter,
-  onDisconnectTwitter,
+  onDisconnectTwitter: _onDisconnectTwitter,
   twitterBusy = false,
   twitterError = null,
   onConnectTelegram,
-  onDisconnectTelegram,
+  onDisconnectTelegram: _onDisconnectTelegram,
   onOpenTelegramMiniApp: _onOpenTelegramMiniApp,
   telegramBusy = false,
   telegramError = null,
@@ -1155,9 +1155,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                 )}
               </div>
-                  {isEditable && (
-                    <button type="button" onClick={() => user?.twitterId ? onDisconnectTwitter?.() : onConnectTwitter?.()} disabled={twitterBusy || (!user?.twitterId && !onConnectTwitter) || (Boolean(user?.twitterId) && !onDisconnectTwitter)} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.twitterId ? 'border-red-500/25 text-red-400 hover:border-red-500/50' : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'} ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
-                      {twitterBusy ? '…' : user?.twitterId ? 'Disconnect' : 'Connect'}
+                  {isEditable && !user?.twitterId && (
+                    <button type="button" onClick={() => onConnectTwitter?.()} disabled={twitterBusy || !onConnectTwitter} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 border-web3-accent/25 text-web3-accent hover:border-web3-accent/50 ${twitterBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                      {twitterBusy ? '…' : 'Connect'}
                     </button>
                   )}
             </div>
@@ -1182,9 +1182,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="text-xs text-gray-600 mt-0.5">Not linked</div>
                     )}
               </div>
-                  {isEditable && (
-                    <button type="button" onClick={() => user?.telegramId ? onDisconnectTelegram?.() : onConnectTelegram?.()} disabled={telegramBusy || (!user?.telegramId && !onConnectTelegram) || (Boolean(user?.telegramId) && !onDisconnectTelegram)} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 ${user?.telegramId ? 'border-red-500/25 text-red-400 hover:border-red-500/50' : 'border-web3-accent/25 text-web3-accent hover:border-web3-accent/50'} ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
-                      {telegramBusy ? '…' : user?.telegramId ? 'Disconnect' : 'Connect'}
+                  {isEditable && !user?.telegramId && (
+                    <button type="button" onClick={() => onConnectTelegram?.()} disabled={telegramBusy || !onConnectTelegram} className={`shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg border transition disabled:opacity-40 border-web3-accent/25 text-web3-accent hover:border-web3-accent/50 ${telegramBusy ? 'opacity-70 cursor-wait' : ''}`}>
+                      {telegramBusy ? '…' : 'Connect'}
                     </button>
             )}
           </div>
@@ -1328,12 +1328,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     );
                   })}
                   {cfTasks.map((task: any) => {
-                    const progress = task.progress ?? 0;
-                    const target = task.targetCount ?? 1;
-                    const pct = Math.min(100, Math.round((progress / target) * 100));
+                    const isUsdt = task.unit === 'usdt';
+                    const target = isUsdt ? Number(task.targetAmount || task.targetCount || 0) : Number(task.targetCount ?? 1);
+                    const progress = Number(task.progress ?? 0);
+                    const pct = target > 0 ? Math.min(100, Math.round((progress / target) * 100)) : 0;
                     const isComplete = progress >= target && !task.onCooldown;
                     const isCooldown = task.onCooldown && task.cooldownEndsAt;
                     const isDone = task.claimed && !task.onCooldown;
+                    const fmt = (v: number) => isUsdt ? `${v.toFixed(2)} USDT` : `${Math.floor(v)}`;
 
                     let timeLabel = '';
                     if (task.activeUntil) {
@@ -1372,7 +1374,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           ) : isDone ? (
                             <span className="text-gray-600">Completed</span>
                           ) : (
-                            <span>{pct}%</span>
+                            <span>{fmt(progress)} / {fmt(target)} · {pct}%</span>
                           )}
             </div>
                         {isComplete && isEditable && (
