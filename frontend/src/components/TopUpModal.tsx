@@ -54,6 +54,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [tonTreasuryError, setTonTreasuryError] = useState<string | null>(null);
   const [isTonSubmitting, setIsTonSubmitting] = useState(false);
   const [tonStatus, setTonStatus] = useState<string | null>(null);
+  const [tonPending, setTonPending] = useState<{ sentAtUnix: number; expectedTon: number } | null>(null);
 
   const chainId = Number(import.meta.env.VITE_CHAIN_ID || 11155111);
   const treasuryAddress = String(import.meta.env.VITE_TREASURY_ADDRESS || '');
@@ -328,6 +329,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           setTonStatus('Top up confirmed');
           setTonUsdtAmount('');
           setTonNativeAmount('');
+          setTonPending(null);
           if (onTopUpConfirmed) void Promise.resolve(onTopUpConfirmed()).catch(() => {});
           return true;
         }
@@ -336,8 +338,43 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
       await new Promise((r) => setTimeout(r, 4000));
     }
-    setTonStatus('Still pending. Use "Check status" later to sync.');
+    setTonStatus('Still pending. Press "Check status" to sync later.');
     return false;
+  };
+
+  const handleTonCheckStatus = async () => {
+    if (!tonPending) return;
+    setTonStatus('Checking on chain…');
+    try {
+      const r = await api.confirmTonDeposit(tonPending.sentAtUnix, tonPending.expectedTon);
+      if (r.data?.pending) {
+        setTonStatus('Still pending — try again in a moment.');
+      } else if (typeof r.data?.balance === 'number') {
+        onBalanceUpdate(r.data.balance);
+        setTonStatus('Top up confirmed');
+        setTonUsdtAmount('');
+        setTonNativeAmount('');
+        setTonPending(null);
+        if (onTopUpConfirmed) void Promise.resolve(onTopUpConfirmed()).catch(() => {});
+      }
+    } catch (err: any) {
+      // Fall back to broader scan if confirm endpoint failed.
+      try {
+        const scan = await api.scanTonDeposit();
+        if (scan.data?.found && typeof scan.data?.balance === 'number') {
+          onBalanceUpdate(scan.data.balance);
+          setTonStatus('Top up confirmed');
+          setTonUsdtAmount('');
+          setTonNativeAmount('');
+          setTonPending(null);
+          if (onTopUpConfirmed) void Promise.resolve(onTopUpConfirmed()).catch(() => {});
+        } else {
+          setTonStatus('No new deposit found yet.');
+        }
+      } catch (scanErr: any) {
+        setTonStatus(err?.message || scanErr?.message || 'Status check failed');
+      }
+    }
   };
 
   const handleTonSubmit = async (e: React.FormEvent) => {
@@ -365,6 +402,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const nano = BigInt(Math.floor(parsedTon * 1e9));
       setTonStatus('Opening TON wallet…');
       await sendTonTransfer(tonTreasury, nano, 'casefun-topup');
+      setTonPending({ sentAtUnix, expectedTon: parsedTon });
       setTonStatus('Transaction signed. Confirming on chain…');
       await pollTonDeposit(sentAtUnix, parsedTon);
     } catch (err: any) {
@@ -376,24 +414,6 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       }
     } finally {
       setIsTonSubmitting(false);
-    }
-  };
-
-  const handleTonScan = async () => {
-    setTonStatus('Scanning recent TON transactions…');
-    try {
-      const r = await api.scanTonDeposit();
-      if (r.data?.found && typeof r.data?.balance === 'number') {
-        onBalanceUpdate(r.data.balance);
-        setTonStatus('Top up confirmed');
-        setTonUsdtAmount('');
-        setTonNativeAmount('');
-        if (onTopUpConfirmed) void Promise.resolve(onTopUpConfirmed()).catch(() => {});
-      } else {
-        setTonStatus('No new TON deposit found');
-      }
-    } catch (err: any) {
-      setTonStatus(err?.message || 'Scan failed');
     }
   };
 
@@ -570,22 +590,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             <div className="text-[10px] uppercase tracking-widest text-gray-500">
               {tonPrice ? `1 TON ≈ ${tonPrice.toFixed(2)} ₮` : tonPriceError || 'Loading TON price...'}
             </div>
-            {tonTreasury && (
-              <div className="text-[10px] uppercase tracking-widest text-gray-600 break-all">
-                Treasury: <span className="text-gray-400 font-mono normal-case">{tonTreasury}</span>
-              </div>
-            )}
             {tonStatus && (
               <div className="text-[11px] uppercase tracking-widest text-gray-400">{tonStatus}</div>
             )}
             <div className="flex gap-3">
               <PrimaryButton variant="ghost" onClick={onClose} className="flex-1">Cancel</PrimaryButton>
-              <PrimaryButton type="button" onClick={handleTonScan} variant="secondary" className="flex-1" disabled={isTonSubmitting}>
-                Check status
-              </PrimaryButton>
-              <PrimaryButton type="submit" disabled={!canSubmitTon} variant="primary" className="flex-1">
-                {isAuthenticated ? (isTonSubmitting ? 'Processing...' : 'Top up') : 'Connect'}
-              </PrimaryButton>
+              {tonPending ? (
+                <PrimaryButton type="button" onClick={handleTonCheckStatus} variant="secondary" className="flex-1" disabled={isTonSubmitting}>
+                  Check status
+                </PrimaryButton>
+              ) : (
+                <PrimaryButton type="submit" disabled={!canSubmitTon} variant="primary" className="flex-1">
+                  {isAuthenticated ? (isTonSubmitting ? 'Processing...' : 'Top up') : 'Connect'}
+                </PrimaryButton>
+              )}
             </div>
           </form>
         )}
