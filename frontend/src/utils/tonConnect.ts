@@ -83,10 +83,19 @@ export interface TonSendResult {
  * Note: TonConnect's `sendTransaction` only returns the message BoC, not lt/hash.
  * We poll the treasury's incoming tx list on the backend to find the matching deposit.
  */
+// TonConnect network IDs: '-3' = testnet, '-239' = mainnet.
+export type TonNetwork = 'testnet' | 'mainnet';
+const networkToChain = (n?: TonNetwork): string | undefined => {
+  if (n === 'testnet') return '-3';
+  if (n === 'mainnet') return '-239';
+  return undefined;
+};
+
 export const sendTonTransfer = async (
   destinationAddress: string,
   amountNano: bigint,
-  comment?: string
+  comment?: string,
+  network?: TonNetwork
 ): Promise<TonSendResult> => {
   const ui = await getOrConnectTonUI();
   if (!ui.connected) throw new Error('TON wallet not connected');
@@ -98,8 +107,10 @@ export const sendTonTransfer = async (
     payload = cell.toBoc().toString('base64');
   }
 
-  const tx = {
+  const chain = networkToChain(network);
+  const tx: any = {
     validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+    ...(chain ? { network: chain } : {}),
     messages: [
       {
         address: destinationAddress,

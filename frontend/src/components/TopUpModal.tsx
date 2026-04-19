@@ -51,6 +51,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const [tonPrice, setTonPrice] = useState<number | null>(null);
   const [tonPriceError, setTonPriceError] = useState<string | null>(null);
   const [tonTreasury, setTonTreasury] = useState<string | null>(null);
+  const [tonTreasuryNetwork, setTonTreasuryNetwork] = useState<'testnet' | 'mainnet'>('testnet');
   const [tonTreasuryError, setTonTreasuryError] = useState<string | null>(null);
   const [isTonSubmitting, setIsTonSubmitting] = useState(false);
   const [tonStatus, setTonStatus] = useState<string | null>(null);
@@ -96,7 +97,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       .then((r) => { if (active && r.data?.price) setTonPrice(r.data.price); })
       .catch(() => { if (active) setTonPriceError('TON price unavailable'); });
     api.getTonTreasuryAddress()
-      .then((r) => { if (active && r.data?.address) setTonTreasury(r.data.address); })
+      .then((r) => {
+        if (!active) return;
+        if (r.data?.address) setTonTreasury(r.data.address);
+        if (r.data?.network === 'mainnet' || r.data?.network === 'testnet') {
+          setTonTreasuryNetwork(r.data.network);
+        }
+      })
       .catch(() => { if (active) setTonTreasuryError('TON treasury unavailable'); });
     return () => { active = false; };
   }, [isOpen]);
@@ -401,7 +408,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       const sentAtUnix = Math.floor(Date.now() / 1000);
       const nano = BigInt(Math.floor(parsedTon * 1e9));
       setTonStatus('Opening TON wallet…');
-      await sendTonTransfer(tonTreasury, nano, 'casefun-topup');
+      await sendTonTransfer(tonTreasury, nano, 'casefun-topup', tonTreasuryNetwork);
       setTonPending({ sentAtUnix, expectedTon: parsedTon });
       setTonStatus('Transaction signed. Confirming on chain…');
       await pollTonDeposit(sentAtUnix, parsedTon);
@@ -548,7 +555,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   </div>
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-gray-500">You pay</div>
-                    <div className="text-sm font-bold text-white">TON (Testnet)</div>
+                    <div className="text-sm font-bold text-white">TON ({tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'})</div>
                     <div className="text-[10px] text-gray-400 mt-1">
                       Need test TON? Use{' '}
                       <a href={tonFaucetUrl} target="_blank" rel="noreferrer" className="text-web3-accent hover:text-white transition underline decoration-dotted">
