@@ -22,6 +22,7 @@ import {
   getOverview,
   getAnalytics,
   adjustRtu,
+  setRtuLedgerExclusion,
   listFeedbackMessages,
   getFeedbackUnreadCount,
   updateFeedbackReadStatus,
@@ -60,6 +61,7 @@ router.get('/transactions', listTransactions);
 router.get('/rtu/ledgers', listRtuLedgers);
 router.get('/rtu/events', listRtuEvents);
 router.post('/rtu/adjust', adjustRtu);
+router.patch('/rtu/ledgers/:id/exclusion', setRtuLedgerExclusion);
 
 router.get('/settings', listSettings);
 router.put('/settings/:key', upsertSetting);

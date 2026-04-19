@@ -350,16 +350,19 @@ model SiteSetting {
 }
 
 model RtuLedger {
-  id               String   @id @default(cuid())
-  caseId           String
-  tokenSymbol      String
-  tokenPriceUsdt   Float
-  rtuPercent       Float
-  totalSpentUsdt   Float    @default(0)
-  totalTokenIssued Float    @default(0)
-  bufferDebtToken  Float    @default(0)
-  updatedAt        DateTime @updatedAt
-  createdAt        DateTime @default(now())
+  id                   String   @id @default(cuid())
+  caseId               String
+  tokenSymbol          String
+  tokenPriceUsdt       Float
+  rtuPercent           Float
+  totalSpentUsdt       Float    @default(0)
+  totalTokenIssued     Float    @default(0)
+  bufferDebtToken      Float    @default(0)
+  excludedFromMetrics  Boolean  @default(false)
+  excludedAt           DateTime?
+  excludedReason       String?
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
 
   // Relations
   case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)

@@ -335,7 +335,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     if (activeTab !== 'transactions' || !Array.isArray(data)) return [];
     const query = search.trim().toLowerCase();
     return data.filter((tx: any) =>
-      (!query || String(tx.userId).toLowerCase().includes(query)) &&
+      (
+        !query ||
+        String(tx.userId || '').toLowerCase().includes(query) ||
+        String(tx.username || '').toLowerCase().includes(query) ||
+        String(tx.telegramUsername || '').toLowerCase().includes(query) ||
+        String(tx.walletAddress || '').toLowerCase().includes(query) ||
+        String(tx.id || '').toLowerCase().includes(query)
+      ) &&
       (filters.txType === 'all' || tx.type === filters.txType)
     );
   }, [activeTab, data, search, filters.txType]);
@@ -1184,22 +1191,45 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               {sortedTransactions.length === 0 && (
                 <div className="text-sm text-gray-500 py-8 text-center">No transactions found.</div>
               )}
-              {paginate(sortedTransactions, 'transactions').map((tx: any) => (
-                <div key={tx.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
-                  <div className="md:col-span-2 font-mono truncate">{tx.id}</div>
-                  <div className="truncate">{tx.userId}</div>
-                  <div>
-                    <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{tx.type}</span>
+              {paginate(sortedTransactions, 'transactions').map((tx: any) => {
+                const displayName =
+                  tx.username ||
+                  (tx.telegramUsername ? `@${tx.telegramUsername}` : null) ||
+                  (tx.walletAddress ? `${tx.walletAddress.slice(0, 6)}…${tx.walletAddress.slice(-4)}` : null) ||
+                  (tx.userId ? tx.userId.slice(0, 8) : 'unknown');
+                return (
+                  <div key={tx.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
+                    <div className="md:col-span-2 font-mono truncate">{tx.id}</div>
+                    <div className="truncate">
+                      {tx.userId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('users');
+                            setSelectedUserId(tx.userId);
+                          }}
+                          className="text-web3-accent hover:underline truncate max-w-full text-left"
+                          title={tx.userId}
+                        >
+                          {displayName}
+                        </button>
+                      ) : (
+                        <span className="text-gray-500">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{tx.type}</span>
+                    </div>
+                    <div>{tx.amount} {tx.currency}</div>
+                    <div>
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${tx.status === 'completed' ? 'bg-web3-success/20 text-web3-success' : tx.status === 'failed' ? 'bg-red-500/15 text-red-300' : 'bg-yellow-400/15 text-yellow-300'}`}>
+                        {tx.status}
+                      </span>
+                    </div>
+                    <div>{formatDate(tx.timestamp)}</div>
                   </div>
-                  <div>{tx.amount} {tx.currency}</div>
-                  <div>
-                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${tx.status === 'completed' ? 'bg-web3-success/20 text-web3-success' : tx.status === 'failed' ? 'bg-red-500/15 text-red-300' : 'bg-yellow-400/15 text-yellow-300'}`}>
-                      {tx.status}
-                    </span>
-                  </div>
-                  <div>{formatDate(tx.timestamp)}</div>
-                </div>
-              ))}
+                );
+              })}
               {sortedTransactions.length > 0 && (
               <Pagination
                 currentPage={pages.transactions}
@@ -1357,10 +1387,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 />
               </div>
               {rtuLedgers.length > 0 && (() => {
+                const includedLedgers = rtuLedgers.filter((l: any) => !l.excludedFromMetrics);
+                const excludedCount = rtuLedgers.length - includedLedgers.length;
                 let totalSpent = 0;
                 let totalIssuedUsdt = 0;
                 let totalDebtUsdt = 0;
-                for (const l of rtuLedgers) {
+                for (const l of includedLedgers) {
                   const sp = Number(l.totalSpentUsdt || 0);
                   const iss = Number(l.totalTokenIssued || 0);
                   const tp = Number(l.tokenPriceUsdt || 0);
@@ -1371,30 +1403,40 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 const totalSurplus = totalSpent - totalIssuedUsdt;
                 const totalActualRtu = totalSpent > 0 ? (totalIssuedUsdt / totalSpent) * 100 : 0;
                 return (
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Spent (USDT)</div>
-                      <div className="text-base font-bold text-white">{formatTokenValue(totalSpent)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Issued (USDT)</div>
-                      <div className="text-base font-bold text-white">{formatTokenValue(totalIssuedUsdt)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Surplus (USDT)</div>
-                      <div className={`text-base font-bold ${totalSurplus < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {totalSurplus >= 0 ? '+' : ''}{formatTokenValue(totalSurplus)}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Spent (USDT)</div>
+                        <div className="text-base font-bold text-white">{formatTokenValue(totalSpent)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Issued (USDT)</div>
+                        <div className="text-base font-bold text-white">{formatTokenValue(totalIssuedUsdt)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Surplus (USDT)</div>
+                        <div className={`text-base font-bold ${totalSurplus < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                          {totalSurplus >= 0 ? '+' : ''}{formatTokenValue(totalSurplus)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-gray-500">Avg Actual RTU</div>
+                        <div className="text-base font-bold text-white">{totalActualRtu.toFixed(1)}%</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-gray-500">Buffer Debt (USDT)</div>
+                        <div className={`text-base font-bold ${totalDebtUsdt < 0 ? 'text-red-400' : 'text-amber-300'}`}>
+                          {formatTokenValue(totalDebtUsdt)}
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Avg Actual RTU</div>
-                      <div className="text-base font-bold text-white">{totalActualRtu.toFixed(1)}%</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Buffer Debt (USDT)</div>
-                      <div className={`text-base font-bold ${totalDebtUsdt < 0 ? 'text-red-400' : 'text-amber-300'}`}>
-                        {formatTokenValue(totalDebtUsdt)}
-                      </div>
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500 px-1">
+                      Aggregated across {includedLedgers.length} ledger{includedLedgers.length === 1 ? '' : 's'}
+                      {excludedCount > 0 && (
+                        <span className="text-amber-300/80 normal-case ml-2">
+                          · {excludedCount} excluded from metrics
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -1402,7 +1444,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div>
                 <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Ledgers</div>
                 <div className="space-y-2">
-                  <div className="hidden md:grid grid-cols-11 gap-2 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-3 py-2 text-[10px] uppercase tracking-widest text-gray-500">
                     <div className="col-span-2">Case ID</div>
                     <div>Token</div>
                     <div>Price (USDT)</div>
@@ -1413,6 +1455,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div>Issued (USDT)</div>
                     <div>Surplus (USDT)</div>
                     <div>Buffer Debt</div>
+                    <div className="text-right">Action</div>
                   </div>
                   {rtuLedgers.length === 0 && (
                     <div className="text-sm text-gray-500 py-4 text-center">No ledgers.</div>
@@ -1433,17 +1476,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     return (
                     <div
                       key={ledger.id}
-                      className={`grid grid-cols-1 md:grid-cols-11 gap-2 items-center rounded-xl p-3 text-xs ${
-                        alert
+                      className={`grid grid-cols-1 md:grid-cols-12 gap-2 items-center rounded-xl p-3 text-xs ${
+                        ledger.excludedFromMetrics
+                          ? 'bg-black/40 border border-white/[0.05] text-gray-600 opacity-70'
+                          : alert
                           ? 'bg-red-500/10 border border-red-500/40 text-red-300'
                           : 'bg-black/30 border border-white/[0.08] text-gray-400'
                       }`}
                     >
-                      <div className="md:col-span-2 font-mono truncate">{ledger.caseId}</div>
+                      <div className="md:col-span-2 font-mono truncate flex items-center gap-1">
+                        <span className="truncate">{ledger.caseId}</span>
+                        {ledger.excludedFromMetrics && (
+                          <span className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold uppercase tracking-widest shrink-0">
+                            excluded
+                          </span>
+                        )}
+                      </div>
                       <div className="text-gray-200">{ledger.tokenSymbol}</div>
                       <div>{tokenPrice}</div>
                       <div>{declared}%</div>
-                      <div className={Math.abs(rtuDelta) > 5 ? 'font-bold text-amber-300' : ''}>
+                      <div className={!ledger.excludedFromMetrics && Math.abs(rtuDelta) > 5 ? 'font-bold text-amber-300' : ''}>
                         {actualRtuPct.toFixed(1)}%
                         {spent > 0 && (
                           <span className="ml-1 text-[10px] opacity-60">
@@ -1454,10 +1506,49 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div>{formatTokenValue(spent)}</div>
                       <div>{formatTokenValue(issuedToken)}</div>
                       <div>{formatTokenValue(issuedUsdt)}</div>
-                      <div className={surplusUsdt < 0 ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      <div className={ledger.excludedFromMetrics ? '' : surplusUsdt < 0 ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
                         {surplusUsdt >= 0 ? '+' : ''}{formatTokenValue(surplusUsdt)}
                       </div>
-                      <div className={alert ? 'font-bold' : ''}>{formatTokenValue(debtToken)}</div>
+                      <div className={alert && !ledger.excludedFromMetrics ? 'font-bold' : ''}>{formatTokenValue(debtToken)}</div>
+                      <div className="md:text-right">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const isExcluded = !!ledger.excludedFromMetrics;
+                            let reason: string | null = null;
+                            if (!isExcluded) {
+                              reason = window.prompt(
+                                'Why are you excluding this ledger from metrics? (optional)',
+                                'Legacy / outlier case',
+                              );
+                              if (reason === null) return;
+                            } else if (!window.confirm('Include this ledger back into metrics aggregation?')) {
+                              return;
+                            }
+                            try {
+                              await api.setAdminRtuLedgerExclusion(ledger.id, {
+                                excluded: !isExcluded,
+                                reason: reason || undefined,
+                              });
+                              await load();
+                            } catch (err: any) {
+                              window.alert(err?.message || 'Failed to update ledger');
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-md text-[10px] uppercase tracking-widest border ${
+                            ledger.excludedFromMetrics
+                              ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10'
+                              : 'border-amber-500/40 text-amber-300 hover:bg-amber-500/10'
+                          }`}
+                          title={
+                            ledger.excludedFromMetrics
+                              ? `Excluded${ledger.excludedReason ? `: ${ledger.excludedReason}` : ''}`
+                              : 'Exclude this ledger from totals'
+                          }
+                        >
+                          {ledger.excludedFromMetrics ? 'Include' : 'Exclude'}
+                        </button>
+                      </div>
                     </div>
                     );
                   })}

@@ -710,6 +710,13 @@ class ApiClient {
     });
   }
 
+  async setAdminRtuLedgerExclusion(ledgerId: string, payload: { excluded: boolean; reason?: string }) {
+    return this.request<{ ledger: any }>(`/admin/rtu/ledgers/${ledgerId}/exclusion`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
 
   async getAdminSettings() {
     return this.request<{ settings: any[] }>('/admin/settings');

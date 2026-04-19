@@ -727,8 +727,25 @@ export const listTransactions = async (req: Request, res: Response, next: NextFu
   try {
     const transactions = await prisma.transaction.findMany({
       orderBy: { timestamp: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            walletAddress: true,
+            telegramUsername: true,
+          },
+        },
+      },
     });
-    res.json({ status: 'success', data: { transactions } });
+    const enriched = transactions.map((tx) => ({
+      ...tx,
+      username: tx.user?.username ?? null,
+      telegramUsername: tx.user?.telegramUsername ?? null,
+      walletAddress: tx.user?.walletAddress ?? null,
+      user: undefined,
+    }));
+    res.json({ status: 'success', data: { transactions: enriched } });
   } catch (error) {
     next(error);
   }
@@ -818,6 +835,44 @@ export const adjustRtu = async (req: Request, res: Response, next: NextFunction)
     await logAdminAction(adminId, 'RTU_ADJUST', { caseId, tokenSymbol, deltaToken, deltaSpentUsdt, reason }, 'RtuLedger', updatedLedger.id);
 
     res.json({ status: 'success' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const setRtuLedgerExclusion = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const adminId = (req as any).userId;
+    const id = String(req.params.id || '');
+    const { excluded, reason } = req.body || {};
+
+    if (typeof excluded !== 'boolean') {
+      return next(new AppError('`excluded` (boolean) is required', 400));
+    }
+
+    const ledger = await prisma.rtuLedger.findUnique({ where: { id } });
+    if (!ledger) {
+      return next(new AppError('RTU ledger not found', 404));
+    }
+
+    const updated = await prisma.rtuLedger.update({
+      where: { id },
+      data: {
+        excludedFromMetrics: excluded,
+        excludedAt: excluded ? new Date() : null,
+        excludedReason: excluded ? (typeof reason === 'string' ? reason.slice(0, 500) : null) : null,
+      },
+    });
+
+    await logAdminAction(
+      adminId,
+      excluded ? 'RTU_LEDGER_EXCLUDE' : 'RTU_LEDGER_INCLUDE',
+      { reason: reason ?? null },
+      'RtuLedger',
+      id,
+    );
+
+    res.json({ status: 'success', data: { ledger: updated } });
   } catch (error) {
     next(error);
   }
