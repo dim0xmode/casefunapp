@@ -2314,6 +2314,8 @@ const App = () => {
             ? telegramWalletConnectSession?.provider
             : undefined
         }
+        tonAddress={user?.tonAddress || null}
+        onLinkTonWallet={handleLinkTonWallet}
       />
 
       {createdCaseNotice && (

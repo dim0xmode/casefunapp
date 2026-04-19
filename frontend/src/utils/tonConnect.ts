@@ -52,3 +52,62 @@ export const connectTonWallet = async (): Promise<TonWalletResult> => {
 
   return { address: account.address, proof };
 };
+
+/**
+ * Get a TonConnectUI instance that DOES NOT auto-disconnect on access.
+ * Used by flows where we need an active session (e.g. sending TON for deposits).
+ */
+export const getOrConnectTonUI = async (): Promise<TonConnectUIType> => {
+  const { TonConnectUI } = await import('@tonconnect/ui');
+  if (!instance) {
+    instance = new TonConnectUI({
+      manifestUrl: `${window.location.origin}/tonconnect-manifest.json`,
+      restoreConnection: true,
+    });
+  }
+  if (!instance.connected) {
+    await instance.connectWallet();
+  }
+  return instance;
+};
+
+export interface TonSendResult {
+  /** boc returned by TonConnect — used as txHash field on backend */
+  boc: string;
+}
+
+/**
+ * Send native TON (in nanotons) from the connected user wallet to the given destination.
+ * Returns the signed BoC. The backend then resolves it to lt+hash via toncenter.
+ *
+ * Note: TonConnect's `sendTransaction` only returns the message BoC, not lt/hash.
+ * We poll the treasury's incoming tx list on the backend to find the matching deposit.
+ */
+export const sendTonTransfer = async (
+  destinationAddress: string,
+  amountNano: bigint,
+  comment?: string
+): Promise<TonSendResult> => {
+  const ui = await getOrConnectTonUI();
+  if (!ui.connected) throw new Error('TON wallet not connected');
+
+  let payload: string | undefined;
+  if (comment) {
+    const { beginCell } = await import('@ton/core');
+    const cell = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
+    payload = cell.toBoc().toString('base64');
+  }
+
+  const tx = {
+    validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+    messages: [
+      {
+        address: destinationAddress,
+        amount: amountNano.toString(),
+        ...(payload ? { payload } : {}),
+      },
+    ],
+  };
+  const result = await ui.sendTransaction(tx);
+  return { boc: result.boc };
+};

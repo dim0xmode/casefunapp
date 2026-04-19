@@ -246,6 +246,27 @@ class ApiClient {
     });
   }
 
+  async getTonPrice() {
+    return this.request<{ price: number; updatedAt: number }>('/wallet/ton/price');
+  }
+
+  async getTonTreasuryAddress() {
+    return this.request<{ address: string; network: string }>('/wallet/ton/treasury');
+  }
+
+  async confirmTonDeposit(sentAtUnix: number, expectedTon?: number) {
+    return this.request<{ balance?: number; pending?: boolean }>('/wallet/ton/deposit/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ sentAtUnix, expectedTon }),
+    });
+  }
+
+  async scanTonDeposit() {
+    return this.request<{ found?: boolean; balance?: number }>('/wallet/ton/deposit/scan', {
+      method: 'POST',
+    });
+  }
+
   async claimToken(caseId: string) {
     return this.request<{ amount: number; txHash: string; tokenAddress: string }>('/token/claim', {
       method: 'POST',

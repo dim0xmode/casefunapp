@@ -342,6 +342,105 @@ export const transferJetton = async (
   return `ton_tx_pending_${seqno}`;
 };
 
+/**
+ * Look up a TON deposit transaction by its lt+hash on the treasury address.
+ * Returns null if not found yet (tx may still be in mempool / not finalised).
+ *
+ * Toncenter's `getTransactions` lets us fetch a batch of recent treasury txs;
+ * we then locate the one matching the given lt/hash and verify it's an
+ * incoming transfer with the expected sender + amount.
+ */
+export type TonDepositTx = {
+  lt: string;
+  hash: string;
+  from: string;
+  to: string;
+  amountNano: bigint;
+  utime: number;
+};
+
+const normaliseTonAddress = (raw: string): string => {
+  try {
+    return Address.parse(raw).toString({ urlSafe: true, bounceable: false, testOnly: false });
+  } catch {
+    try {
+      return Address.parse(raw).toString();
+    } catch {
+      return raw;
+    }
+  }
+};
+
+export const tonAddressesEqual = (a: string, b: string): boolean => {
+  try {
+    return Address.parse(a).equals(Address.parse(b));
+  } catch {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+};
+
+/**
+ * Fetch recent treasury transactions and return the incoming ones (in_msg.value > 0
+ * and source is set). Used for both lt/hash lookups and address-based scans.
+ */
+export const fetchTreasuryIncoming = async (limit = 25): Promise<TonDepositTx[]> => {
+  const client = getTonClient();
+  const wallet = await getTonTreasuryWallet();
+  const txs = await retryTonCall(() => client.getTransactions(wallet.address, { limit }));
+
+  const out: TonDepositTx[] = [];
+  for (const tx of txs) {
+    const inMsg: any = (tx as any).inMessage;
+    if (!inMsg) continue;
+    const info = inMsg.info;
+    if (!info || info.type !== 'internal') continue;
+    const value = info.value?.coins;
+    if (!value || value <= 0n) continue;
+    const src = info.src;
+    if (!src) continue;
+
+    out.push({
+      lt: String((tx as any).lt),
+      hash: (tx as any).hash().toString('hex'),
+      from: normaliseTonAddress(src.toString()),
+      to: normaliseTonAddress(info.dest.toString()),
+      amountNano: BigInt(value),
+      utime: Number((tx as any).now ?? 0),
+    });
+  }
+  return out;
+};
+
+/**
+ * Locate a specific deposit by lt + hash. Returns null when not yet visible
+ * on chain (caller should retry shortly).
+ */
+export const findTreasuryDepositByLtHash = async (
+  lt: string,
+  hash: string
+): Promise<TonDepositTx | null> => {
+  const txs = await fetchTreasuryIncoming(50);
+  const target = txs.find((t) => t.lt === String(lt) && t.hash === hash.toLowerCase());
+  return target || null;
+};
+
+/**
+ * Find a recent deposit from a specific TON address that has not been recorded yet.
+ * Used by the scan-deposit fallback when the client can't return lt+hash directly.
+ */
+export const findRecentDepositFromAddress = async (
+  fromAddress: string,
+  options: { limit?: number; sinceUtime?: number } = {}
+): Promise<TonDepositTx | null> => {
+  const txs = await fetchTreasuryIncoming(options.limit ?? 50);
+  const since = options.sinceUtime ?? 0;
+  for (const tx of txs) {
+    if (tx.utime < since) continue;
+    if (tonAddressesEqual(tx.from, fromAddress)) return tx;
+  }
+  return null;
+};
+
 // ──────────────────────────────────────────────────────────────────────────
 // Compiled standard TEP-74 Jetton minter & wallet contracts.
 // Source: https://github.com/ton-blockchain/jetton-contract (v2.0.0 build artifacts)

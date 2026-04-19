@@ -237,7 +237,8 @@ model Deposit {
   userId        String
   txHash        String   @unique
   chainId       Int
-  amountEth     Float
+  chainType     String   @default("EVM") // "EVM" or "TON"
+  amountEth     Float    // Native amount: ETH for EVM, TON for TON
   amountUsdt    Float
   confirmations Int      @default(0)
   blockNumber   Int?
@@ -248,6 +249,7 @@ model Deposit {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([chainType])
   @@map("deposits")
 }
 
