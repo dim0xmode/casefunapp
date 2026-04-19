@@ -14,6 +14,8 @@ import {
   claimTelegramWalletBrowserLink,
   startTelegramTopUpBrowserLink,
   claimTelegramTopUpBrowserLink,
+  startTelegramWebLoginEndpoint,
+  pollTelegramWebLoginEndpoint,
   logout,
   getProfile,
 } from '../controllers/authController.js';
@@ -27,6 +29,8 @@ router.post('/login', loginWithWallet);
 router.post('/telegram/login', loginWithTelegram);
 router.post('/telegram/dev-login', loginWithTelegramDev);
 router.post('/telegram/web-login', loginWithTelegramWidget);
+router.post('/telegram/web-login/start', startTelegramWebLoginEndpoint);
+router.get('/telegram/web-login/status', pollTelegramWebLoginEndpoint);
 router.post('/ton/login', loginWithTon);
 router.post('/ton/link', requireAuth, linkTonWallet);
 router.post('/merge/confirm', requireAuth, confirmMerge);

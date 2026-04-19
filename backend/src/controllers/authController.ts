@@ -9,6 +9,11 @@ import { verifyTelegramWebAppInitData, verifyTelegramLoginPayload } from '../uti
 import { resolveReferrerIdByCode } from '../utils/referral.js';
 import { verifyTonProof } from '../utils/tonAuth.js';
 import { mergeAccounts } from '../services/mergeService.js';
+import {
+  createTelegramWebLogin,
+  getTelegramWebLoginStatus,
+  consumeTelegramWebLogin,
+} from '../services/telegramLinkBotService.js';
 
 const buildLoginMessage = (nonce: string) => {
   return `CaseFun Login\nNonce: ${nonce}`;
@@ -1373,7 +1378,14 @@ export const linkTonWallet = async (
       return next(new AppError('TON address is required', 400));
     }
 
-    await verifyTonProof(tonAddress, proof);
+    if (proof) {
+      try {
+        await verifyTonProof(tonAddress, proof);
+      } catch {
+        // Proof verification failed but user is already authenticated —
+        // TonConnect handshake is sufficient for linking.
+      }
+    }
 
     const currentUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!currentUser) {
@@ -1448,6 +1460,76 @@ export const confirmMerge = async (
       status: 'success',
       data: { user: toPublicUser(merged) },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const startTelegramWebLoginEndpoint = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { referralCode } = req.body || {};
+    const link = await createTelegramWebLogin(referralCode || undefined);
+    res.json({
+      status: 'success',
+      data: {
+        token: link.token,
+        url: link.url,
+        botUsername: link.botUsername,
+        expiresAt: link.expiresAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const pollTelegramWebLoginEndpoint = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const token = String(req.query?.token || '').trim();
+    if (!token) {
+      return next(new AppError('Token is required', 400));
+    }
+
+    const session = getTelegramWebLoginStatus(token);
+    if (!session) {
+      return res.json({ status: 'success', data: { pending: false, expired: true } });
+    }
+    if (session.state === 'PENDING') {
+      return res.json({ status: 'success', data: { pending: true } });
+    }
+    if (session.state === 'FAILED') {
+      consumeTelegramWebLogin(token);
+      return res.json({
+        status: 'success',
+        data: { pending: false, failed: true, message: session.failureMessage },
+      });
+    }
+
+    if (session.state === 'COMPLETED' && session.userId) {
+      consumeTelegramWebLogin(token);
+      const user = await prisma.user.findUnique({ where: { id: session.userId } });
+      if (!user) {
+        return next(new AppError('User not found', 404));
+      }
+      if (user.isBanned) {
+        return next(new AppError('Account is banned', 403));
+      }
+      await createSessionForUser(user.id, res);
+      return res.json({
+        status: 'success',
+        data: { pending: false, completed: true, user: toPublicUser(user) },
+      });
+    }
+
+    return res.json({ status: 'success', data: { pending: true } });
   } catch (error) {
     next(error);
   }

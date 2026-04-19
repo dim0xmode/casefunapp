@@ -149,6 +149,26 @@ class ApiClient {
     });
   }
 
+  async startTelegramWebLogin(referralCode?: string | null) {
+    const body: Record<string, any> = {};
+    if (referralCode?.trim()) body.referralCode = referralCode.trim();
+    return this.request<{ token: string; url: string; botUsername: string; expiresAt: string }>(
+      '/auth/telegram/web-login/start',
+      { method: 'POST', body: JSON.stringify(body) }
+    );
+  }
+
+  async pollTelegramWebLogin(token: string) {
+    return this.request<{
+      pending?: boolean;
+      expired?: boolean;
+      failed?: boolean;
+      completed?: boolean;
+      user?: any;
+      message?: string;
+    }>(`/auth/telegram/web-login/status?token=${encodeURIComponent(token)}`);
+  }
+
   async confirmMerge(secondaryUserId: string, mergeToken: string) {
     return this.request<{ user: any }>('/auth/merge/confirm', {
       method: 'POST',

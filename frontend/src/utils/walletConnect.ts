@@ -231,31 +231,64 @@ const WALLET_REDIRECT_MAP: Record<string, string> = {
 };
 
 /**
- * Open the connected wallet app in Telegram WebView.
- * Detects the wallet from WC session peer metadata and uses the
- * appropriate universal deep link so MetaMask/Trust/etc. opens for
- * pending approval requests.
+ * Resolve the universal deep-link URL for the wallet currently paired
+ * via WalletConnect. Returns empty string if the wallet is unknown.
  */
-export const redirectToWallet = (provider: any, delayMs = 600): void => {
-  const tg = (window as any)?.Telegram?.WebApp;
-  if (!tg?.openLink) return;
-
+const resolveWalletDeepLinkUrl = (provider: any): string => {
   const peerName = (provider?.session?.peer?.metadata?.name || '').toLowerCase();
-  let url = '';
   for (const [key, link] of Object.entries(WALLET_REDIRECT_MAP)) {
-    if (peerName.includes(key)) { url = link; break; }
+    if (peerName.includes(key)) return link;
   }
-  if (!url) {
-    const redirect = provider?.session?.peer?.metadata?.redirect;
-    url = redirect?.universal || redirect?.native || '';
-  }
-  if (!url || !HTTP_RE.test(url)) return;
+  const redirect = provider?.session?.peer?.metadata?.redirect;
+  const url = redirect?.universal || redirect?.native || '';
+  return HTTP_RE.test(url) ? url : '';
+};
+
+/**
+ * Push the user back to the connected wallet app so the pending request
+ * (signature, transaction, etc.) becomes visible. Works in:
+ *   - Telegram WebView → via tg.openLink
+ *   - Mobile Safari/Chrome → via window.location (deep link)
+ *   - Desktop → no-op (user has the wallet popup already)
+ *
+ * Detects the wallet from WC session peer metadata and uses the appropriate
+ * universal deep link (https://metamask.app.link/wc, etc.).
+ */
+export const redirectToWallet = (provider: any, delayMs = 350): void => {
+  const url = resolveWalletDeepLinkUrl(provider);
+  if (!url) return;
+
+  const tg = (window as any)?.Telegram?.WebApp;
+  const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
 
   setTimeout(() => {
-    try { tg.openLink(url, { try_instant_view: false }); } catch {
-      try { tg.openLink(url); } catch { /* ok */ }
+    if (tg?.openLink && typeof tg.openLink === 'function') {
+      try { tg.openLink(url, { try_instant_view: false }); return; } catch { /* fall through */ }
+      try { tg.openLink(url); return; } catch { /* fall through */ }
+    }
+
+    if (!isMobile) return;
+
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      try { window.location.href = url; } catch { /* give up */ }
     }
   }, delayMs);
+};
+
+/**
+ * Detect whether a provider came from WalletConnect (vs. injected MetaMask, etc.)
+ * WC providers expose a `session` with peer metadata.
+ */
+export const isWalletConnectProvider = (provider: any): boolean => {
+  return Boolean(provider?.session?.peer || provider?.signer?.client);
 };
 
 /**
@@ -316,8 +349,12 @@ export const wcPersonalSign = async (
         timeoutMs,
       );
 
-      eip1193
-        .request({ method: 'personal_sign', params: [msgHex, address] })
+      // Fire the request first so the wallet has a pending message,
+      // then deep-link the user back so the popup is visible immediately.
+      const requestPromise = eip1193.request({ method: 'personal_sign', params: [msgHex, address] });
+      redirectToWallet(provider);
+
+      requestPromise
         .then((sig) => {
           clearTimeout(timer);
           if (typeof sig !== 'string' || !sig) {

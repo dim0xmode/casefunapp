@@ -5,7 +5,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
 import { getTreasuryContract, normalizeAddress } from '../services/blockchain.js';
 import { isCaseExpired, mintCaseIfNeeded } from '../services/tokenService.js';
-import { transferJetton } from '../services/tonService.js';
+import { mintJetton } from '../services/tonService.js';
 
 export const claimToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -75,7 +75,7 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
       tokenAddress = (caseInfo as any).tonTokenAddress!;
       const decimals = caseInfo.tokenDecimals || 9;
       const jettonAmount = BigInt(Math.round(total * 10 ** decimals));
-      txHash = await transferJetton(tokenAddress, user.tonAddress!, jettonAmount);
+      txHash = await mintJetton(tokenAddress, user.tonAddress!, jettonAmount);
     } else {
       const treasury = getTreasuryContract();
       if (!treasury) {

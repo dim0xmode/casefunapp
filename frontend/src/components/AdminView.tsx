@@ -687,7 +687,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               </div>
 
               <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
-                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Gas Wallet</div>
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-400" />
+                  EVM Gas Wallet
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
                   <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
                     <div className="text-[10px] uppercase tracking-widest text-gray-500">Signer</div>
@@ -726,6 +729,58 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                  TON Treasury
+                  {overview?.tonTreasury?.network && (
+                    <span className="text-[9px] text-blue-300/70 normal-case tracking-normal">
+                      {overview.tonTreasury.network}
+                    </span>
+                  )}
+                </div>
+                {overview?.tonTreasury?.configured === false ? (
+                  <div className="text-xs text-yellow-400/80">
+                    TON_MNEMONIC is not configured. Set it in backend env to enable TON cases & claims.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2 md:col-span-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Address</div>
+                      <div className="text-gray-300 font-mono truncate" title={overview?.tonTreasury?.addressFriendly || ''}>
+                        {overview?.tonTreasury?.addressFriendly
+                          ? `${overview.tonTreasury.addressFriendly.slice(0, 6)}…${overview.tonTreasury.addressFriendly.slice(-6)}`
+                          : '-'}
+                      </div>
+                    </div>
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Balance TON</div>
+                      <div className={`font-bold ${
+                        overview?.tonTreasury?.isLow === true ? 'text-red-400' : 'text-web3-success'
+                      }`}>
+                        {overview?.tonTreasury?.tonBalance == null ? '-' : Number(overview.tonTreasury.tonBalance).toFixed(4)}
+                      </div>
+                    </div>
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Status</div>
+                      <div className={`font-bold ${
+                        overview?.tonTreasury?.rpcConnected === false
+                          ? 'text-yellow-400'
+                          : overview?.tonTreasury?.isLow
+                          ? 'text-red-400'
+                          : 'text-web3-success'
+                      }`}>
+                        {overview?.tonTreasury?.rpcConnected === false
+                          ? 'RPC Offline'
+                          : overview?.tonTreasury?.isLow
+                          ? `LOW (< ${Number(overview?.tonTreasury?.lowThresholdTon || 0.5).toFixed(2)} TON)`
+                          : 'OK'}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

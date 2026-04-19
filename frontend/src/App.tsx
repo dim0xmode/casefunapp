@@ -90,6 +90,7 @@ const App = () => {
   );
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [isWalletConnectOpen, setIsWalletConnectOpen] = useState(false);
+  const [connectModalMode, setConnectModalMode] = useState<'login' | 'link'>('login');
   const [mergePrompt, setMergePrompt] = useState<{ secondaryUserId: string; identifier: string; mergeToken: string } | null>(null);
   const [isMerging, setIsMerging] = useState(false);
   const [inventory, setInventory] = useState<Item[]>([]);
@@ -454,6 +455,7 @@ const App = () => {
 
   const handleConnectTelegram = async () => {
     if (!lastAuthAddress) {
+      setConnectModalMode('login');
       setIsWalletConnectOpen(true);
       return;
     }
@@ -542,6 +544,7 @@ const App = () => {
 
   const handleOpenTelegramMiniApp = async () => {
     if (!lastAuthAddress) {
+      setConnectModalMode('login');
       setIsWalletConnectOpen(true);
       return;
     }
@@ -884,11 +887,16 @@ const App = () => {
       if (externalProvider && typeof externalProvider.request === 'function') {
         const msgHex = hexlify(toUtf8Bytes(message));
         const addressParam = getAddress(address);
-        const sig = await externalProvider.request({
-          method: 'personal_sign',
-          params: [msgHex, addressParam],
-        });
-        signature = String(sig);
+        const { isWalletConnectProvider, wcPersonalSign } = await import('./utils/walletConnect');
+        if (isWalletConnectProvider(externalProvider)) {
+          signature = await wcPersonalSign(externalProvider, msgHex, addressParam);
+        } else {
+          const sig = await externalProvider.request({
+            method: 'personal_sign',
+            params: [msgHex, addressParam],
+          });
+          signature = String(sig);
+        }
       } else {
         const provider = new BrowserProvider(signingProvider);
         const signer = await provider.getSigner();
@@ -937,8 +945,13 @@ const App = () => {
   const handleTelegramWidgetLogin = async (tgUser: Record<string, any>) => {
     try {
       setIsAuthLoading(true);
-      const response = await api.loginWithTelegramWidget(tgUser, getStoredRefCode());
-      const nextUser = response.data?.user;
+      let nextUser = tgUser;
+
+      if (tgUser.id && tgUser.hash) {
+        const response = await api.loginWithTelegramWidget(tgUser, getStoredRefCode());
+        nextUser = response.data?.user;
+      }
+
       if (nextUser) {
         setUser((prev) => ({ ...prev, ...nextUser }));
         if (typeof nextUser.balance === 'number') setBalance(nextUser.balance);
@@ -952,7 +965,8 @@ const App = () => {
         await loadProfile();
       }
     } catch (error) {
-      console.error('Telegram widget login failed', error);
+      console.error('Telegram login failed', error);
+      throw error;
     } finally {
       setIsAuthLoading(false);
     }
@@ -1004,7 +1018,54 @@ const App = () => {
   };
 
   const handleLinkEvmWallet = () => {
+    setConnectModalMode('link');
     setIsWalletConnectOpen(true);
+  };
+
+  const handleLinkEvmWalletResult = async (result: { address: string; provider?: any; disconnect?: () => Promise<void> }): Promise<boolean> => {
+    const address = result.address;
+    const signingProvider = result.provider || (window as any).ethereum;
+    if (!address || !signingProvider) return false;
+    try {
+      setIsAuthLoading(true);
+      const nonceResponse = await api.getNonce(address);
+      const message = nonceResponse.data?.message;
+      if (!message) return false;
+
+      let signature: string;
+      if (signingProvider && typeof signingProvider.request === 'function') {
+        const msgHex = hexlify(toUtf8Bytes(message));
+        const addressParam = getAddress(address);
+        const { isWalletConnectProvider, wcPersonalSign } = await import('./utils/walletConnect');
+        if (isWalletConnectProvider(signingProvider)) {
+          signature = await wcPersonalSign(signingProvider, msgHex, addressParam);
+        } else {
+          const sig = await signingProvider.request({
+            method: 'personal_sign',
+            params: [msgHex, addressParam],
+          });
+          signature = String(sig);
+        }
+      } else {
+        const provider = new BrowserProvider(signingProvider);
+        const signer = await provider.getSigner();
+        signature = await signer.signMessage(message);
+      }
+
+      const linkResponse = await api.linkWalletToCurrentAccount(address, signature, message);
+      const linkedUser = (linkResponse.data as any)?.user;
+      if (linkedUser) {
+        setUser((prev) => ({ ...prev, ...linkedUser }));
+        if (typeof linkedUser.balance === 'number') setBalance(linkedUser.balance);
+      }
+      await loadProfile();
+      return true;
+    } catch (err: any) {
+      console.error('Link EVM wallet failed', err);
+      return false;
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const handleConfirmMerge = async () => {
@@ -1382,6 +1443,7 @@ const App = () => {
   const handleTabChange = (tab: string, mode: 'push' | 'replace' | 'none' = 'push') => {
     const requiresAuth = tab === 'profile' || tab === 'admin';
     if (requiresAuth && !lastAuthAddress && !user.id) {
+      setConnectModalMode('login');
       setIsWalletConnectOpen(true);
       setActiveTab('home');
       setProfileView(null);
@@ -1967,7 +2029,7 @@ const App = () => {
           user={user} 
           activeTab={activeTab} 
           setActiveTab={handleTabChange} 
-          onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+          onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
             balance={balance}
             onOpenTopUp={handleOpenTopUp}
             onLogout={handleLogout}
@@ -1990,7 +2052,7 @@ const App = () => {
               <HomeView
                 onCreateCase={handleCreateCase}
                 isAuthenticated={Boolean(lastAuthAddress || user.id)}
-                onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
               />
             )}
 
@@ -2022,7 +2084,7 @@ const App = () => {
                   onChargeBattle: handleChargeBattle,
                   onOpenTopUp: handleOpenTopUp,
                   onBalanceUpdate: setBalance,
-                  onOpenWalletConnect: () => setIsWalletConnectOpen(true),
+                  onOpenWalletConnect: () => { setConnectModalMode('login'); setIsWalletConnectOpen(true); },
                   onClaimToken: handleClaimToken,
                   onSelectUser: handleSelectUser,
                   getUserAvatarByName,
@@ -2084,7 +2146,7 @@ const App = () => {
                   onOpenTopUp={handleOpenTopUp}
                   onBalanceUpdate={setBalance}
                   isAuthenticated={Boolean(lastAuthAddress || user.id)}
-                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
                   isAdmin={true}
                   cases={cases}
                 />
@@ -2100,7 +2162,7 @@ const App = () => {
                   onOpenTopUp={handleOpenTopUp}
                   userName={user.username}
                   isAuthenticated={Boolean(lastAuthAddress || user.id)}
-                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
                   isAdmin={true}
                 />
               </div>
@@ -2112,7 +2174,7 @@ const App = () => {
                   inventory={activeInventory}
                   onUpgrade={handleUpgrade}
                   isAuthenticated={Boolean(lastAuthAddress || user.id)}
-                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
                   isAdmin={true}
                 />
               </div>
@@ -2130,7 +2192,7 @@ const App = () => {
                   onChargeBattle={handleChargeBattle}
                   onOpenTopUp={handleOpenTopUp}
                   isAuthenticated={Boolean(lastAuthAddress || user.id)}
-                  onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+                  onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
                   isAdmin={true}
                 />
               </div>
@@ -2184,10 +2246,13 @@ const App = () => {
 
       <ConnectModal
         isOpen={isWalletConnectOpen}
-        onClose={() => setIsWalletConnectOpen(false)}
+        onClose={() => { setIsWalletConnectOpen(false); setConnectModalMode('login'); }}
+        mode={connectModalMode}
         onConnectEvm={handleWalletConnect}
+        onLinkEvm={handleLinkEvmWalletResult}
         onLoginTelegramWidget={handleTelegramWidgetLogin}
         onLoginTon={handleTonLogin}
+        onLinkTon={handleLinkTonWallet}
         connectWithProvider={connectWithProvider}
         isConnecting={isWalletConnecting}
         error={walletError}
@@ -2195,6 +2260,7 @@ const App = () => {
         discoveredWallets={discoveredWallets}
         walletConnectConfig={getWalletConnectRuntimeConfig()}
         telegramBotUsername={import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''}
+        referralCode={getStoredRefCode()}
       />
 
       {mergePrompt && (
@@ -2237,7 +2303,7 @@ const App = () => {
           }
         }}
         isAuthenticated={Boolean(lastAuthAddress || user.id)}
-        onConnectWallet={() => setIsWalletConnectOpen(true)}
+        onConnectWallet={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
         initialUsdtAmount={topUpInitialUsdt}
         walletAddress={user.walletAddress || walletAddress}
         externalProvider={
@@ -2365,7 +2431,7 @@ const App = () => {
         )}
         <FeedbackWidget
           isAuthenticated={Boolean(lastAuthAddress || user.id)}
-          onOpenWalletConnect={() => setIsWalletConnectOpen(true)}
+          onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
         />
         </>
       )}

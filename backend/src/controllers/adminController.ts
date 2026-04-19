@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
 import { provider, treasurySigner } from '../services/blockchain.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
+import { getTonTreasuryStatus } from '../services/tonService.js';
 
 const normalizeParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
@@ -15,6 +16,7 @@ const normalizeParam = (value: string | string[] | undefined): string => {
 };
 
 const GAS_LOW_THRESHOLD_ETH = 0.03;
+const GAS_LOW_THRESHOLD_TON = 0.5;
 const FEEDBACK_REVIEW_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 const IMMUTABLE_BOOTSTRAP_ACCOUNT_ERROR = 'Bootstrap admin account is immutable and cannot be modified';
 
@@ -1003,6 +1005,41 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       }
     }
 
+    let tonTreasury: {
+      configured: boolean;
+      address: string | null;
+      addressFriendly: string | null;
+      tonBalance: number | null;
+      lowThresholdTon: number;
+      isLow: boolean | null;
+      network: string | null;
+      rpcConnected: boolean;
+    } = {
+      configured: false,
+      address: null,
+      addressFriendly: null,
+      tonBalance: null,
+      lowThresholdTon: GAS_LOW_THRESHOLD_TON,
+      isLow: null,
+      network: null,
+      rpcConnected: false,
+    };
+    try {
+      const tonStatus = await getTonTreasuryStatus();
+      tonTreasury = {
+        configured: tonStatus.configured,
+        address: tonStatus.configured ? tonStatus.address : null,
+        addressFriendly: tonStatus.configured ? tonStatus.addressFriendly : null,
+        tonBalance: tonStatus.configured ? tonStatus.balanceTon : null,
+        lowThresholdTon: GAS_LOW_THRESHOLD_TON,
+        isLow: tonStatus.configured ? tonStatus.balanceTon < GAS_LOW_THRESHOLD_TON : null,
+        network: tonStatus.network,
+        rpcConnected: tonStatus.configured,
+      };
+    } catch {
+      tonTreasury = { ...tonTreasury, rpcConnected: false };
+    }
+
     res.json({
       status: 'success',
       data: {
@@ -1020,6 +1057,7 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
         recentOpenings,
         topUsersBySpend: topUsersWithInfo,
         gasWallet,
+        tonTreasury,
       },
     });
   } catch (error) {

@@ -49,7 +49,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   isTelegramMiniApp = false,
 }) => {
   const [name, setName] = useState('');
-  const [chainType, _setChainType] = useState<'EVM' | 'TON'>('EVM');
+  const [chainType, setChainType] = useState<'EVM' | 'TON'>('EVM');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
   const [rtu, setRtu] = useState('');
@@ -549,7 +549,44 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               isTelegramMiniApp ? 'p-4' : 'p-6 lg:col-span-2'
             }`}
           >
-            {/* Network selector hidden — TON deployment not ready yet */}
+            <div className="mb-4">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Network</div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setChainType('EVM')}
+                  className={`flex-1 px-4 py-3 rounded-xl border font-bold uppercase tracking-wider text-xs transition-all ${
+                    chainType === 'EVM'
+                      ? 'border-purple-400/60 bg-purple-500/15 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                      : 'border-white/[0.12] bg-black/30 text-gray-400 hover:border-purple-400/30 hover:text-purple-300/70'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${chainType === 'EVM' ? 'bg-purple-400 animate-pulse' : 'bg-gray-600'}`} />
+                    EVM
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChainType('TON')}
+                  className={`flex-1 px-4 py-3 rounded-xl border font-bold uppercase tracking-wider text-xs transition-all ${
+                    chainType === 'TON'
+                      ? 'border-blue-400/60 bg-blue-500/15 text-blue-300 shadow-[0_0_20px_rgba(96,165,250,0.25)]'
+                      : 'border-white/[0.12] bg-black/30 text-gray-400 hover:border-blue-400/30 hover:text-blue-300/70'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${chainType === 'TON' ? 'bg-blue-400 animate-pulse' : 'bg-gray-600'}`} />
+                    TON
+                  </span>
+                </button>
+              </div>
+              <div className="text-[10px] text-gray-500 mt-2">
+                {chainType === 'EVM'
+                  ? 'Token will be deployed on Sepolia testnet (ERC-20).'
+                  : 'Token will be deployed on TON testnet (TEP-74 Jetton).'}
+              </div>
+            </div>
             <div className={`grid grid-cols-1 ${isTelegramMiniApp ? 'gap-3' : 'md:grid-cols-2 gap-4'}`}>
               <label className="space-y-2">
                 <div className="text-xs uppercase tracking-widest text-gray-500">Case Name</div>

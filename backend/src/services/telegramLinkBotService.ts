@@ -39,11 +39,23 @@ interface TelegramBotApiResponse<T> {
 }
 
 const TELEGRAM_LINK_PREFIX = 'link_';
+const TELEGRAM_WEBLOGIN_PREFIX = 'wl_';
 const TELEGRAM_LINK_TOKEN_TTL_MS = 10 * 60 * 1000;
 const TELEGRAM_POLL_INTERVAL_MS = 2500;
 const TELEGRAM_BOT_USERNAME_CACHE_MS = 5 * 60 * 1000;
 const TELEGRAM_LINK_TOKEN_BYTES = 24;
 const TELEGRAM_MINI_APP_MENU_TEXT = 'Open Casefun';
+
+interface TelegramWebLoginSession {
+  token: string;
+  issuedAt: number;
+  expiresAt: number;
+  state: 'PENDING' | 'COMPLETED' | 'FAILED';
+  userId?: string;
+  referralCode?: string;
+  failureMessage?: string;
+  consumedAt?: number;
+}
 
 let botUsernameCache: string | null = null;
 let botUsernameCacheAt = 0;
@@ -53,6 +65,7 @@ let pollingLocked = false;
 let pollingDisabled = false;
 let pollTimer: NodeJS.Timeout | null = null;
 const telegramLinkSessions = new Map<string, TelegramLinkSession>();
+const telegramWebLoginSessions = new Map<string, TelegramWebLoginSession>();
 
 const encodeBase64Url = (value: Buffer | string) => {
   const raw = Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf8');
@@ -168,12 +181,17 @@ export const syncTelegramMiniAppMenuButton = async () => {
   }
 };
 
-const parseStartLinkToken = (text: string) => {
+const parseStartPayload = (text: string): { type: 'link' | 'weblogin' | 'none'; token: string } => {
   const normalized = String(text || '').trim();
-  if (!normalized.startsWith('/start')) return '';
+  if (!normalized.startsWith('/start')) return { type: 'none', token: '' };
   const [, rawArg = ''] = normalized.split(/\s+/, 2);
-  if (!rawArg.startsWith(TELEGRAM_LINK_PREFIX)) return '';
-  return rawArg.slice(TELEGRAM_LINK_PREFIX.length).trim();
+  if (rawArg.startsWith(TELEGRAM_LINK_PREFIX)) {
+    return { type: 'link', token: rawArg.slice(TELEGRAM_LINK_PREFIX.length).trim() };
+  }
+  if (rawArg.startsWith(TELEGRAM_WEBLOGIN_PREFIX)) {
+    return { type: 'weblogin', token: rawArg.slice(TELEGRAM_WEBLOGIN_PREFIX.length).trim() };
+  }
+  return { type: 'none', token: '' };
 };
 
 const normalizeNullable = (value: unknown) => {
@@ -208,8 +226,15 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
   if (!message?.text || !message?.chat?.id || !message?.from?.id) return;
   const rawText = String(message.text || '').trim();
   const isStartCommand = rawText.toLowerCase().startsWith('/start');
-  const linkToken = parseStartLinkToken(message.text);
-  if (!linkToken) {
+  const { type: payloadType, token: payloadToken } = parseStartPayload(message.text);
+
+  if (payloadType === 'weblogin' && payloadToken) {
+    await handleWebLoginStart(update, payloadToken);
+    return;
+  }
+
+  const linkToken = payloadToken;
+  if (payloadType !== 'link' || !linkToken) {
     if (isStartCommand) {
       await sendBotMessage(
         Number(message.chat.id),
@@ -281,6 +306,122 @@ const handleStartLinkMessage = async (update: TelegramBotUpdate) => {
     markSessionFailed(linkToken, session, 'INTERNAL_ERROR', failureMessage);
     await sendBotMessage(chatId, failureMessage).catch(() => {});
   }
+};
+
+const handleWebLoginStart = async (update: TelegramBotUpdate, token: string) => {
+  const message = update.message;
+  if (!message?.chat?.id || !message?.from?.id) return;
+  const chatId = Number(message.chat.id);
+
+  const session = telegramWebLoginSessions.get(token);
+  if (!session || session.state !== 'PENDING' || session.expiresAt <= Date.now()) {
+    await sendBotMessage(
+      chatId,
+      'This login link is expired or invalid. Please go back to the website and try again.'
+    ).catch(() => {});
+    return;
+  }
+
+  const telegramId = String(message.from.id);
+  const telegramUsername = normalizeNullable(message.from.username);
+  const telegramFirstName = normalizeNullable(message.from.first_name);
+  const telegramLastName = normalizeNullable(message.from.last_name);
+  const telegramPhotoUrl = normalizeNullable(message.from.photo_url);
+
+  try {
+    let user = await prisma.user.findFirst({ where: { telegramId } });
+    if (!user) {
+      const username =
+        telegramUsername ||
+        (telegramFirstName ? `${telegramFirstName}${telegramLastName ? ` ${telegramLastName}` : ''}` : `tg_${telegramId}`);
+      user = await prisma.user.create({
+        data: {
+          username,
+          walletAddress: `tg_${telegramId}`,
+          telegramId,
+          telegramUsername,
+          telegramFirstName,
+          telegramLastName,
+          telegramPhotoUrl,
+          telegramLinkedAt: new Date(),
+          hasLinkedWallet: false,
+          balance: 0,
+          ...(session.referralCode
+            ? await (async () => {
+                const referrer = await prisma.user.findFirst({
+                  where: { referralCode: session.referralCode },
+                  select: { id: true },
+                });
+                return referrer ? { referredById: referrer.id } : {};
+              })()
+            : {}),
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          telegramUsername: telegramUsername || user.telegramUsername,
+          telegramFirstName: telegramFirstName || user.telegramFirstName,
+          telegramLastName: telegramLastName || user.telegramLastName,
+          telegramPhotoUrl: telegramPhotoUrl || user.telegramPhotoUrl,
+        },
+      });
+    }
+
+    session.state = 'COMPLETED';
+    session.userId = user.id;
+    session.consumedAt = Date.now();
+    telegramWebLoginSessions.set(token, session);
+
+    await sendBotMessage(
+      chatId,
+      'Login successful! You can close this window and return to the website.'
+    ).catch(() => {});
+  } catch (err) {
+    session.state = 'FAILED';
+    session.failureMessage = 'Login failed. Please try again.';
+    session.consumedAt = Date.now();
+    telegramWebLoginSessions.set(token, session);
+
+    await sendBotMessage(chatId, 'Login failed. Please try again.').catch(() => {});
+  }
+};
+
+export const createTelegramWebLogin = async (referralCode?: string) => {
+  ensureTelegramBotConfigured();
+  ensureTelegramBotLinkPolling();
+  const botUsername = await getBotUsername();
+  const issuedAt = Date.now();
+  const token = encodeBase64Url(randomBytes(TELEGRAM_LINK_TOKEN_BYTES));
+  const expiresAt = issuedAt + TELEGRAM_LINK_TOKEN_TTL_MS;
+  telegramWebLoginSessions.set(token, {
+    token,
+    issuedAt,
+    expiresAt,
+    state: 'PENDING',
+    referralCode: referralCode || undefined,
+  });
+  const startParam = `${TELEGRAM_WEBLOGIN_PREFIX}${token}`;
+  const url = `https://t.me/${botUsername}?start=${encodeURIComponent(startParam)}`;
+  return { token, url, botUsername, expiresAt: new Date(expiresAt).toISOString() };
+};
+
+export const getTelegramWebLoginStatus = (token: string) => {
+  const session = telegramWebLoginSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now() && session.state === 'PENDING') {
+    telegramWebLoginSessions.delete(token);
+    return null;
+  }
+  return session;
+};
+
+export const consumeTelegramWebLogin = (token: string) => {
+  const session = telegramWebLoginSessions.get(token);
+  if (!session) return null;
+  telegramWebLoginSessions.delete(token);
+  return session;
 };
 
 const pollTelegramUpdatesOnce = async () => {

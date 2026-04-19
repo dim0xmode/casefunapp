@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Send, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import type { DiscoveredWallet } from '../hooks/useWallet';
 import type { ConnectedWalletResult } from './WalletConnectModal';
@@ -9,15 +9,21 @@ import okxIcon from '../assets/wallet-icons/okx.svg';
 import coinbaseIcon from '../assets/wallet-icons/coinbase.svg';
 import walletConnectIcon from '../assets/wallet-icons/walletconnect.svg';
 import ledgerIcon from '../assets/wallet-icons/ledger.svg';
+import { api } from '../services/api';
 
 type AuthMethod = 'telegram' | 'evm' | 'ton';
+
+export type ConnectModalMode = 'login' | 'link';
 
 interface ConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
+  mode?: ConnectModalMode;
   onConnectEvm: (result: ConnectedWalletResult) => Promise<boolean>;
+  onLinkEvm?: (result: ConnectedWalletResult) => Promise<boolean>;
   onLoginTelegramWidget: (payload: Record<string, any>) => Promise<void>;
   onLoginTon: (address: string, proof: any) => Promise<void>;
+  onLinkTon?: () => Promise<void>;
   connectWithProvider?: (provider: any) => Promise<string | null>;
   isConnecting: boolean;
   error: string | null;
@@ -25,6 +31,7 @@ interface ConnectModalProps {
   discoveredWallets?: DiscoveredWallet[];
   walletConnectConfig?: { projectId: string; chainId: number; rpcUrl?: string };
   telegramBotUsername?: string;
+  referralCode?: string | null;
 }
 
 const STATIC_WALLET_OPTIONS = [
@@ -44,63 +51,48 @@ const findDiscovered = (matchKey: string, discoveredWallets: DiscoveredWallet[])
 export const ConnectModal: React.FC<ConnectModalProps> = ({
   isOpen,
   onClose,
+  mode = 'login',
   onConnectEvm,
+  onLinkEvm,
   onLoginTelegramWidget,
   onLoginTon,
+  onLinkTon,
   connectWithProvider,
   isConnecting,
   error,
   isAuthLoading = false,
   discoveredWallets = [],
   walletConnectConfig,
-  telegramBotUsername,
+  telegramBotUsername: _telegramBotUsername,
+  referralCode,
 }) => {
-  const [activeMethod, setActiveMethod] = useState<AuthMethod>('telegram');
+  const isLinkMode = mode === 'link';
+  const defaultTab: AuthMethod = isLinkMode ? 'evm' : 'telegram';
+  const [activeMethod, setActiveMethod] = useState<AuthMethod>(defaultTab);
   const [localConnecting, setLocalConnecting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const tgWidgetRef = useRef<HTMLDivElement>(null);
+  const [tgLoginState, setTgLoginState] = useState<'idle' | 'polling' | 'success'>('idle');
+  const pollRef = useRef(false);
   const busy = isConnecting || isAuthLoading || localConnecting;
 
   useEffect(() => {
     if (!isOpen) {
       setLocalError(null);
       setLocalConnecting(false);
+      setTgLoginState('idle');
+      pollRef.current = false;
+      setActiveMethod(isLinkMode ? 'evm' : 'telegram');
     }
-  }, [isOpen]);
-
-  const handleTelegramCallback = useCallback(async (tgUser: any) => {
-    try {
-      await onLoginTelegramWidget(tgUser);
-      onClose();
-    } catch (err: any) {
-      setLocalError(err?.message || 'Telegram login failed');
-    }
-  }, [onLoginTelegramWidget, onClose]);
-
-  useEffect(() => {
-    if (!isOpen || activeMethod !== 'telegram' || !telegramBotUsername) return;
-    (window as any).__telegramLoginCallback = handleTelegramCallback;
-
-    const container = tgWidgetRef.current;
-    if (!container) return;
-    container.innerHTML = '';
-
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    script.setAttribute('data-telegram-login', telegramBotUsername);
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-radius', '12');
-    script.setAttribute('data-onauth', '__telegramLoginCallback(user)');
-    script.setAttribute('data-request-access', 'write');
-    script.async = true;
-    container.appendChild(script);
-
-    return () => {
-      delete (window as any).__telegramLoginCallback;
-    };
-  }, [isOpen, activeMethod, telegramBotUsername, handleTelegramCallback]);
+  }, [isOpen, isLinkMode]);
 
   if (!isOpen) return null;
+
+  const handleEvmResult = async (result: ConnectedWalletResult): Promise<boolean> => {
+    if (isLinkMode && onLinkEvm) {
+      return onLinkEvm(result);
+    }
+    return onConnectEvm(result);
+  };
 
   const connectViaWalletConnect = async () => {
     if (!walletConnectConfig?.projectId) {
@@ -116,7 +108,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
         chainId: walletConnectConfig.chainId,
         rpcUrl: walletConnectConfig.rpcUrl,
       });
-      const ok = await onConnectEvm({
+      const ok = await handleEvmResult({
         address: session.address,
         provider: session.provider,
         disconnect: session.disconnect,
@@ -137,7 +129,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     try {
       const address = await connectWithProvider(wallet.provider);
       if (address) {
-        const ok = await onConnectEvm({ address, provider: wallet.provider });
+        const ok = await handleEvmResult({ address, provider: wallet.provider });
         if (ok) onClose();
       }
     } catch (err: any) {
@@ -161,10 +153,15 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     setLocalConnecting(true);
     setLocalError(null);
     try {
-      const { connectTonWallet } = await import('../utils/tonConnect');
-      const wallet = await connectTonWallet();
-      await onLoginTon(wallet.address, wallet.proof);
-      onClose();
+      if (isLinkMode && onLinkTon) {
+        await onLinkTon();
+        onClose();
+      } else {
+        const { connectTonWallet } = await import('../utils/tonConnect');
+        const wallet = await connectTonWallet();
+        await onLoginTon(wallet.address, wallet.proof);
+        onClose();
+      }
     } catch (err: any) {
       if (err?.message?.includes('User rejected') || err?.message?.includes('dismissed')) return;
       setLocalError(err?.message || 'TON connection failed');
@@ -173,13 +170,67 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     }
   };
 
+  const handleTelegramBotLogin = async () => {
+    if (tgLoginState !== 'idle') return;
+    setLocalError(null);
+    setTgLoginState('polling');
+    pollRef.current = true;
+
+    try {
+      const startResp = await api.startTelegramWebLogin(referralCode);
+      const url = startResp.data?.url;
+      const token = startResp.data?.token;
+      if (!url || !token) throw new Error('Failed to start Telegram login');
+
+      window.open(url, '_blank');
+
+      const timeoutMs = 120_000;
+      const pollIntervalMs = 2_000;
+      const startedAt = Date.now();
+
+      while (pollRef.current && Date.now() - startedAt < timeoutMs) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        if (!pollRef.current) break;
+
+        const status = await api.pollTelegramWebLogin(token);
+        const d = status.data;
+        if (d?.completed && d?.user) {
+          setTgLoginState('success');
+          await onLoginTelegramWidget(d.user);
+          onClose();
+          return;
+        }
+        if (d?.failed) {
+          throw new Error(d.message || 'Telegram login failed');
+        }
+        if (d?.expired) {
+          throw new Error('Login link expired. Please try again.');
+        }
+      }
+
+      if (pollRef.current) {
+        throw new Error('Login timed out. Open the bot link and press Start, then try again.');
+      }
+    } catch (err: any) {
+      setLocalError(err?.message || 'Telegram login failed');
+    } finally {
+      setTgLoginState('idle');
+      pollRef.current = false;
+    }
+  };
+
   const displayError = localError || error;
 
-  const tabs: { id: AuthMethod; label: string }[] = [
-    { id: 'telegram', label: 'Telegram' },
-    { id: 'evm', label: 'EVM Wallet' },
-    { id: 'ton', label: 'TON Wallet' },
-  ];
+  const tabs: { id: AuthMethod; label: string }[] = isLinkMode
+    ? [
+        { id: 'evm', label: 'EVM Wallet' },
+        { id: 'ton', label: 'TON Wallet' },
+      ]
+    : [
+        { id: 'telegram', label: 'Telegram' },
+        { id: 'evm', label: 'EVM Wallet' },
+        { id: 'ton', label: 'TON Wallet' },
+      ];
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
@@ -188,8 +239,12 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
           <X size={24} />
         </button>
 
-        <h2 className="text-3xl font-black mb-4">Connect</h2>
-        <p className="text-gray-400 mb-6 text-sm">Choose how you want to sign in to CaseFun.</p>
+        <h2 className="text-3xl font-black mb-4">{isLinkMode ? 'Link Wallet' : 'Connect'}</h2>
+        <p className="text-gray-400 mb-6 text-sm">
+          {isLinkMode
+            ? 'Link a wallet to your account for deposits and claims.'
+            : 'Choose how you want to sign in to CaseFun.'}
+        </p>
 
         <div className="flex gap-1 mb-6 bg-black/30 rounded-xl p-1">
           {tabs.map((tab) => (
@@ -207,14 +262,44 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
           ))}
         </div>
 
-        {activeMethod === 'telegram' && (
+        {activeMethod === 'telegram' && !isLinkMode && (
           <div className="text-center">
             <p className="text-gray-400 text-sm mb-4">Sign in with your Telegram account</p>
-            <div ref={tgWidgetRef} className="flex justify-center min-h-[48px] items-center">
-              {!telegramBotUsername && (
-                <span className="text-gray-500 text-xs">Telegram login is not configured</span>
-              )}
-            </div>
+
+            {tgLoginState === 'idle' && (
+              <button
+                onClick={handleTelegramBotLogin}
+                disabled={busy}
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl bg-[#2AABEE] hover:bg-[#229ED9] text-white font-bold text-base transition-all disabled:opacity-50"
+              >
+                <Send size={20} />
+                Log in with Telegram
+              </button>
+            )}
+
+            {tgLoginState === 'polling' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-center gap-2 text-web3-accent">
+                  <Loader2 size={20} className="animate-spin" />
+                  <span className="text-sm font-medium">Waiting for confirmation...</span>
+                </div>
+                <p className="text-gray-500 text-xs">
+                  A new tab opened with the bot. Press <strong>Start</strong> in Telegram to confirm login.
+                </p>
+                <button
+                  onClick={() => { pollRef.current = false; setTgLoginState('idle'); }}
+                  className="text-gray-500 hover:text-gray-300 text-xs underline transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {tgLoginState === 'success' && (
+              <div className="flex items-center justify-center gap-2 text-emerald-400">
+                <span className="text-sm font-bold">Login successful!</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -261,9 +346,11 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
 
         {activeMethod === 'ton' && (
           <div className="text-center">
-            <p className="text-gray-400 text-sm mb-4">Connect your TON wallet</p>
+            <p className="text-gray-400 text-sm mb-4">
+              {isLinkMode ? 'Link your TON wallet' : 'Connect your TON wallet'}
+            </p>
             <Button onClick={handleTonConnect} disabled={busy} className="w-full py-4 text-lg">
-              {localConnecting ? 'Connecting...' : 'Connect TON Wallet'}
+              {localConnecting ? 'Connecting...' : isLinkMode ? 'Link TON Wallet' : 'Connect TON Wallet'}
             </Button>
           </div>
         )}
