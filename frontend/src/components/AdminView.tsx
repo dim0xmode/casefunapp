@@ -358,10 +358,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
     () => (activeTab === 'feedback' && Array.isArray(data) ? data : []),
     [activeTab, data]
   );
-  const rtuLedgers = useMemo(
-    () => (activeTab === 'rtu' && data?.ledgers ? data.ledgers : []),
-    [activeTab, data]
-  );
+  const rtuLedgers = useMemo(() => {
+    if (activeTab !== 'rtu' || !data?.ledgers) return [];
+    return [...data.ledgers].sort((a: any, b: any) => {
+      const exA = a.excludedFromMetrics ? 1 : 0;
+      const exB = b.excludedFromMetrics ? 1 : 0;
+      if (exA !== exB) return exA - exB;
+      const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return tb - ta;
+    });
+  }, [activeTab, data]);
   const rtuEvents = useMemo(
     () => (activeTab === 'rtu' && data?.events ? data.events : []),
     [activeTab, data]
