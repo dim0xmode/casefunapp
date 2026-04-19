@@ -572,6 +572,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     const rawEth = topUpEth.replace(/,/g, '.').trim();
     const ethNum = Number(rawEth);
     if (!Number.isFinite(ethNum) || ethNum <= 0) return;
+    const hasLinkedEvmWallet = Boolean(user?.walletAddress && user.walletAddress.toLowerCase().startsWith('0x'));
+    if (!hasLinkedEvmWallet) {
+      setTopUpStatus('Link an EVM wallet first to deposit ETH.');
+      return;
+    }
     if (!treasuryAddress) { setTopUpStatus('Treasury address not configured.'); return; }
     const weiValue = parseEther(rawEth);
     const deepLink = `https://metamask.app.link/send/${treasuryAddress}@${chainId}?value=${weiValue.toString()}`;
@@ -1026,7 +1031,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
     if (activeTab === 'topup') {
       const parsedEth = Number(topUpEth.replace(/,/g, '.').trim());
-      const canTopUpEvm = Number.isFinite(parsedEth) && parsedEth > 0 && !topUpBusy;
+      const hasLinkedEvmWallet = Boolean(user?.walletAddress && user.walletAddress.toLowerCase().startsWith('0x'));
+      const canTopUpEvm = Number.isFinite(parsedEth) && parsedEth > 0 && !topUpBusy && hasLinkedEvmWallet;
       const parsedTonNative = Number(topUpTonNative.replace(/,/g, '.').trim());
       const canTopUpTon = Number.isFinite(parsedTonNative) && parsedTonNative > 0 && !tonBusy && Boolean(user?.tonAddress) && Boolean(tonTreasury);
 
@@ -1060,6 +1066,16 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
           {topUpChain === 'EVM' && (
             <>
+              {!hasLinkedEvmWallet && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                  Link your EVM wallet first to deposit ETH.
+                  {onLinkEvmWallet && (
+                    <button type="button" onClick={onLinkEvmWallet} className="ml-2 underline text-amber-100 font-bold">
+                      Link now
+                    </button>
+                  )}
+                </div>
+              )}
               {/* Amount inputs */}
               <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
                 <div>

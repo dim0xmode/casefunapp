@@ -19,6 +19,7 @@ interface TopUpModalProps {
   externalProvider?: any;
   tonAddress?: string | null;
   onLinkTonWallet?: () => void;
+  onLinkEvmWallet?: () => void;
 }
 
 export const TopUpModal: React.FC<TopUpModalProps> = ({
@@ -33,6 +34,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   externalProvider,
   tonAddress,
   onLinkTonWallet,
+  onLinkEvmWallet,
 }) => {
   const [chain, setChain] = useState<ChainTab>('EVM');
 
@@ -70,6 +72,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const parsedTonUsdt = useMemo(() => Number(tonUsdtAmount.replace(/,/g, '.').trim()), [tonUsdtAmount]);
   const parsedTon = useMemo(() => Number(tonNativeAmount.replace(/,/g, '.').trim()), [tonNativeAmount]);
   const activeWalletAddress = useMemo(() => (walletAddress || '').toLowerCase(), [walletAddress]);
+  // A user is "EVM-linked" only when their stored walletAddress is a real
+  // 0x-prefixed address. Telegram-/TON-only accounts carry placeholders
+  // (`tg_…`, `ton_…`) and must link an EVM wallet before depositing ETH —
+  // otherwise their on-chain tx goes through but backend can't credit it.
+  const hasLinkedEvmWallet = useMemo(
+    () => Boolean(walletAddress && walletAddress.toLowerCase().startsWith('0x')),
+    [walletAddress]
+  );
 
   // Load EVM price.
   useEffect(() => {
@@ -271,6 +281,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       onConnectWallet();
       return;
     }
+    if (!hasLinkedEvmWallet) {
+      setStatusMessage('Link an EVM wallet first to deposit ETH.');
+      return;
+    }
     const rawEth = ethAmount.replace(/,/g, '.').trim();
     if (!rawEth) return;
     const activeProvider = resolveProvider();
@@ -440,7 +454,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   if (!isOpen) return null;
 
-  const canSubmitEvm = isAuthenticated && hasProvider && Number.isFinite(parsedEth) && parsedEth > 0 && !isSubmitting;
+  const canSubmitEvm = isAuthenticated && hasLinkedEvmWallet && hasProvider && Number.isFinite(parsedEth) && parsedEth > 0 && !isSubmitting;
   const canSubmitTon = isAuthenticated && Boolean(tonAddress) && Boolean(tonTreasury) && Number.isFinite(parsedTon) && parsedTon > 0 && !isTonSubmitting;
 
   return (
@@ -471,6 +485,14 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             {!isAuthenticated && (
               <div className="text-[11px] uppercase tracking-widest text-gray-500">
                 Connect wallet to top up
+              </div>
+            )}
+            {isAuthenticated && !hasLinkedEvmWallet && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200">
+                Link your EVM wallet first to deposit ETH.
+                {onLinkEvmWallet && (
+                  <button type="button" onClick={onLinkEvmWallet} className="ml-2 underline text-amber-100">Link now</button>
+                )}
               </div>
             )}
             <div className="grid grid-cols-1 gap-3">

@@ -2462,6 +2462,7 @@ const App = () => {
         }
         tonAddress={user?.tonAddress || null}
         onLinkTonWallet={handleLinkTonWallet}
+        onLinkEvmWallet={handleLinkEvmWallet}
       />
 
       {createdCaseNotice && (
