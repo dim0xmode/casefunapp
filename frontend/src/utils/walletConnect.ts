@@ -407,11 +407,46 @@ export const isWalletConnectProvider = (provider: any): boolean => {
 
 /**
  * Ensure the relay subscriber is fresh before sending a request.
+ *
+ * On iOS Telegram WebView the WebSocket connection to the WC relay is often
+ * killed while the user is in the wallet app. When they return, the response
+ * to their personal_sign request is never delivered. Forcing transportOpen()
+ * + subscriber.restart() reopens the WS and re-subscribes to topics so pending
+ * JSON-RPC responses are pulled in.
  */
 export const nudgeRelay = (provider: any): void => {
   try {
-    const sub = provider?.signer?.client?.core?.relayer?.subscriber;
-    if (sub && typeof sub.restart === 'function') sub.restart();
+    const relayer = provider?.signer?.client?.core?.relayer;
+    if (!relayer) return;
+
+    if (typeof relayer.transportOpen === 'function') {
+      Promise.resolve(relayer.transportOpen()).catch(() => { /* ok */ });
+    }
+    const sub = relayer.subscriber;
+    if (sub && typeof sub.restart === 'function') {
+      Promise.resolve(sub.restart()).catch(() => { /* ok */ });
+    }
+  } catch { /* ok */ }
+};
+
+/**
+ * Hard reconnect the WC relay WebSocket. Call after returning from the
+ * wallet app on iOS where the WS is killed during background.
+ */
+export const reconnectRelay = async (provider: any): Promise<void> => {
+  try {
+    const relayer = provider?.signer?.client?.core?.relayer;
+    if (!relayer) return;
+    if (typeof relayer.transportClose === 'function') {
+      await Promise.resolve(relayer.transportClose()).catch(() => {});
+    }
+    if (typeof relayer.transportOpen === 'function') {
+      await Promise.resolve(relayer.transportOpen()).catch(() => {});
+    }
+    const sub = relayer.subscriber;
+    if (sub && typeof sub.restart === 'function') {
+      await Promise.resolve(sub.restart()).catch(() => {});
+    }
   } catch { /* ok */ }
 };
 
@@ -423,11 +458,14 @@ export const nudgeRelay = (provider: any): void => {
 export const withRelayNudge = async <T>(provider: any, fn: () => Promise<T>): Promise<T> => {
   const handler = () => {
     if (document.visibilityState !== 'visible') return;
-    nudgeRelay(provider);
+    // On return from wallet app: hard reconnect WS (iOS kills it) so the pending
+    // JSON-RPC response gets delivered.
+    void reconnectRelay(provider);
   };
   document.addEventListener('visibilitychange', handler);
 
-  const POLL_INTERVAL_MS = 3_000;
+  // Background nudge — keeps subscriber alive on long sigs.
+  const POLL_INTERVAL_MS = 2_500;
   const poll = setInterval(() => nudgeRelay(provider), POLL_INTERVAL_MS);
   try {
     return await fn();

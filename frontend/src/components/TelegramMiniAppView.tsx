@@ -260,12 +260,24 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     const timer = setTimeout(() => setSplashDone(true), 3400);
     return () => clearTimeout(timer);
   }, []);
+  const [topUpChain, setTopUpChain] = useState<'EVM' | 'TON'>('EVM');
   const [topUpUsdt, setTopUpUsdt] = useState('');
   const [topUpEth, setTopUpEth] = useState('');
   const [ethPrice, setEthPrice] = useState<number | null>(null);
   const [topUpBusy, setTopUpBusy] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<string | null>(null);
   const [topUpPendingHash, setTopUpPendingHash] = useState<string | null>(null);
+
+  // TON top-up state
+  const [topUpTonUsdt, setTopUpTonUsdt] = useState('');
+  const [topUpTonNative, setTopUpTonNative] = useState('');
+  const [tonPrice, setTonPrice] = useState<number | null>(null);
+  const [tonTreasury, setTonTreasury] = useState<string | null>(null);
+  const [tonTreasuryNetwork, setTonTreasuryNetwork] = useState<'testnet' | 'mainnet'>('testnet');
+  const [tonStatus, setTonStatus] = useState<string | null>(null);
+  const [tonBusy, setTonBusy] = useState(false);
+  const [tonPending, setTonPending] = useState<{ sentAtUnix: number; expectedTon: number } | null>(null);
+  const [tonNetworkMismatch, setTonNetworkMismatch] = useState(false);
   const [battleAlert, setBattleAlert] = useState<{ lobbyId: string; hostName: string; joinerName: string; rounds: number; totalCost: number } | null>(null);
   const battleAlertSeenRef = React.useRef<Set<string>>(new Set());
 
@@ -500,6 +512,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     api.getEthPrice()
       .then((r) => { if (!cancelled && r.data?.price) setEthPrice(r.data.price); })
       .catch(() => {});
+    api.getTonPrice()
+      .then((r) => { if (!cancelled && r.data?.price) setTonPrice(r.data.price); })
+      .catch(() => {});
+    api.getTonTreasuryAddress()
+      .then((r) => {
+        if (cancelled) return;
+        if (r.data?.address) setTonTreasury(r.data.address);
+        if (r.data?.network === 'mainnet' || r.data?.network === 'testnet') {
+          setTonTreasuryNetwork(r.data.network);
+        }
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [activeTab]);
 
@@ -566,6 +590,135 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       setTimeout(() => { void pollForDeposit().finally(() => setTopUpBusy(false)); }, 3000);
     };
     document.addEventListener('visibilitychange', onReturn);
+  };
+
+  // ── TON top-up ─────────────────────────────────────────────────────────────
+  const handleTopUpTonUsdtChange = (value: string) => {
+    const clean = value.replace(/[^\d.,]/g, '');
+    setTopUpTonUsdt(clean);
+    setTonStatus(null);
+    if (!tonPrice) return;
+    const num = Number(clean.replace(/,/g, '.'));
+    if (!Number.isFinite(num) || num <= 0) { setTopUpTonNative(''); return; }
+    setTopUpTonNative((num / tonPrice).toFixed(4));
+  };
+
+  const handleTopUpTonNativeChange = (value: string) => {
+    const clean = value.replace(/[^\d.,]/g, '');
+    setTopUpTonNative(clean);
+    setTonStatus(null);
+    if (!tonPrice) return;
+    const num = Number(clean.replace(/,/g, '.'));
+    if (!Number.isFinite(num) || num <= 0) { setTopUpTonUsdt(''); return; }
+    setTopUpTonUsdt((num * tonPrice).toFixed(2));
+  };
+
+  const pollTonDeposit = async (sentAtUnix: number, expectedTon: number): Promise<boolean> => {
+    for (let i = 0; i < 30; i++) {
+      try {
+        const r = await api.confirmTonDeposit(sentAtUnix, expectedTon);
+        if (r.data?.pending) {
+          setTonStatus(`Waiting on TON network… (${i + 1})`);
+        } else if (typeof r.data?.balance === 'number') {
+          if (onBalanceUpdate) onBalanceUpdate(r.data.balance);
+          setTonStatus('Top up confirmed!');
+          setTopUpTonUsdt(''); setTopUpTonNative('');
+          setTonPending(null);
+          return true;
+        }
+      } catch (e: any) {
+        setTonStatus(e?.message || 'Confirmation error — retrying');
+      }
+      await new Promise((ok) => setTimeout(ok, 4000));
+    }
+    setTonStatus('Still pending — tap "Check status" later to sync.');
+    return false;
+  };
+
+  const handleTonSubmit = async () => {
+    if (!user?.tonAddress) {
+      setTonStatus('Link your TON wallet first.');
+      onLinkTonWallet?.();
+      return;
+    }
+    if (!tonTreasury) { setTonStatus('TON treasury not available — try again later.'); return; }
+    const num = Number(topUpTonNative.replace(/,/g, '.').trim());
+    if (!Number.isFinite(num) || num <= 0) return;
+
+    setTonBusy(true);
+    setTonStatus(null);
+    setTonNetworkMismatch(false);
+    try {
+      const { sendTonTransfer, TonNetworkMismatchError } = await import('../utils/tonConnect');
+      const sentAtUnix = Math.floor(Date.now() / 1000);
+      const nano = BigInt(Math.floor(num * 1e9));
+      setTonStatus('Opening TON wallet…');
+      try {
+        await sendTonTransfer(tonTreasury, nano, 'casefun-topup', tonTreasuryNetwork);
+      } catch (err: any) {
+        if (err instanceof TonNetworkMismatchError) {
+          setTonNetworkMismatch(true);
+          setTonStatus(err.message);
+          return;
+        }
+        throw err;
+      }
+      setTonPending({ sentAtUnix, expectedTon: num });
+      setTonStatus('Transaction signed. Confirming on chain…');
+      await pollTonDeposit(sentAtUnix, num);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (/wrong network/i.test(msg)) {
+        setTonNetworkMismatch(true);
+        setTonStatus(`Wallet on wrong network. Switch to ${tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'} account and reconnect.`);
+      } else if (/reject|cancel|dismiss/i.test(msg)) {
+        setTonStatus('Cancelled in wallet');
+      } else {
+        setTonStatus(msg || 'TON top up failed');
+      }
+    } finally {
+      setTonBusy(false);
+    }
+  };
+
+  const handleTonCheckStatus = async () => {
+    if (!tonPending) return;
+    setTonStatus('Checking on chain…');
+    try {
+      const r = await api.confirmTonDeposit(tonPending.sentAtUnix, tonPending.expectedTon);
+      if (r.data?.pending) {
+        setTonStatus('Still pending — try again in a moment.');
+      } else if (typeof r.data?.balance === 'number') {
+        if (onBalanceUpdate) onBalanceUpdate(r.data.balance);
+        setTonStatus('Top up confirmed!');
+        setTopUpTonUsdt(''); setTopUpTonNative('');
+        setTonPending(null);
+      }
+    } catch (err: any) {
+      try {
+        const scan = await api.scanTonDeposit();
+        if (scan.data?.found && typeof scan.data?.balance === 'number') {
+          if (onBalanceUpdate) onBalanceUpdate(scan.data.balance);
+          setTonStatus('Top up confirmed!');
+          setTopUpTonUsdt(''); setTopUpTonNative('');
+          setTonPending(null);
+        } else {
+          setTonStatus('No new deposit found yet.');
+        }
+      } catch (e2: any) {
+        setTonStatus(err?.message || e2?.message || 'Status check failed');
+      }
+    }
+  };
+
+  const handleTonReconnect = async () => {
+    try {
+      const { disconnectTon } = await import('../utils/tonConnect');
+      await disconnectTon();
+    } catch { /* ok */ }
+    setTonNetworkMismatch(false);
+    setTonStatus('Disconnected. Open the link wallet flow to choose a Testnet account.');
+    onLinkTonWallet?.();
   };
 
   // ── Tab content ──────────────────────────────────────────────────────────────
@@ -867,96 +1020,226 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
     if (activeTab === 'topup') {
       const parsedEth = Number(topUpEth.replace(/,/g, '.').trim());
-      const canTopUp = Number.isFinite(parsedEth) && parsedEth > 0 && !topUpBusy;
+      const canTopUpEvm = Number.isFinite(parsedEth) && parsedEth > 0 && !topUpBusy;
+      const parsedTonNative = Number(topUpTonNative.replace(/,/g, '.').trim());
+      const canTopUpTon = Number.isFinite(parsedTonNative) && parsedTonNative > 0 && !tonBusy && Boolean(user?.tonAddress) && Boolean(tonTreasury);
+
       return (
         <div className="space-y-3">
           {/* Balance card */}
           <div className="rounded-2xl p-4 border border-white/[0.06] bg-black/20">
             <div className="text-xs font-medium mb-1 text-gray-500">
               Current balance
-          </div>
+            </div>
             <div className="text-3xl font-black text-white">
               {Number(balance || 0).toFixed(2)} <span className="text-web3-accent">₮</span>
             </div>
           </div>
 
-          {/* Amount inputs */}
-          <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
-            <div>
-              <label className="text-xs font-medium block mb-2 text-gray-500">
-                You get (Balance ₮)
-              </label>
-            <input
-                type="text" inputMode="decimal" value={topUpUsdt}
-              onChange={(e) => handleTopUpUsdtChange(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-            />
-              <div className="mt-2.5 grid grid-cols-4 gap-2">
-              {[5, 10, 25, 50].map((a) => (
-                <button
-                    key={a} type="button"
-                  onClick={() => handleTopUpUsdtChange(String(a))}
-                    className="py-2 rounded-xl border border-web3-accent/20 bg-web3-accent/5 text-web3-accent text-xs font-bold hover:bg-web3-accent/15 active:scale-95 transition"
-                >
-                  +{a}
-                </button>
-              ))}
-            </div>
+          {/* Chain switcher */}
+          <div className="flex gap-1 bg-black/30 rounded-xl p-1 border border-white/[0.06]">
+            {(['EVM', 'TON'] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setTopUpChain(c)}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
+                  topUpChain === c ? 'bg-web3-accent text-black' : 'text-gray-400 active:scale-95'
+                }`}
+              >
+                {c === 'EVM' ? 'EVM (ETH)' : 'TON'}
+              </button>
+            ))}
           </div>
 
-            <div className="h-px bg-white/[0.06]" />
+          {topUpChain === 'EVM' && (
+            <>
+              {/* Amount inputs */}
+              <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
+                <div>
+                  <label className="text-xs font-medium block mb-2 text-gray-500">
+                    You get (Balance ₮)
+                  </label>
+                  <input
+                    type="text" inputMode="decimal" value={topUpUsdt}
+                    onChange={(e) => handleTopUpUsdtChange(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
+                  />
+                  <div className="mt-2.5 grid grid-cols-4 gap-2">
+                    {[5, 10, 25, 50].map((a) => (
+                      <button
+                        key={a} type="button"
+                        onClick={() => handleTopUpUsdtChange(String(a))}
+                        className="py-2 rounded-xl border border-web3-accent/20 bg-web3-accent/5 text-web3-accent text-xs font-bold hover:bg-web3-accent/15 active:scale-95 transition"
+                      >
+                        +{a}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div>
-              <label className="text-xs font-medium block mb-2 text-gray-500">
-                You pay (ETH Sepolia)
-              </label>
-            <input
-                type="text" inputMode="decimal" value={topUpEth}
-              onChange={(e) => handleTopUpEthChange(e.target.value)}
-                placeholder="0.000000"
-                className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-            />
-              <div className="mt-1.5 text-xs text-gray-500">
-            {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
+                <div className="h-px bg-white/[0.06]" />
+
+                <div>
+                  <label className="text-xs font-medium block mb-2 text-gray-500">
+                    You pay (ETH Sepolia)
+                  </label>
+                  <input
+                    type="text" inputMode="decimal" value={topUpEth}
+                    onChange={(e) => handleTopUpEthChange(e.target.value)}
+                    placeholder="0.000000"
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
+                  />
+                  <div className="mt-1.5 text-xs text-gray-500">
+                    {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {topUpStatus && (
-            <div className="px-4 py-3 rounded-xl border border-white/[0.06] bg-black/20 text-sm text-gray-300 break-words">
-              {topUpStatus}
-            </div>
+              {topUpStatus && (
+                <div className="px-4 py-3 rounded-xl border border-white/[0.06] bg-black/20 text-sm text-gray-300 break-words">
+                  {topUpStatus}
+                </div>
+              )}
+
+              {topUpPendingHash ? (
+                <button
+                  type="button"
+                  onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
+                  disabled={topUpBusy}
+                  className="w-full py-4 rounded-2xl border border-web3-accent/30 bg-web3-accent/10 text-web3-accent text-sm font-bold disabled:opacity-40 active:scale-[0.98] transition"
+                >
+                  {topUpBusy ? 'Scanning…' : 'Check deposit'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleTopUpSubmit}
+                  disabled={!canTopUpEvm}
+                  className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
+                    canTopUpEvm
+                      ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black'
+                      : 'bg-white/[0.08] text-white/30'
+                  }`}
+                >
+                  {topUpBusy ? 'Processing…' : 'Top Up via MetaMask'}
+                </button>
+              )}
+
+              <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-web3-accent transition">
+                Need test ETH? Sepolia faucet <ExternalLink size={11} />
+              </a>
+            </>
           )}
 
-            {topUpPendingHash ? (
-              <button
-                type="button"
-                onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
-                disabled={topUpBusy}
-              className="w-full py-4 rounded-2xl border border-web3-accent/30 bg-web3-accent/10 text-web3-accent text-sm font-bold disabled:opacity-40 active:scale-[0.98] transition"
-              >
-              {topUpBusy ? 'Scanning…' : 'Check deposit'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleTopUpSubmit}
-                disabled={!canTopUp}
-              className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
-                canTopUp
-                  ? 'bg-gradient-to-r from-web3-accent to-web3-success text-black'
-                  : 'bg-white/[0.08] text-white/30'
-              }`}
-            >
-              {topUpBusy ? 'Processing…' : 'Top Up via MetaMask'}
-              </button>
-            )}
+          {topUpChain === 'TON' && (
+            <>
+              {!user?.tonAddress && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                  Link your TON wallet first to deposit.
+                  {onLinkTonWallet && (
+                    <button type="button" onClick={onLinkTonWallet} className="ml-2 underline text-amber-100 font-bold">
+                      Link now
+                    </button>
+                  )}
+                </div>
+              )}
 
-          <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-web3-accent transition">
-            Need test ETH? Sepolia faucet <ExternalLink size={11} />
-          </a>
+              <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
+                <div>
+                  <label className="text-xs font-medium block mb-2 text-gray-500">
+                    You get (Balance ₮)
+                  </label>
+                  <input
+                    type="text" inputMode="decimal" value={topUpTonUsdt}
+                    onChange={(e) => handleTopUpTonUsdtChange(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
+                  />
+                  <div className="mt-2.5 grid grid-cols-4 gap-2">
+                    {[5, 10, 25, 50].map((a) => (
+                      <button
+                        key={a} type="button"
+                        onClick={() => handleTopUpTonUsdtChange(String(a))}
+                        className="py-2 rounded-xl border border-blue-400/20 bg-blue-400/5 text-blue-400 text-xs font-bold hover:bg-blue-400/15 active:scale-95 transition"
+                      >
+                        +{a}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-px bg-white/[0.06]" />
+
+                <div>
+                  <label className="text-xs font-medium block mb-2 text-gray-500">
+                    You pay (TON {tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'})
+                  </label>
+                  <input
+                    type="text" inputMode="decimal" value={topUpTonNative}
+                    onChange={(e) => handleTopUpTonNativeChange(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-blue-400/40 text-white font-mono text-lg"
+                  />
+                  <div className="mt-1.5 text-xs text-gray-500">
+                    {tonPrice ? `1 TON ≈ ${tonPrice.toFixed(2)} ₮` : 'Loading TON price…'}
+                  </div>
+                </div>
+              </div>
+
+              {tonNetworkMismatch && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200 leading-relaxed">
+                  Your TON wallet is on the wrong network. We need <b>{tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'}</b>.
+                  <br />
+                  In Tonkeeper: <b>Settings → enable “Show Testnet account”</b>, switch to that account, then tap Reconnect.
+                </div>
+              )}
+
+              {tonStatus && (
+                <div className="px-4 py-3 rounded-xl border border-white/[0.06] bg-black/20 text-sm text-gray-300 break-words">
+                  {tonStatus}
+                </div>
+              )}
+
+              {tonNetworkMismatch ? (
+                <button
+                  type="button"
+                  onClick={handleTonReconnect}
+                  className="w-full py-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 text-amber-300 text-sm font-bold active:scale-[0.98] transition"
+                >
+                  Reconnect TON
+                </button>
+              ) : tonPending ? (
+                <button
+                  type="button"
+                  onClick={handleTonCheckStatus}
+                  className="w-full py-4 rounded-2xl border border-blue-400/30 bg-blue-400/10 text-blue-400 text-sm font-bold active:scale-[0.98] transition"
+                >
+                  Check status
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleTonSubmit}
+                  disabled={!canTopUpTon}
+                  className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
+                    canTopUpTon
+                      ? 'bg-gradient-to-r from-blue-400 to-blue-600 text-white'
+                      : 'bg-white/[0.08] text-white/30'
+                  }`}
+                >
+                  {tonBusy ? 'Processing…' : 'Top Up via TON'}
+                </button>
+              )}
+
+              <a href="https://t.me/testgiver_ton_bot" target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-400 transition">
+                Need test TON? Faucet bot <ExternalLink size={11} />
+              </a>
+            </>
+          )}
         </div>
       );
     }
