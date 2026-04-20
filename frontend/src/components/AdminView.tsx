@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
-import { formatTokenValue, getLevelInfo } from '../utils/number';
+import { formatTokenValue, formatUsdt, formatCrypto, getLevelInfo } from '../utils/number';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
 import { StatCard } from './ui/StatCard';
@@ -718,13 +718,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div className={`font-bold ${
                       overview?.gasWallet?.isLow === true ? 'text-red-400' : 'text-web3-success'
                     }`}>
-                      {overview?.gasWallet?.ethBalance == null ? '-' : Number(overview.gasWallet.ethBalance).toFixed(4)}
+                      {overview?.gasWallet?.ethBalance == null ? '-' : formatCrypto(overview.gasWallet.ethBalance)}
                     </div>
                   </div>
                   <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
                     <div className="text-[10px] uppercase tracking-widest text-gray-500">Treasury ETH</div>
                     <div className="font-bold text-gray-200">
-                      {overview?.gasWallet?.treasuryEthBalance == null ? '-' : Number(overview.gasWallet.treasuryEthBalance).toFixed(4)}
+                      {overview?.gasWallet?.treasuryEthBalance == null ? '-' : formatCrypto(overview.gasWallet.treasuryEthBalance)}
                     </div>
                   </div>
                   <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
@@ -775,7 +775,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div className={`font-bold ${
                         overview?.tonTreasury?.isLow === true ? 'text-red-400' : 'text-web3-success'
                       }`}>
-                        {overview?.tonTreasury?.tonBalance == null ? '-' : Number(overview.tonTreasury.tonBalance).toFixed(4)}
+                        {overview?.tonTreasury?.tonBalance == null ? '-' : formatCrypto(overview.tonTreasury.tonBalance)}
                       </div>
                     </div>
                     <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
@@ -1067,7 +1067,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                           <div>
                             <div className="text-[10px] uppercase tracking-widest text-gray-500">Reserve (token)</div>
                             <div className={`font-bold ${Number(adminStats.reserveToken || 0) >= 0 ? 'text-web3-success' : 'text-red-400'}`}>
-                              {Number(adminStats.reserveToken || 0).toFixed(4)}
+                              {formatTokenValue(adminStats.reserveToken || 0)}
                             </div>
                           </div>
                           <div className="sm:col-span-2 lg:col-span-8">
@@ -1414,16 +1414,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2 bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs">
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Spent (USDT)</div>
-                        <div className="text-base font-bold text-white">{formatTokenValue(totalSpent)}</div>
+                        <div className="text-base font-bold text-white">{formatUsdt(totalSpent)}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Issued (USDT)</div>
-                        <div className="text-base font-bold text-white">{formatTokenValue(totalIssuedUsdt)}</div>
+                        <div className="text-base font-bold text-white">{formatUsdt(totalIssuedUsdt)}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-gray-500">Total Surplus (USDT)</div>
                         <div className={`text-base font-bold ${totalSurplus < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                          {totalSurplus >= 0 ? '+' : ''}{formatTokenValue(totalSurplus)}
+                          {totalSurplus >= 0 ? '+' : ''}{formatUsdt(totalSurplus)}
                         </div>
                       </div>
                       <div>
@@ -1433,7 +1433,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-gray-500">Buffer Debt (USDT)</div>
                         <div className={`text-base font-bold ${totalDebtUsdt < 0 ? 'text-red-400' : 'text-amber-300'}`}>
-                          {formatTokenValue(totalDebtUsdt)}
+                          {formatUsdt(totalDebtUsdt)}
                         </div>
                       </div>
                     </div>
@@ -1510,11 +1510,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                           </span>
                         )}
                       </div>
-                      <div>{formatTokenValue(spent)}</div>
+                      <div>{formatUsdt(spent)}</div>
                       <div>{formatTokenValue(issuedToken)}</div>
-                      <div>{formatTokenValue(issuedUsdt)}</div>
+                      <div>{formatUsdt(issuedUsdt)}</div>
                       <div className={ledger.excludedFromMetrics ? '' : surplusUsdt < 0 ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
-                        {surplusUsdt >= 0 ? '+' : ''}{formatTokenValue(surplusUsdt)}
+                        {surplusUsdt >= 0 ? '+' : ''}{formatUsdt(surplusUsdt)}
                       </div>
                       <div className={alert && !ledger.excludedFromMetrics ? 'font-bold' : ''}>{formatTokenValue(debtToken)}</div>
                       <div className="md:text-right">
@@ -1589,7 +1589,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <div>
                         <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{event.type}</span>
                       </div>
-                      <div>{formatTokenValue(event.deltaSpentUsdt)}</div>
+                      <div>{formatUsdt(event.deltaSpentUsdt)}</div>
                       <div>{formatTokenValue(event.deltaToken)}</div>
                       <div>{formatDate(event.createdAt)}</div>
                     </div>
@@ -3149,19 +3149,19 @@ const CaseDetail: React.FC<{ caseId: string }> = ({ caseId }) => {
           <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Reserve Token</div>
             <div className={`text-xs ${Number(stats.reserveToken || 0) >= 0 ? 'text-web3-success' : 'text-red-400'}`}>
-              {Number(stats.reserveToken || 0).toFixed(4)}
+              {formatTokenValue(stats.reserveToken || 0)}
             </div>
           </div>
           <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Drop Limits</div>
             <div className="text-xs">
-              min {'<='} {Number(stats.minDropAllowed || 0).toFixed(4)} / max {'>='} {Number(stats.maxDropAllowed || 0).toFixed(4)}
+              min {'<='} {formatTokenValue(stats.minDropAllowed || 0)} / max {'>='} {formatTokenValue(stats.maxDropAllowed || 0)}
             </div>
           </div>
           <div className="bg-black/30 border border-white/[0.08] rounded-lg p-2">
             <div className="text-[10px] uppercase tracking-widest text-gray-500">Current Drops</div>
             <div className="text-xs">
-              min {Number(stats.minDropActual || 0).toFixed(4)} / max {Number(stats.maxDropActual || 0).toFixed(4)}
+              min {formatTokenValue(stats.minDropActual || 0)} / max {formatTokenValue(stats.maxDropActual || 0)}
             </div>
           </div>
         </div>

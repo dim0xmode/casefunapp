@@ -136,24 +136,66 @@ const normalizeRarity = (value: unknown) => {
 const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(item.rarity) });
 
 // ─── Telegram helpers ────────────────────────────────────────────────────────
+
+/**
+ * Mirror Telegram's `viewportHeight` / `viewportStableHeight` to CSS custom
+ * properties so the Shell can size itself correctly regardless of Telegram
+ * chrome, Android keyboard state, or tiny / huge device heights.
+ *
+ * Falls back to `window.innerHeight` on plain web.
+ */
+const syncTelegramViewport = () => {
+  try {
+    if (typeof document === 'undefined') return;
+    const tg = (window as any)?.Telegram?.WebApp;
+    const stable = Number(tg?.viewportStableHeight) || Number(tg?.viewportHeight) || (typeof window !== 'undefined' ? window.innerHeight : 0);
+    const current = Number(tg?.viewportHeight) || stable;
+    if (stable > 0) {
+      document.documentElement.style.setProperty('--tg-viewport-stable-height', `${stable}px`);
+      document.documentElement.style.setProperty('--tg-viewport-height', `${current}px`);
+    }
+  } catch { /* ignore */ }
+};
+
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) return;
+    if (!tg) { syncTelegramViewport(); return; }
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
     if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#0B0C10');
+    // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
+    // don't accidentally dismiss the app when the user scrolls.
+    if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+    syncTelegramViewport();
+    if (typeof tg.onEvent === 'function') {
+      tg.onEvent('viewportChanged', syncTelegramViewport);
+    }
   } catch { /* ignore */ }
 };
 
 // ─── Shared layout wrappers ───────────────────────────────────────────────────
 
-/** Full-screen fixed shell — works regardless of parent height chain */
+/**
+ * Full-screen fixed shell sized to the Telegram WebApp viewport (or 100dvh as
+ * a fallback on regular browsers). The Shell respects the iOS notch / Android
+ * gesture-nav safe-area insets so nothing hides behind them.
+ */
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
-    className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
-    style={{ background: '#0B0C10' }}
+    className="fixed left-0 right-0 top-0 flex flex-col z-[10] overflow-hidden"
+    style={{
+      background: '#0B0C10',
+      // On Telegram Mini App this comes from TG.WebApp.viewportStableHeight
+      // (kept in sync via syncTelegramViewport). In a regular browser or on
+      // SSR it falls back to 100dvh (plain web) / 100vh (older browsers).
+      height: 'var(--tg-viewport-stable-height)',
+      maxHeight: 'var(--tg-viewport-stable-height)',
+      // Horizontal safe-area for landscape mode on notched phones.
+      paddingLeft: 'var(--sa-left)',
+      paddingRight: 'var(--sa-right)',
+    }}
   >
     <div className="absolute inset-0 pointer-events-none" style={{
       background: [
@@ -162,7 +204,7 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         'radial-gradient(ellipse 50% 45% at 10% 60%, rgba(16,185,129,0.05) 0%, transparent 50%)',
       ].join(', '),
     }} />
-    <div className="relative z-[1] flex flex-col flex-1 overflow-hidden">
+    <div className="relative z-[1] flex flex-col flex-1 min-h-0 overflow-hidden">
       {children}
     </div>
   </div>
@@ -287,7 +329,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [fbSubmitting, setFbSubmitting] = useState(false);
   const [fbStatus, setFbStatus] = useState<string | null>(null);
 
-  useEffect(() => { initTelegramApp(); }, []);
+  useEffect(() => {
+    initTelegramApp();
+    // Also sync viewport on plain-web orientation / resize so the Shell reacts
+    // to DevTools-toolbar flips and Android keyboard show/hide.
+    const onResize = () => syncTelegramViewport();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1062,7 +1115,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 {c === 'EVM' ? 'EVM (ETH)' : 'TON'}
               </button>
             ))}
-          </div>
+            </div>
 
           {topUpChain === 'EVM' && (
             <>
@@ -1082,24 +1135,24 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   <label className="text-xs font-medium block mb-2 text-gray-500">
                     You get (Balance ₮)
                   </label>
-                  <input
+            <input
                     type="text" inputMode="decimal" value={topUpUsdt}
-                    onChange={(e) => handleTopUpUsdtChange(e.target.value)}
+              onChange={(e) => handleTopUpUsdtChange(e.target.value)}
                     placeholder="0.00"
                     className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-                  />
+            />
                   <div className="mt-2.5 grid grid-cols-4 gap-2">
-                    {[5, 10, 25, 50].map((a) => (
-                      <button
+              {[5, 10, 25, 50].map((a) => (
+                <button
                         key={a} type="button"
-                        onClick={() => handleTopUpUsdtChange(String(a))}
+                  onClick={() => handleTopUpUsdtChange(String(a))}
                         className="py-2 rounded-xl border border-web3-accent/20 bg-web3-accent/5 text-web3-accent text-xs font-bold hover:bg-web3-accent/15 active:scale-95 transition"
-                      >
-                        +{a}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                >
+                  +{a}
+                </button>
+              ))}
+            </div>
+          </div>
 
                 <div className="h-px bg-white/[0.06]" />
 
@@ -1107,37 +1160,37 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   <label className="text-xs font-medium block mb-2 text-gray-500">
                     You pay (ETH Sepolia)
                   </label>
-                  <input
+            <input
                     type="text" inputMode="decimal" value={topUpEth}
-                    onChange={(e) => handleTopUpEthChange(e.target.value)}
+              onChange={(e) => handleTopUpEthChange(e.target.value)}
                     placeholder="0.000000"
                     className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
-                  />
+            />
                   <div className="mt-1.5 text-xs text-gray-500">
-                    {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
+            {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
                   </div>
                 </div>
-              </div>
+          </div>
 
-              {topUpStatus && (
+          {topUpStatus && (
                 <div className="px-4 py-3 rounded-xl border border-white/[0.06] bg-black/20 text-sm text-gray-300 break-words">
                   {topUpStatus}
                 </div>
-              )}
+          )}
 
-              {topUpPendingHash ? (
-                <button
-                  type="button"
-                  onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
-                  disabled={topUpBusy}
+            {topUpPendingHash ? (
+              <button
+                type="button"
+                onClick={() => { setTopUpBusy(true); pollForDeposit().finally(() => setTopUpBusy(false)); }}
+                disabled={topUpBusy}
                   className="w-full py-4 rounded-2xl border border-web3-accent/30 bg-web3-accent/10 text-web3-accent text-sm font-bold disabled:opacity-40 active:scale-[0.98] transition"
-                >
+              >
                   {topUpBusy ? 'Scanning…' : 'Check deposit'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleTopUpSubmit}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleTopUpSubmit}
                   disabled={!canTopUpEvm}
                   className={`w-full py-4 rounded-2xl text-sm font-black disabled:opacity-40 active:scale-[0.98] transition ${
                     canTopUpEvm
@@ -1164,9 +1217,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   {onLinkTonWallet && (
                     <button type="button" onClick={onLinkTonWallet} className="ml-2 underline text-amber-100 font-bold">
                       Link now
-                    </button>
-                  )}
-                </div>
+              </button>
+            )}
+          </div>
               )}
 
               <div className="rounded-2xl p-4 space-y-4 border border-white/[0.06] bg-black/20">
@@ -1190,7 +1243,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                         +{a}
                       </button>
                     ))}
-                  </div>
+        </div>
                 </div>
 
                 <div className="h-px bg-white/[0.06]" />
@@ -1199,7 +1252,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   <label className="text-xs font-medium block mb-2 text-gray-500">
                     You pay (TON {tonTreasuryNetwork === 'testnet' ? 'Testnet' : 'Mainnet'})
                   </label>
-                  <input
+          <input
                     type="text" inputMode="decimal" value={topUpTonNative}
                     onChange={(e) => handleTopUpTonNativeChange(e.target.value)}
                     placeholder="0.00"
@@ -1226,13 +1279,13 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               )}
 
               {tonNetworkMismatch ? (
-                <button
-                  type="button"
+          <button
+            type="button"
                   onClick={handleTonReconnect}
                   className="w-full py-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 text-amber-300 text-sm font-bold active:scale-[0.98] transition"
-                >
+          >
                   Reconnect TON
-                </button>
+          </button>
               ) : tonPending ? (
                 <button
                   type="button"
@@ -1262,8 +1315,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               </a>
             </>
           )}
-        </div>
-      );
+      </div>
+    );
     }
 
     return null;

@@ -65,23 +65,54 @@ export const formatDecimal = (value: number, maxDecimals = 5): string => {
 };
 
 /**
- * Format a token value preserving all significant digits, stripping
- * trailing zeros AND floating-point noise (e.g. 0.060000000000005 → "0.06").
+ * Format a token amount with max 5 decimals (stripped trailing zeros).
+ * Also strips floating-point noise (e.g. 0.060000000000005 → "0.06").
+ * If the value is non-zero but rounds to zero at 5 decimals, returns
+ * "<0.00001" so we never falsely display "0".
  */
-export const formatTokenValue = (value: number | string): string => {
+export const formatTokenValue = (value: number | string, maxDecimals = 5): string => {
   const num = Number(value);
   if (!Number.isFinite(num) || num === 0) return '0';
 
-  const cleaned = parseFloat(num.toPrecision(12));
+  const factor = Math.pow(10, maxDecimals);
+  const rounded = Math.round(num * factor) / factor;
 
-  if (Math.abs(cleaned) < 1e-7) {
-    const str = cleaned.toFixed(20);
-    return str.replace(/0+$/, '').replace(/\.$/, '');
+  if (rounded === 0) {
+    const threshold = 1 / factor;
+    return num > 0 ? `<${threshold}` : `>-${threshold}`;
   }
 
-  const str = String(cleaned);
-  if (str.includes('.')) {
-    return str.replace(/0+$/, '').replace(/\.$/, '');
+  const sign = rounded < 0 ? '-' : '';
+  const abs = Math.abs(rounded);
+  const str = abs.toFixed(maxDecimals).replace(/\.?0+$/, '');
+  return sign + str;
+};
+
+/**
+ * Format a USDT (balance / deposit / case price) value with exactly
+ * 2 decimals. Use this everywhere a ₮ sign is displayed.
+ */
+export const formatUsdt = (value: number | string): string => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '0.00';
+  return num.toFixed(2);
+};
+
+/**
+ * Format a small crypto amount (ETH, TON) with max 4 decimals,
+ * stripping trailing zeros.
+ */
+export const formatCrypto = (value: number | string, maxDecimals = 4): string => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num === 0) return '0';
+  const factor = Math.pow(10, maxDecimals);
+  const rounded = Math.round(num * factor) / factor;
+  if (rounded === 0) {
+    const threshold = 1 / factor;
+    return num > 0 ? `<${threshold}` : `>-${threshold}`;
   }
-  return str;
+  const sign = rounded < 0 ? '-' : '';
+  const abs = Math.abs(rounded);
+  const str = abs.toFixed(maxDecimals).replace(/\.?0+$/, '');
+  return sign + str;
 };
