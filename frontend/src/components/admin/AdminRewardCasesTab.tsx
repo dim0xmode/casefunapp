@@ -660,10 +660,10 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
   const probValid = Math.abs(probSum - 100) <= 0.01;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm overflow-y-auto p-4">
-      <div className="max-w-4xl mx-auto bg-[#0B0C10] border border-white/[0.08] rounded-2xl my-8 p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div className="text-lg font-bold text-white">
+    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm p-2 sm:p-4 flex items-stretch sm:items-center justify-center">
+      <div className="w-full max-w-4xl bg-[#0B0C10] border border-white/[0.08] rounded-2xl flex flex-col max-h-[100vh] sm:max-h-[92vh] overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/[0.05] bg-[#0B0C10] shrink-0">
+          <div className="text-base sm:text-lg font-bold text-white">
             {draft.id ? 'Edit Reward Case' : 'New Reward Case'}
           </div>
           <button
@@ -674,6 +674,7 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Name" required>
             <input
@@ -682,12 +683,10 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
               className="input"
             />
           </Field>
-          <Field label="Image URL">
-            <input
+          <Field label="Case image">
+            <ImageUploadField
               value={draft.imageUrl}
-              onChange={(e) => patchCase({ imageUrl: e.target.value })}
-              className="input"
-              placeholder="https://…"
+              onChange={(v) => patchCase({ imageUrl: v || '' })}
             />
           </Field>
           <Field label="Description" span2>
@@ -872,12 +871,10 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
                     ✕
                   </button>
                 </div>
-                <Field label="Image URL" span2>
-                  <input
-                    value={drop.image || ''}
-                    onChange={(e) => patchDrop(idx, { image: e.target.value || null })}
-                    className="input"
-                    placeholder="https://…"
+                <Field label="Drop image" span2>
+                  <ImageUploadField
+                    value={drop.image}
+                    onChange={(v) => patchDrop(idx, { image: v })}
                   />
                 </Field>
                 {(drop.kind === 'NFT' || drop.kind === 'TEST_NFT') && (
@@ -916,8 +913,12 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
             + Add drop
           </button>
         </div>
+        </div>
 
-        <div className="flex justify-end gap-2 border-t border-white/[0.05] pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-white/[0.05] px-4 sm:px-6 py-3 bg-[#0B0C10] shrink-0">
+          <div className={`mr-auto text-[11px] font-bold ${probValid ? 'text-emerald-400' : 'text-red-400'}`}>
+            Σ {probSum.toFixed(2)} / 100
+          </div>
           <button
             onClick={onClose}
             disabled={saving}
@@ -945,6 +946,92 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
           }
           .input:focus { outline: 1px solid rgba(16,185,129,0.4); }
         `}</style>
+      </div>
+    </div>
+  );
+};
+
+const ImageUploadField: React.FC<{
+  value: string | null;
+  onChange: (v: string | null) => void;
+}> = ({ value, onChange }) => {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErr('Only image files are allowed');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('Max file size is 5 MB');
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      const res: any = await api.uploadCaseImage(file);
+      const url = res?.data?.imageUrl;
+      if (!url) throw new Error('Upload failed');
+      onChange(url);
+    } catch (e: any) {
+      setErr(e?.message || 'Upload failed');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className="w-16 h-16 rounded-lg border border-white/[0.08] bg-black/40 overflow-hidden flex items-center justify-center shrink-0">
+        {value ? (
+          <img src={value} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <div className="text-[9px] uppercase tracking-wider text-gray-600">No image</div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-md text-[11px] font-bold bg-web3-accent/20 text-web3-accent border border-web3-accent/30 hover:bg-web3-accent/30 disabled:opacity-50"
+          >
+            {busy ? 'Uploading…' : value ? 'Replace image' : 'Upload image'}
+          </button>
+          {value && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="px-3 py-1.5 rounded-md text-[11px] bg-red-500/15 text-red-400 hover:bg-red-500/25"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+          className="hidden"
+        />
+        <div className="text-[10px] text-gray-500 truncate">
+          {err ? (
+            <span className="text-red-400">{err}</span>
+          ) : value ? (
+            <span className="truncate">{value}</span>
+          ) : (
+            'PNG / JPG / WEBP, up to 5 MB'
+          )}
+        </div>
       </div>
     </div>
   );
