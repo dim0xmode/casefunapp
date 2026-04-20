@@ -404,7 +404,7 @@ export const createCase = async (
               value: drop.value,
               currency: drop.currency,
               rarity: drop.rarity,
-              probability: dropProbabilities[idx] ?? equalProbability,
+              probability: dropProbabilities[idx] ?? 100 / preparedDrops.length,
               color: drop.color,
               image: drop.image || null,
             })),
