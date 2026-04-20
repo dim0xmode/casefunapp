@@ -659,6 +659,46 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
   const probSum = draft.drops.reduce((acc, d) => acc + (Number(d.probability) || 0), 0);
   const probValid = Math.abs(probSum - 100) <= 0.01;
 
+  const validationIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!draft.name.trim()) issues.push('Name is required');
+    const price = Number(draft.openPrice);
+    if (!Number.isFinite(price) || price <= 0) issues.push('Open price must be > 0');
+    if (draft.prePrice) {
+      const p = Number(draft.prePrice);
+      if (!Number.isFinite(p) || p < 0) issues.push('Pre-purchase price must be ≥ 0');
+    }
+    if (draft.limitMode !== 'NONE') {
+      const lt = Number(draft.limitTotal);
+      if (!Number.isFinite(lt) || lt <= 0) issues.push('Limit total must be > 0');
+    }
+    if (!draft.drops.length) issues.push('At least one drop is required');
+    draft.drops.forEach((d, i) => {
+      if (!d.name.trim()) issues.push(`Drop #${i + 1}: name is required`);
+      const amt = Number(d.amount);
+      if (!Number.isFinite(amt) || amt <= 0) issues.push(`Drop #${i + 1}: amount must be > 0`);
+      if ((d.kind === 'NFT' || d.kind === 'TEST_NFT') && amt !== 1) {
+        issues.push(`Drop #${i + 1}: NFT amount must be 1`);
+      }
+      const prob = Number(d.probability);
+      if (!Number.isFinite(prob) || prob <= 0) issues.push(`Drop #${i + 1}: probability must be > 0`);
+    });
+    if (!probValid) {
+      issues.push(`Drop probabilities must sum to 100 (current ${probSum.toFixed(4)})`);
+    }
+    return issues;
+  }, [draft, probSum, probValid]);
+
+  const [showIssues, setShowIssues] = useState(false);
+
+  const handleSave = () => {
+    if (validationIssues.length > 0) {
+      setShowIssues(true);
+      return;
+    }
+    onSave();
+  };
+
   return (
     <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm p-2 sm:p-4 flex items-stretch sm:items-center justify-center">
       <div className="w-full max-w-4xl bg-[#0B0C10] border border-white/[0.08] rounded-2xl flex flex-col max-h-[100vh] sm:max-h-[92vh] overflow-hidden">
@@ -915,24 +955,43 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
         </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/[0.05] px-4 sm:px-6 py-3 bg-[#0B0C10] shrink-0">
-          <div className={`mr-auto text-[11px] font-bold ${probValid ? 'text-emerald-400' : 'text-red-400'}`}>
-            Σ {probSum.toFixed(2)} / 100
+        <div className="border-t border-white/[0.05] bg-[#0B0C10] shrink-0">
+          {showIssues && validationIssues.length > 0 && (
+            <div className="px-4 sm:px-6 py-2 border-b border-red-500/20 bg-red-500/[0.05] max-h-[110px] overflow-y-auto">
+              <div className="text-[10px] uppercase tracking-wider text-red-400 font-bold mb-1">
+                Fix the following:
+              </div>
+              <ul className="space-y-0.5">
+                {validationIssues.map((msg, i) => (
+                  <li key={i} className="text-[11px] text-red-300">• {msg}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3">
+            <div className={`mr-auto text-[11px] font-bold ${probValid ? 'text-emerald-400' : 'text-red-400'}`}>
+              Σ {probSum.toFixed(2)} / 100
+              {validationIssues.length > 0 && (
+                <span className="ml-2 text-red-400 font-normal">
+                  · {validationIssues.length} issue{validationIssues.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg text-xs bg-white/[0.05] hover:bg-white/[0.08] text-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-5 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : draft.id ? 'Save changes' : 'Create case'}
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg text-xs bg-white/[0.05] hover:bg-white/[0.08] text-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onSave}
-            disabled={saving || !probValid || !draft.name.trim()}
-            className="px-5 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-40"
-          >
-            {saving ? 'Saving…' : draft.id ? 'Save changes' : 'Create case'}
-          </button>
         </div>
         <style>{`
           .input {
