@@ -224,20 +224,58 @@ const verifyTweetComment = async (
   }
 };
 
+// Parses a Telegram URL or handle and returns the chat_id expected by
+// Bot API getChatMember (e.g. "@casefun_chat"). Returns null for private
+// invite links (t.me/+...) or unrecognised formats.
+const extractTelegramChatRef = (input?: string | null): string | null => {
+  if (!input) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+  if (raw.startsWith('@')) {
+    const handle = raw.slice(1).replace(/[^a-zA-Z0-9_]/g, '');
+    return handle ? `@${handle}` : null;
+  }
+  // Match t.me/xxx or telegram.me/xxx or https://t.me/xxx
+  const m = raw.match(/^(?:https?:\/\/)?(?:t|telegram)\.me\/(?:s\/)?([^/?#]+)/i);
+  if (!m) return null;
+  const segment = m[1];
+  // Private invite links (+abcd...) cannot be verified via Bot API.
+  if (segment.startsWith('+')) return null;
+  const handle = segment.replace(/[^a-zA-Z0-9_]/g, '');
+  return handle ? `@${handle}` : null;
+};
+
+type TelegramSubscriptionResult = {
+  verified: boolean;
+  // `unverifiable` means the bot has no access to the target chat (not admin
+  // there / invite link / etc.) — callers fall back to trust-based claim.
+  unverifiable: boolean;
+};
+
 const verifyTelegramSubscription = async (
-  telegramId: string
-): Promise<boolean> => {
-  if (!config.telegramBotToken) return false;
+  telegramId: string,
+  chatRefOverride?: string | null
+): Promise<TelegramSubscriptionResult> => {
+  if (!config.telegramBotToken) return { verified: false, unverifiable: true };
+  const chatRef = extractTelegramChatRef(chatRefOverride) || OFFICIAL_TELEGRAM_CHANNEL;
   try {
     const res = await fetch(
-      `https://api.telegram.org/bot${config.telegramBotToken}/getChatMember?chat_id=${encodeURIComponent(OFFICIAL_TELEGRAM_CHANNEL)}&user_id=${telegramId}`
+      `https://api.telegram.org/bot${config.telegramBotToken}/getChatMember?chat_id=${encodeURIComponent(chatRef)}&user_id=${telegramId}`
     );
     const data: any = await res.json().catch(() => null);
-    if (!data?.ok) return false;
+    if (!data?.ok) {
+      // Classic reasons: bot isn't an admin of the chat, private chat,
+      // chat not found, etc. Treat as unverifiable so the UX doesn't break
+      // for admin-created channels where the bot can't introspect membership.
+      return { verified: false, unverifiable: true };
+    }
     const status = data.result?.status;
-    return ['member', 'administrator', 'creator'].includes(status);
+    return {
+      verified: ['member', 'administrator', 'creator'].includes(status),
+      unverifiable: false,
+    };
   } catch {
-    return false;
+    return { verified: false, unverifiable: true };
   }
 };
 
@@ -584,7 +622,12 @@ export const claimReward = async (
         }
         case 'SUBSCRIBE_TELEGRAM': {
           if (!user.telegramId) return next(new AppError('Link Telegram first', 400));
-          verified = await verifyTelegramSubscription(user.telegramId);
+          const r = await verifyTelegramSubscription(user.telegramId, task.targetUrl);
+          // If the bot has no introspection access (not admin of the chat /
+          // invite link / etc.) we trust the user — same pattern as tier-
+          // limited Twitter checks. This keeps admin-authored TG tasks usable
+          // without forcing the bot into every channel/chat.
+          verified = r.verified || r.unverifiable;
           break;
         }
         case 'LIKE_TWEET': {
@@ -731,11 +774,20 @@ export const adminCreateRewardTask = async (
     const targetAmountNum = Number(targetAmount) || 0;
     const formatAmount = (value: number) => (Number.isInteger(value) ? value.toString() : value.toFixed(2));
 
+    // For SUBSCRIBE_TELEGRAM we personalise the default title with the
+    // specific @handle admins paste so the task list reads naturally even
+    // without a custom title.
+    const tgHandle = type === 'SUBSCRIBE_TELEGRAM' ? extractTelegramChatRef(targetUrl) : null;
     const SOCIAL_PRESETS: Record<string, { title: string; description: string }> = {
       LINK_TWITTER: { title: 'Link Twitter', description: 'Connect your X account' },
       LINK_TELEGRAM: { title: 'Link Telegram', description: 'Connect your Telegram account' },
       FOLLOW_TWITTER: { title: 'Follow @casefunnet', description: 'Follow our official X account' },
-      SUBSCRIBE_TELEGRAM: { title: 'Join Telegram channel', description: 'Subscribe to our Telegram community' },
+      SUBSCRIBE_TELEGRAM: {
+        title: tgHandle ? `Join ${tgHandle}` : 'Join Telegram channel',
+        description: tgHandle
+          ? `Subscribe to ${tgHandle} on Telegram`
+          : 'Subscribe to our Telegram community',
+      },
       LIKE_TWEET: { title: 'Like this post', description: 'Like the post on X' },
       REPOST_TWEET: { title: 'Repost this post', description: 'Repost on X' },
       COMMENT_TWEET: { title: 'Comment on this post', description: 'Leave a comment on the post' },
@@ -781,6 +833,15 @@ export const adminCreateRewardTask = async (
     const isCountTask = isCaseFun && !isAmountTask;
     if (!isCaseFun && ['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(type) && !targetUrl) {
       return next(new AppError('Target URL is required for tweet tasks', 400));
+    }
+    if (type === 'SUBSCRIBE_TELEGRAM') {
+      const parsed = extractTelegramChatRef(targetUrl);
+      if (!parsed) {
+        return next(new AppError(
+          'Paste a public Telegram channel/chat URL (e.g. https://t.me/your_channel). Private invite links (t.me/+...) are not supported.',
+          400,
+        ));
+      }
     }
     if (isCountTask && (!targetCountNum || targetCountNum < 1)) {
       return next(new AppError('Target count is required for this task type', 400));

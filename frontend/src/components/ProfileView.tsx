@@ -22,6 +22,16 @@ const formatWalletAddress = (address: string): string => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
+const tgHandleFromUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const m = String(url).trim().match(/^(?:https?:\/\/)?(?:t|telegram)\.me\/(?:s\/)?([^/?#]+)/i);
+  if (!m) return null;
+  const seg = m[1];
+  if (seg.startsWith('+')) return null;
+  const handle = seg.replace(/[^a-zA-Z0-9_]/g, '');
+  return handle ? `@${handle}` : null;
+};
+
 interface BattleRecord {
   id: string;
   opponent: string;
@@ -284,7 +294,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const getTaskActionUrl = (task: RewardTask): string | null => {
     if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
     if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
-    if (task.type === 'SUBSCRIBE_TELEGRAM') return 'https://t.me/CaseFun_Chat';
+    if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
     return task.targetUrl || null;
   };
 
@@ -316,7 +326,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return <>Follow <span onClick={() => openExternalUrl('https://x.com/casefunnet', task.id)} className={linkClass}>@casefunnet</span></>;
     }
     if (task.type === 'SUBSCRIBE_TELEGRAM') {
-      return <>Join <span onClick={() => openExternalUrl('https://t.me/CaseFun_Chat', task.id)} className={linkClass}>Telegram channel</span></>;
+      const url = task.targetUrl || 'https://t.me/CaseFun_Chat';
+      const label = tgHandleFromUrl(url) || 'Telegram channel';
+      return <>Join <span onClick={() => openExternalUrl(url, task.id)} className={linkClass}>{label}</span></>;
     }
     return task.title;
   };

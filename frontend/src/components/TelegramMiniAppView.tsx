@@ -25,6 +25,16 @@ import { UpgradeView } from './UpgradeView';
 import { BattleView } from './BattleView';
 import { ProfileView } from './ProfileView';
 
+const tgHandleFromUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const m = String(url).trim().match(/^(?:https?:\/\/)?(?:t|telegram)\.me\/(?:s\/)?([^/?#]+)/i);
+  if (!m) return null;
+  const seg = m[1];
+  if (seg.startsWith('+')) return null;
+  const handle = seg.replace(/[^a-zA-Z0-9_]/g, '');
+  return handle ? `@${handle}` : null;
+};
+
 interface BattleRecord {
   id: string;
   opponent: string;
@@ -463,7 +473,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const getTaskActionUrl = (task: RewardTask): string | null => {
     if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
     if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
-    if (task.type === 'SUBSCRIBE_TELEGRAM') return 'https://t.me/CaseFun_Chat';
+    if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
     return task.targetUrl || null;
   };
 
@@ -488,7 +498,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       return <>{verb} <span onClick={() => openExternalUrl(task.targetUrl!, task.id)} className={linkClass}>this post</span></>;
     }
     if (task.type === 'FOLLOW_TWITTER') return <>Follow <span onClick={() => openExternalUrl('https://x.com/casefunnet', task.id)} className={linkClass}>@casefunnet</span></>;
-    if (task.type === 'SUBSCRIBE_TELEGRAM') return <>Join <span onClick={() => openExternalUrl('https://t.me/CaseFun_Chat', task.id)} className={linkClass}>Telegram channel</span></>;
+    if (task.type === 'SUBSCRIBE_TELEGRAM') {
+      const url = task.targetUrl || 'https://t.me/CaseFun_Chat';
+      const label = tgHandleFromUrl(url) || 'Telegram channel';
+      return <>Join <span onClick={() => openExternalUrl(url, task.id)} className={linkClass}>{label}</span></>;
+    }
     return task.title;
   }, [openExternalUrl]);
 

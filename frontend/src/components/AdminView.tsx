@@ -1778,7 +1778,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 const isCaseFun = [...COUNT_TYPES_FE, ...DEPOSIT_AMOUNT_TYPES_FE].includes(newRewardTask.type);
                 const isAmountTask = DEPOSIT_AMOUNT_TYPES_FE.includes(newRewardTask.type);
                 const isCountTask = COUNT_TYPES_FE.includes(newRewardTask.type);
-                const needsUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
+                const needsTweetUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
+                const needsTelegramUrl = newRewardTask.type === 'SUBSCRIBE_TELEGRAM';
+                const needsUrl = needsTweetUrl || needsTelegramUrl;
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
                 const canCreate = saving === null
                   && (!needsUrl || newRewardTask.targetUrl.trim())
@@ -1829,8 +1831,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
                 {needsUrl && (
                   <div className="space-y-1.5">
-                    <label className="text-[11px] text-gray-400 font-medium">Post URL</label>
-                    <input value={newRewardTask.targetUrl} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))} placeholder="https://x.com/.../status/..." className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600" />
+                    <label className="text-[11px] text-gray-400 font-medium">
+                      {needsTelegramUrl ? 'Telegram channel or chat URL' : 'Post URL'}
+                    </label>
+                    <input
+                      value={newRewardTask.targetUrl}
+                      onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
+                      placeholder={needsTelegramUrl ? 'https://t.me/your_channel' : 'https://x.com/.../status/...'}
+                      className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
+                    />
+                    {needsTelegramUrl && (
+                      <div className="text-[10px] text-gray-600">
+                        Public channel/chat only — private invite links (<span className="font-mono">t.me/+…</span>) can't be verified.
+                        If the bot isn't an admin of the chat, the task auto-falls back to trust verification.
+                      </div>
+                    )}
                   </div>
                 )}
 
