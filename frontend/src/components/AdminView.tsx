@@ -488,6 +488,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   <option value="createdAt:asc">Oldest</option>
                   <option value="balance:desc">Balance ↓</option>
                   <option value="balance:asc">Balance ↑</option>
+                  <option value="rewardPoints:desc">CFP ↓</option>
+                  <option value="rewardPoints:asc">CFP ↑</option>
                   <option value="invitedUserCount:desc">Invited ↓</option>
                   <option value="invitedUserCount:asc">Invited ↑</option>
                   <option value="username:asc">Username A–Z</option>
