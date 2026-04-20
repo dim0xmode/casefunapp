@@ -62,6 +62,7 @@ type CaseInput = {
   limitMode: RewardCaseLimitMode;
   limitTotal?: number | null;
   drops: DropInput[];
+  initialStatus?: 'DRAFT' | 'SCHEDULED' | 'ACTIVE';
 };
 
 const parseDate = (value: unknown): Date | null => {
@@ -356,6 +357,13 @@ export const adminCreateRewardCase = async (
     const limitRemaining =
       input.limitMode !== 'NONE' && validated.limitTotal !== null ? validated.limitTotal : null;
 
+    const allowedInitial: RewardCaseStatus[] = ['DRAFT', 'SCHEDULED', 'ACTIVE'];
+    const initialStatus: RewardCaseStatus = allowedInitial.includes(
+      (input.initialStatus as RewardCaseStatus) || 'DRAFT'
+    )
+      ? ((input.initialStatus as RewardCaseStatus) || 'DRAFT')
+      : 'DRAFT';
+
     const created = await prisma.$transaction(async (tx) => {
       const record = await tx.rewardCase.create({
         data: {
@@ -363,7 +371,7 @@ export const adminCreateRewardCase = async (
           description: input.description?.trim() || null,
           imageUrl: input.imageUrl || null,
           imageMeta: input.imageMeta ?? undefined,
-          status: 'DRAFT',
+          status: initialStatus,
           openCurrency: input.openCurrency,
           openPrice: validated.openPrice,
           prePrice: validated.prePrice ?? null,
@@ -601,19 +609,12 @@ export const adminPublishRewardCase = async (
     const updated = await transitionStatus(
       adminId,
       id,
-      // Target computed inside from startAt
+      // Target is SCHEDULED by default; auto-jumps below if startAt already passed.
       'SCHEDULED',
-      ['DRAFT'],
-      (current) => {
-        if (!current.startAt) {
-          throw new AppError(
-            'Set startAt before publishing (leave null to keep DRAFT hidden).',
-            400
-          );
-        }
-      }
+      ['DRAFT']
     );
-    // If startAt is already in the past, auto-jump to ACTIVE.
+    // If startAt is already in the past (or absent AND we want instant-live — handled
+    // separately via activate), auto-jump to ACTIVE when startAt is set and elapsed.
     if (updated.startAt && updated.startAt.getTime() <= now.getTime()) {
       const nextStatus: RewardCaseStatus =
         updated.endAt && updated.endAt.getTime() <= now.getTime() ? 'PAUSED' : 'ACTIVE';
@@ -628,6 +629,23 @@ export const adminPublishRewardCase = async (
       });
       return res.json({ status: 'success', data: { status: jumped.status } });
     }
+    res.json({ status: 'success', data: { status: updated.status } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Manual SCHEDULED → ACTIVE (used for cases without a startAt date, i.e.
+// open-ended pre-sales that admin switches on explicitly).
+export const adminActivateRewardCase = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const adminId = (req as any).userId;
+    const id = String(req.params.id);
+    const updated = await transitionStatus(adminId, id, 'ACTIVE', ['SCHEDULED', 'DRAFT']);
     res.json({ status: 'success', data: { status: updated.status } });
   } catch (err) {
     next(err);

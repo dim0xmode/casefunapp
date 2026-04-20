@@ -887,6 +887,10 @@ class ApiClient {
     return this.request<any>(`/admin/reward-cases/${id}/publish`, { method: 'POST' });
   }
 
+  async activateAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/activate`, { method: 'POST' });
+  }
+
   async pauseAdminRewardCase(id: string) {
     return this.request<any>(`/admin/reward-cases/${id}/pause`, { method: 'POST' });
   }

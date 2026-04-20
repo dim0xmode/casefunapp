@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { UploadCloud, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { formatUsdt } from '../../utils/number';
 
@@ -35,6 +36,7 @@ type CaseDraft = {
   limitMode: LimitMode;
   limitTotal: string;
   drops: DropDraft[];
+  initialStatus: 'DRAFT' | 'SCHEDULED' | 'ACTIVE';
 };
 
 const CURRENCIES: { value: Currency; label: string; isTest?: boolean }[] = [
@@ -86,6 +88,7 @@ const emptyCase = (): CaseDraft => ({
   limitMode: 'NONE',
   limitTotal: '',
   drops: [emptyDrop()],
+  initialStatus: 'DRAFT',
 });
 
 const toLocalInput = (iso?: string | null): string => {
@@ -183,6 +186,7 @@ export const AdminRewardCasesTab: React.FC = () => {
       endAt: toLocalInput(c.endAt),
       limitMode: c.limitMode,
       limitTotal: c.limitTotal == null ? '' : String(c.limitTotal),
+      initialStatus: c.status === 'SCHEDULED' || c.status === 'ACTIVE' ? c.status : 'DRAFT',
       drops: Array.isArray(c.drops) && c.drops.length
         ? c.drops.map((d: any) => ({
             id: d.id,
@@ -222,6 +226,7 @@ export const AdminRewardCasesTab: React.FC = () => {
       endAt: fromLocalInput(draft.endAt),
       limitMode: draft.limitMode,
       limitTotal: draft.limitMode === 'NONE' ? null : Number(draft.limitTotal),
+      ...(draft.id ? {} : { initialStatus: draft.initialStatus }),
       drops: draft.drops.map((d, idx) => ({
         id: d.id,
         kind: d.kind,
@@ -406,9 +411,18 @@ export const AdminRewardCasesTab: React.FC = () => {
                   <button
                     onClick={() => act(c.id, 'publish', () => api.publishAdminRewardCase(c.id))}
                     disabled={saving !== null}
+                    className="px-3 py-1.5 rounded-md text-[10px] font-bold bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+                  >
+                    Pre-sale
+                  </button>
+                )}
+                {(c.status === 'DRAFT' || c.status === 'SCHEDULED') && (
+                  <button
+                    onClick={() => act(c.id, 'activate', () => api.activateAdminRewardCase(c.id))}
+                    disabled={saving !== null}
                     className="px-3 py-1.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
                   >
-                    Publish
+                    Activate
                   </button>
                 )}
                 {(c.status === 'ACTIVE' || c.status === 'SCHEDULED') && (
@@ -792,7 +806,30 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
               <option value="TON">TON</option>
             </select>
           </Field>
-          <Field label="Start at" hint="Leave empty → DRAFT (hidden)">
+          {!draft.id && (
+            <Field
+              label="Launch mode"
+              required
+              hint={
+                draft.initialStatus === 'DRAFT'
+                  ? 'Hidden from users until you switch it on.'
+                  : draft.initialStatus === 'SCHEDULED'
+                    ? 'Visible as PRE-SALE — users can pre-purchase but cannot open yet.'
+                    : 'Live immediately — users can open right away.'
+              }
+            >
+              <select
+                value={draft.initialStatus}
+                onChange={(e) => patchCase({ initialStatus: e.target.value as any })}
+                className="input"
+              >
+                <option value="DRAFT">Draft (hidden)</option>
+                <option value="SCHEDULED">Pre-sale (visible, pre-purchase only)</option>
+                <option value="ACTIVE">Live (open right away)</option>
+              </select>
+            </Field>
+          )}
+          <Field label="Start at" hint="Optional. Auto-promotes from Pre-sale to Live at this moment.">
             <input
               type="datetime-local"
               value={draft.startAt}
@@ -800,7 +837,7 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
               className="input"
             />
           </Field>
-          <Field label="End at" hint="Leave empty → runs until manual complete">
+          <Field label="End at" hint="Optional. Auto-pauses when reached.">
             <input
               type="datetime-local"
               value={draft.endAt}
@@ -925,6 +962,7 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
                 <Field label="Drop image" span2>
                   <ImageUploadField
                     value={drop.image}
+                    size="sm"
                     onChange={(v) => patchDrop(idx, { image: v })}
                   />
                 </Field>
@@ -1026,12 +1064,15 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
 const ImageUploadField: React.FC<{
   value: string | null;
   onChange: (v: string | null) => void;
-}> = ({ value, onChange }) => {
+  size?: 'md' | 'sm';
+}> = ({ value, onChange, size = 'md' }) => {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const abortRef = React.useRef<null | (() => void)>(null);
 
-  const handleFile = async (file: File) => {
+  const startUpload = (file: File) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setErr('Only image files are allowed');
@@ -1043,67 +1084,89 @@ const ImageUploadField: React.FC<{
     }
     setErr(null);
     setBusy(true);
-    try {
-      const res: any = await api.uploadCaseImage(file);
-      const url = res?.data?.imageUrl;
-      if (!url) throw new Error('Upload failed');
-      onChange(url);
-    } catch (e: any) {
-      setErr(e?.message || 'Upload failed');
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = '';
-    }
+    setProgress(0);
+    const { promise, abort } = api.uploadCaseImageWithProgress(file, (pct) => setProgress(pct));
+    abortRef.current = abort;
+    promise
+      .then((res: any) => {
+        const url = res?.data?.imageUrl || res?.imageUrl;
+        if (!url) {
+          setErr('Upload failed. Try another image.');
+          return;
+        }
+        onChange(url);
+      })
+      .catch((e: any) => {
+        if (e?.message !== 'Upload cancelled') {
+          setErr(e?.message || 'Upload failed. Try another image.');
+        }
+      })
+      .finally(() => {
+        setBusy(false);
+        setProgress(0);
+        abortRef.current = null;
+        if (inputRef.current) inputRef.current.value = '';
+      });
   };
 
+  const previewBox =
+    size === 'sm'
+      ? 'w-14 h-14 rounded-xl'
+      : 'w-20 h-20 rounded-2xl';
+
   return (
-    <div className="flex items-start gap-3">
-      <div className="w-16 h-16 rounded-lg border border-white/[0.08] bg-black/40 overflow-hidden flex items-center justify-center shrink-0">
+    <div className="flex flex-wrap items-center gap-3">
+      <div
+        className={`${previewBox} border border-white/[0.12] bg-black/30 overflow-hidden flex items-center justify-center shrink-0 backdrop-blur-xl`}
+      >
         {value ? (
           <img src={value} alt="" className="w-full h-full object-cover" />
         ) : (
-          <div className="text-[9px] uppercase tracking-wider text-gray-600">No image</div>
+          <span className="text-[9px] uppercase tracking-widest text-gray-500">No image</span>
         )}
       </div>
-      <div className="flex-1 min-w-0 space-y-1">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={busy}
-            className="px-3 py-1.5 rounded-md text-[11px] font-bold bg-web3-accent/20 text-web3-accent border border-web3-accent/30 hover:bg-web3-accent/30 disabled:opacity-50"
-          >
-            {busy ? 'Uploading…' : value ? 'Replace image' : 'Upload image'}
-          </button>
-          {value && (
-            <button
-              type="button"
-              onClick={() => onChange(null)}
-              className="px-3 py-1.5 rounded-md text-[11px] bg-red-500/15 text-red-400 hover:bg-red-500/25"
-            >
-              Remove
-            </button>
-          )}
+
+      <div className="relative">
+        <div
+          className={`flex items-center gap-2 px-4 py-3 rounded-xl bg-black/30 border border-white/[0.12] cursor-pointer hover:border-web3-accent/50 transition pointer-events-none ${
+            busy ? 'opacity-70' : ''
+          }`}
+        >
+          <UploadCloud size={16} className="text-web3-accent" />
+          <span className="text-xs uppercase tracking-widest text-gray-300">
+            {busy ? `Uploading ${progress}%` : value ? 'Replace image' : 'Choose image'}
+          </span>
         </div>
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) handleFile(f);
+            if (f) startUpload(f);
           }}
-          className="hidden"
+          disabled={busy}
         />
-        <div className="text-[10px] text-gray-500 truncate">
-          {err ? (
-            <span className="text-red-400">{err}</span>
-          ) : value ? (
-            <span className="truncate">{value}</span>
-          ) : (
-            'PNG / JPG / WEBP, up to 5 MB'
-          )}
-        </div>
+      </div>
+
+      {value && !busy && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="flex items-center gap-1 px-3 py-3 rounded-xl bg-black/30 border border-white/[0.12] text-[10px] uppercase tracking-widest text-gray-400 hover:text-red-300 hover:border-red-400/40 transition"
+        >
+          <Trash2 size={14} />
+          Remove
+        </button>
+      )}
+
+      <div className="w-full text-[10px] uppercase tracking-widest text-gray-600">
+        {err ? (
+          <span className="text-red-400 normal-case tracking-normal">{err}</span>
+        ) : (
+          'PNG / JPG / WebP • up to 5 MB'
+        )}
       </div>
     </div>
   );

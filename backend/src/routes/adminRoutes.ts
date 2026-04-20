@@ -104,6 +104,7 @@ import {
   adminUpdateRewardCase,
   adminDeleteRewardCase,
   adminPublishRewardCase,
+  adminActivateRewardCase,
   adminPauseRewardCase,
   adminResumeRewardCase,
   adminCompleteRewardCase,
@@ -118,6 +119,7 @@ router.post('/reward-cases', adminCreateRewardCase);
 router.patch('/reward-cases/:id', adminUpdateRewardCase);
 router.delete('/reward-cases/:id', adminDeleteRewardCase);
 router.post('/reward-cases/:id/publish', adminPublishRewardCase);
+router.post('/reward-cases/:id/activate', adminActivateRewardCase);
 router.post('/reward-cases/:id/pause', adminPauseRewardCase);
 router.post('/reward-cases/:id/resume', adminResumeRewardCase);
 router.post('/reward-cases/:id/complete', adminCompleteRewardCase);
