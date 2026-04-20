@@ -235,8 +235,13 @@ export const computeRtuDropChances = (
 };
 
 /**
- * Picks a drop using the honest RTU-based chances. Falls back to inverse-value
- * weighted random when the formula can't be solved (e.g. degenerate drops).
+ * Picks a drop using the honest RTU-based chances. Falls back to a *bounded*
+ * inverse-monetary-value weighted random when the formula can't be solved
+ * (e.g. legacy cases where target sits outside [Vmin, Vmax] in USDT).
+ *
+ * Safety cap: the fallback NEVER considers drops whose monetary value exceeds
+ * `casePriceUsdt * 2` — otherwise a broken case with a $600 token can still
+ * pay out hundreds of dollars per $1 open, as happened on prod with BINANCE.
  */
 export const pickDropByRtu = <T extends { value: number }>(
   drops: T[],
@@ -256,12 +261,33 @@ export const pickDropByRtu = <T extends { value: number }>(
 
   if (!probabilities) {
     usedFallback = true;
-    const inv = drops.map((drop) => {
-      const v = Number(drop.value || 0);
-      return v > 0 ? 1 / v : 1;
-    });
-    const total = inv.reduce((a, b) => a + b, 0);
-    probabilities = total > 0 ? inv.map((value) => value / total) : drops.map(() => 1 / drops.length);
+    const tokenPrice = Number.isFinite(tokenPriceUsdt) && tokenPriceUsdt > 0 ? tokenPriceUsdt : 1;
+    const cap = Number.isFinite(casePriceUsdt) && casePriceUsdt > 0 ? casePriceUsdt * 2 : Infinity;
+
+    // Prefer drops that pay out at most 2× case price. If *every* drop exceeds
+    // the cap (legacy broken case), fall back to picking the globally cheapest
+    // drop deterministically — never sample expensive ones.
+    const monetaryValues = drops.map((drop) => Number(drop.value || 0) * tokenPrice);
+    const eligibleIdx = monetaryValues
+      .map((value, idx) => ({ value, idx }))
+      .filter(({ value }) => Number.isFinite(value) && value > 0 && value <= cap)
+      .map(({ idx }) => idx);
+
+    if (eligibleIdx.length === 0) {
+      const cheapestIdx = monetaryValues.reduce(
+        (best, value, idx) => (value > 0 && value < monetaryValues[best] ? idx : best),
+        0,
+      );
+      probabilities = drops.map((_, idx) => (idx === cheapestIdx ? 1 : 0));
+    } else {
+      const inv = drops.map((_, idx) => {
+        if (!eligibleIdx.includes(idx)) return 0;
+        const m = monetaryValues[idx];
+        return m > 0 ? 1 / m : 0;
+      });
+      const total = inv.reduce((a, b) => a + b, 0);
+      probabilities = total > 0 ? inv.map((value) => value / total) : drops.map(() => 1 / drops.length);
+    }
   }
 
   const random = Math.random();

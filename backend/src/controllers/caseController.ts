@@ -282,38 +282,54 @@ export const createCase = async (
       image: drop.image || null,
     }));
 
-    const minAllowed = priceValue * 0.5;
-    const maxAllowed = priceValue * 15;
+    // Drop-range check must be done in USDT (monetary) space, not raw token
+    // count. Otherwise a case with a $600 token passes a "≤0.5 tokens" check
+    // even though 0.5 tokens ≈ $300 — i.e. 300× the case price. The frontend
+    // already converts to token units via /tokenPrice; mirror that here so
+    // creation fails fast with the exact same thresholds the user sees.
+    const minAllowedToken = (priceValue * 0.5) / tokenPriceValue;
+    const maxAllowedToken = (priceValue * 15) / tokenPriceValue;
     const minDrop = Math.min(...preparedDrops.map((drop) => Number(drop.value || 0)));
     const maxDrop = Math.max(...preparedDrops.map((drop) => Number(drop.value || 0)));
 
-    if (minDrop > minAllowed) {
+    if (minDrop > minAllowedToken) {
       return next(
         new AppError(
-          `Minimum drop is too high. Min drop must be <= ${minAllowed.toFixed(4)} tokens.`,
+          `Minimum drop is too high. Min drop must be <= ${minAllowedToken.toFixed(6)} tokens (≈ $${(priceValue * 0.5).toFixed(4)}).`,
           400
         )
       );
     }
-    if (maxDrop < maxAllowed) {
+    if (maxDrop < maxAllowedToken) {
       return next(
         new AppError(
-          `Maximum drop is too low. Max drop should be >= ${maxAllowed.toFixed(4)} tokens.`,
+          `Maximum drop is too low. Max drop must be >= ${maxAllowedToken.toFixed(6)} tokens (≈ $${(priceValue * 15).toFixed(4)}).`,
           400
         )
       );
     }
 
-    const equalProbability = 100 / preparedDrops.length;
+    // Drops must straddle the USDT target so the honest RTU formula has a
+    // solution. If it can't — reject instead of silently falling back to equal
+    // chances (that fallback is how broken cases were created in the past).
     const computedChances = computeRtuDropChances(
       preparedDrops,
       priceValue,
       rtuValue,
       tokenPriceValue,
     );
-    const dropProbabilities = computedChances
-      ? computedChances.map((value) => Math.round(value * 1000000) / 10000)
-      : preparedDrops.map(() => equalProbability);
+    if (!computedChances) {
+      const targetUsdt = priceValue * (rtuValue / 100);
+      return next(
+        new AppError(
+          `Cannot compute honest drop probabilities for selected drops. Target $${targetUsdt.toFixed(4)} must lie strictly between cheapest and most expensive drop value (USDT). Adjust drop values, token price, or RTU.`,
+          400
+        )
+      );
+    }
+    const dropProbabilities = computedChances.map(
+      (value) => Math.round(value * 1000000) / 10000
+    );
 
     const existing = await prisma.case.findFirst({
       where: {
