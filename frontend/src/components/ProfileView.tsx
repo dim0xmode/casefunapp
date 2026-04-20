@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Item, Case, ImageMeta, RewardTask, RewardClaimRecord } from '../types';
-import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Rocket, Wallet, Link2 } from 'lucide-react';
+import { Copy, ArrowUp, ArrowDown, Swords, Package, User as UserIcon, Settings, Gift, Play, Pause, ExternalLink, UploadCloud, Lock, Rocket, Wallet, Link2, Loader2 } from 'lucide-react';
 import { ItemCard } from './ItemCard';
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
@@ -103,6 +103,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onLinkEvmWallet,
   onLinkTonWallet,
 }) => {
+  const [linkingEvm, setLinkingEvm] = useState(false);
+  const [linkingTon, setLinkingTon] = useState(false);
+  const handleLinkEvmClick = useCallback(async () => {
+    if (!onLinkEvmWallet || linkingEvm) return;
+    setLinkingEvm(true);
+    try {
+      await Promise.resolve(onLinkEvmWallet());
+    } finally {
+      setLinkingEvm(false);
+    }
+  }, [onLinkEvmWallet, linkingEvm]);
+  const handleLinkTonClick = useCallback(async () => {
+    if (!onLinkTonWallet || linkingTon) return;
+    setLinkingTon(true);
+    try {
+      await Promise.resolve(onLinkTonWallet());
+    } finally {
+      setLinkingTon(false);
+    }
+  }, [onLinkTonWallet, linkingTon]);
   const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
@@ -1060,21 +1080,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {(!user?.hasLinkedWallet || !user?.walletAddress || user.walletAddress.startsWith('tg_') || user.walletAddress.startsWith('ton_')) && onLinkEvmWallet && (
                   <button
                     type="button"
-                    onClick={onLinkEvmWallet}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-web3-accent/30 text-web3-accent text-[10px] font-bold uppercase tracking-wider hover:bg-web3-accent/10 transition-all"
+                    onClick={handleLinkEvmClick}
+                    disabled={linkingEvm}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-web3-accent/30 text-web3-accent text-[10px] font-bold uppercase tracking-wider hover:bg-web3-accent/10 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <Link2 size={12} />
-                    Link EVM Wallet
+                    {linkingEvm ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />}
+                    {linkingEvm ? 'Connecting…' : 'Link EVM Wallet'}
                   </button>
                 )}
                 {!user?.tonAddress && onLinkTonWallet && (
                   <button
                     type="button"
-                    onClick={onLinkTonWallet}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-blue-400/30 text-blue-400 text-[10px] font-bold uppercase tracking-wider hover:bg-blue-400/10 transition-all"
+                    onClick={handleLinkTonClick}
+                    disabled={linkingTon}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-blue-400/30 text-blue-400 text-[10px] font-bold uppercase tracking-wider hover:bg-blue-400/10 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    <Wallet size={12} />
-                    Link TON Wallet
+                    {linkingTon ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
+                    {linkingTon ? 'Connecting…' : 'Link TON Wallet'}
                   </button>
                 )}
               </div>

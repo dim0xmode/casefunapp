@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { HomeView } from './components/HomeView';
 import { CaseView } from './components/CaseView';
@@ -1061,7 +1061,12 @@ const App = () => {
     }
   };
 
+  const linkEvmInFlightRef = useRef(false);
   const handleLinkEvmWallet = async () => {
+    // Prevent double-click while WC SDK is still spinning up. React state
+    // updates are async, so we use a ref to hard-lock immediately.
+    if (linkEvmInFlightRef.current) return;
+
     // In the Telegram Mini App, our intermediate "Pick your wallet" modal
     // adds a step where Android then deep-links straight into MetaMask and
     // gets stuck on infinite "connecting…". WalletConnect's own modal
@@ -1073,8 +1078,9 @@ const App = () => {
         console.error('WalletConnect project ID not configured');
         return;
       }
+      linkEvmInFlightRef.current = true;
+      setIsAuthLoading(true);
       try {
-        setIsAuthLoading(true);
         const wc = await import('./utils/walletConnect');
         const session = await wc.connectWallet({
           projectId: cfg.projectId,
@@ -1090,6 +1096,7 @@ const App = () => {
         if (err?.message?.includes('User rejected') || err?.message?.includes('dismissed')) return;
         console.error('Link EVM wallet (mini app) failed', err);
       } finally {
+        linkEvmInFlightRef.current = false;
         setIsAuthLoading(false);
       }
       return;
