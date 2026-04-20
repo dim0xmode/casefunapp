@@ -122,31 +122,27 @@ export const RewardCasesGrid: React.FC<Props> = ({ onSelect, isTelegramMiniApp =
       c.status === 'SCHEDULED' && c.prePrice != null ? c.prePrice : c.openPrice;
     const hasDiscount =
       c.status === 'SCHEDULED' && c.prePrice != null && c.prePrice < c.openPrice;
-    const tailingLabel = preCountdown
+    const timeLabel = preCountdown
       ? `starts in ${preCountdown}`
       : endCountdown
         ? `ends in ${endCountdown}`
-        : c.status === 'SCHEDULED'
-          ? 'pre-sale'
-          : c.status === 'ACTIVE'
-            ? 'open'
-            : c.status.toLowerCase();
+        : '';
 
     if (isTelegramMiniApp) {
       return (
         <div
           key={c.id}
           onClick={() => onSelect(c.id)}
-          className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-web3-card/40 transition-all duration-200 active:scale-[0.97] hover:border-amber-400/40 cursor-pointer"
+          className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-web3-card/50 transition-all duration-200 active:scale-[0.97] hover:border-amber-400/50 cursor-pointer"
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.05] to-web3-accent/[0.05] group-hover:from-amber-500/10 group-hover:to-web3-accent/10 transition-all duration-200" />
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.06] to-web3-accent/[0.06] group-hover:from-amber-500/12 group-hover:to-web3-accent/12 transition-all duration-200" />
           {renderOverlays(c)}
           <div className="relative z-10 flex flex-col items-center p-2.5 gap-1.5">
-            <div className="text-[8px] uppercase tracking-wider text-gray-500 leading-none">
-              {tailingLabel}
+            <div className="text-[8px] uppercase tracking-wider text-gray-400 leading-none h-[10px]">
+              {timeLabel || '\u00A0'}
             </div>
 
-            <div className="w-14 h-14 rounded-xl border border-amber-400/30 bg-gradient-to-br from-amber-500/25 to-web3-accent/25 flex items-center justify-center overflow-hidden shadow-[0_0_16px_rgba(251,191,36,0.1)]">
+            <div className="w-14 h-14 rounded-xl border border-amber-400/40 bg-gradient-to-br from-amber-500/30 to-web3-accent/30 flex items-center justify-center overflow-hidden shadow-[0_0_16px_rgba(251,191,36,0.15)]">
               {c.imageUrl ? (
                 <ImageWithMeta
                   src={c.imageUrl}
@@ -154,7 +150,7 @@ export const RewardCasesGrid: React.FC<Props> = ({ onSelect, isTelegramMiniApp =
                   imgClassName="w-full h-full"
                 />
               ) : (
-                <span className="text-[8px] uppercase tracking-widest text-gray-500">Reward</span>
+                <span className="text-2xl leading-none">🎁</span>
               )}
             </div>
 
@@ -162,16 +158,16 @@ export const RewardCasesGrid: React.FC<Props> = ({ onSelect, isTelegramMiniApp =
               {c.name}
             </div>
 
-            <div className="flex items-center justify-center gap-1 w-full text-[10px] leading-none px-0.5">
+            <div className="flex items-baseline justify-center gap-1 w-full text-[11px] leading-none px-0.5">
               {hasDiscount && (
-                <span className="line-through text-gray-600 text-[9px]">
+                <span className="line-through text-gray-500 text-[9px]">
                   {formatDecimal(Number(c.openPrice))}
                 </span>
               )}
-              <span className="font-bold text-amber-300">
+              <span className="font-black text-amber-300">
                 {formatDecimal(Number(effectivePrice))}
               </span>
-              <span className="text-[9px] uppercase text-gray-500">
+              <span className="text-[9px] uppercase text-gray-300 font-bold">
                 {currencyLabel(c.openCurrency)}
               </span>
             </div>
@@ -184,20 +180,17 @@ export const RewardCasesGrid: React.FC<Props> = ({ onSelect, isTelegramMiniApp =
       <div
         key={c.id}
         onClick={() => onSelect(c.id)}
-        className="group relative bg-web3-card/50 backdrop-blur-xl rounded-2xl border border-white/[0.05] hover:border-amber-400/50 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square flex flex-col p-4 min-h-[220px]"
+        className="group relative bg-web3-card/50 backdrop-blur-xl rounded-2xl border border-white/[0.06] hover:border-amber-400/60 transition-all duration-300 overflow-hidden cursor-pointer hover:-translate-y-1 aspect-square flex flex-col p-4 min-h-[220px]"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.04] to-web3-accent/[0.04] group-hover:from-amber-500/10 group-hover:to-web3-accent/10 transition-all duration-300" />
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.05] to-web3-accent/[0.05] group-hover:from-amber-500/12 group-hover:to-web3-accent/12 transition-all duration-300" />
         {renderOverlays(c)}
 
-        <div className="relative z-10 grid h-full min-h-0 grid-rows-[auto_auto_1fr_auto] gap-1 px-2 py-2">
-          <div className="text-[9px] uppercase tracking-wider text-gray-500 text-center leading-none">
-            {tailingLabel}
-          </div>
-          <div className="text-[10px] uppercase tracking-wider text-gray-500 text-center">
-            Reward drop
+        <div className="relative z-10 grid h-full min-h-0 grid-rows-[auto_1fr_auto] gap-2 px-2 py-2">
+          <div className="text-[10px] uppercase tracking-wider text-gray-400 text-center leading-none h-[12px]">
+            {timeLabel || '\u00A0'}
           </div>
           <div className="flex items-center justify-center min-h-0">
-            <div className="w-[42%] max-w-[88px] min-w-[44px] aspect-square bg-gradient-to-br from-amber-500/30 to-web3-accent/30 rounded-xl border-2 border-amber-400/50 shadow-[0_0_30px_rgba(251,191,36,0.2)] backdrop-blur-sm flex items-center justify-center overflow-hidden">
+            <div className="w-[46%] max-w-[96px] min-w-[52px] aspect-square bg-gradient-to-br from-amber-500/35 to-web3-accent/35 rounded-xl border-2 border-amber-400/60 shadow-[0_0_30px_rgba(251,191,36,0.25)] backdrop-blur-sm flex items-center justify-center overflow-hidden">
               {c.imageUrl ? (
                 <ImageWithMeta
                   src={c.imageUrl}
@@ -205,24 +198,24 @@ export const RewardCasesGrid: React.FC<Props> = ({ onSelect, isTelegramMiniApp =
                   imgClassName="w-full h-full"
                 />
               ) : (
-                <span className="text-[10px] uppercase tracking-widest text-gray-500">Reward</span>
+                <span className="text-3xl leading-none">🎁</span>
               )}
             </div>
           </div>
 
-          <div className="w-full text-center space-y-1">
-            <h3 className="text-xs font-black truncate">{c.name}</h3>
-            <div className="text-[10px] uppercase tracking-wider text-gray-400">
-              {currencyLabel(c.openCurrency)}
-            </div>
-            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-amber-400/20 to-web3-accent/20 border border-amber-400/30 flex items-center justify-center gap-1">
+          <div className="w-full text-center space-y-1.5">
+            <h3 className="text-xs font-black truncate text-white">{c.name}</h3>
+            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-amber-400/25 to-web3-accent/25 border border-amber-400/40 flex items-baseline justify-center gap-1">
               {hasDiscount && (
-                <span className="line-through text-gray-500 text-[10px]">
+                <span className="line-through text-gray-400 text-[10px]">
                   {formatDecimal(Number(c.openPrice))}
                 </span>
               )}
-              <span className="font-black text-xs text-white">
-                {formatDecimal(Number(effectivePrice))} {currencyLabel(c.openCurrency)}
+              <span className="font-black text-sm text-amber-200">
+                {formatDecimal(Number(effectivePrice))}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-gray-300 font-bold">
+                {currencyLabel(c.openCurrency)}
               </span>
             </div>
           </div>

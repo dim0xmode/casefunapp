@@ -1451,7 +1451,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {isTelegramMiniApp ? (
         <div className="mb-3 space-y-2">
-          <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-black/30 p-0.5 overflow-x-auto">
+          <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-black/30 p-0.5 overflow-x-auto scrollbar-none -mx-1 px-1 snap-x">
             {([
               { id: 'inventory', label: 'Items' },
               { id: 'rewards', label: 'Rewards' },
@@ -1463,10 +1463,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex-1 min-w-0 px-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition whitespace-nowrap ${
+                className={`shrink-0 snap-start px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition whitespace-nowrap ${
                   tab === t.id
                     ? 'bg-web3-accent/15 text-web3-accent border border-web3-accent/30'
-                    : 'text-gray-500 border border-transparent'
+                    : 'text-gray-400 border border-transparent'
                 }`}
               >
                 {t.label}

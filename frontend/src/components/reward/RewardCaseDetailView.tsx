@@ -131,7 +131,9 @@ export const RewardCaseDetailView: React.FC<Props> = ({
   const openPrice = data ? Number(data.openPrice) : 0;
   const prePrice = data && data.prePrice != null ? Number(data.prePrice) : null;
 
-  // Build a Case-shaped adapter to feed CaseRoulette.
+  // Build a Case-shaped adapter to feed CaseRoulette. Dependencies are
+  // intentionally narrow so that patches to volatile fields like
+  // limitRemaining / totalOpens do not remount the roulette mid-spin.
   const caseAdapter: Case | null = useMemo(() => {
     if (!data) return null;
     return {
@@ -143,7 +145,8 @@ export const RewardCaseDetailView: React.FC<Props> = ({
       rtu: 0,
       possibleDrops: data.drops.map(dropToItem),
     };
-  }, [data, openPrice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.id, data?.imageUrl, data?.openCurrency, data?.drops, openPrice]);
 
   const dropMap = useMemo(() => {
     const m = new Map<string, RewardDropSummary>();
@@ -191,12 +194,34 @@ export const RewardCaseDetailView: React.FC<Props> = ({
       setMultiResults(items);
       setResultSummary(payload);
 
+      // Patch local case state without a full reload so the roulette/UI
+      // does not blink or remount during the animation.
+      setData((prev) => {
+        if (!prev) return prev;
+        const remaining = Math.max(
+          0,
+          (prev.userPrePurchase?.remaining || 0) - (payload.usedPrePurchase || 0)
+        );
+        return {
+          ...prev,
+          totalOpens: (prev.totalOpens || 0) + multiOpen,
+          limitRemaining:
+            prev.limitRemaining != null
+              ? Math.max(0, Number(prev.limitRemaining) - multiOpen)
+              : prev.limitRemaining ?? null,
+          userPrePurchase: prev.userPrePurchase
+            ? { ...prev.userPrePurchase, remaining }
+            : remaining > 0
+              ? { remaining, totalBought: remaining }
+              : undefined,
+        };
+      });
+
       const speed = OPEN_MODE_SPEEDS[openMode] || 1;
       const totalDuration =
         openMode === 'instant' ? 200 : SPIN_DURATION_MS / speed + 1200 + 200;
       setTimeout(() => setIsSpinning(false), totalDuration);
       onOpened?.();
-      load();
     } catch (err: any) {
       setActiveOpenCount(prevActiveOpenCount);
       setRevealedPrefixCount(prevRevealedPrefixCount);
@@ -312,7 +337,9 @@ export const RewardCaseDetailView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Roulette area for ACTIVE (or PAUSED preview). In PRE-SALE show hero card. */}
+      {/* Roulette area for ACTIVE. In PRE-SALE/PAUSED/COMPLETED we show only
+          a short contextual banner (duplicate info has been removed — the
+          header pill already carries the case identity and status). */}
       {isActivePhase ? (
         <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mb-4' : 'mb-6'}`}>
           {Array.from({ length: rouletteCount }).map((_, idx) => (
@@ -334,46 +361,14 @@ export const RewardCaseDetailView: React.FC<Props> = ({
           ))}
         </div>
       ) : (
-        <div className="max-w-2xl mx-auto mb-6 rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/[0.06] to-web3-accent/[0.06] p-4 md:p-6 flex items-center gap-4">
-          <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border-2 border-amber-400/40 bg-black/30 overflow-hidden shrink-0">
-            {data.imageUrl ? (
-              <img src={data.imageUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-3xl">🎁</div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            {isSchedPhase && (
-              <>
-                <div className="text-[10px] uppercase tracking-widest text-cyan-300 mb-1">
-                  Pre-sale active
-                </div>
-                <div className="text-sm text-gray-300">
-                  Secure your opens before the case goes live. Every pre-purchase turns into a free
-                  open once activated.
-                </div>
-              </>
-            )}
-            {data.status === 'PAUSED' && (
-              <>
-                <div className="text-[10px] uppercase tracking-widest text-amber-300 mb-1">
-                  Paused
-                </div>
-                <div className="text-sm text-gray-300">
-                  Opening is paused. Pre-purchased opens are safe and redeemable when the case
-                  resumes.
-                </div>
-              </>
-            )}
-            {data.status === 'COMPLETED' && (
-              <>
-                <div className="text-[10px] uppercase tracking-widest text-purple-300 mb-1">
-                  Ended
-                </div>
-                <div className="text-sm text-gray-300">This case is permanently closed.</div>
-              </>
-            )}
-          </div>
+        <div className="max-w-xl mx-auto mb-4 text-center text-sm text-gray-300">
+          {isSchedPhase && (
+            <>Reserve opens now — each pre-purchase becomes a free open the moment this case goes live.</>
+          )}
+          {data.status === 'PAUSED' && (
+            <>Opening is paused. Pre-purchased opens stay reserved and can be used when the case resumes.</>
+          )}
+          {data.status === 'COMPLETED' && <>This case is closed.</>}
         </div>
       )}
 
@@ -406,22 +401,25 @@ export const RewardCaseDetailView: React.FC<Props> = ({
                 : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'
             } max-w-6xl mx-auto`}
           >
-            <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
-              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
-                <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                  Per open
+            <div className={`flex items-center gap-2 flex-wrap ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
+              <div className="flex flex-col px-3 py-1.5 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px] justify-center">
+                <span className="text-[9px] uppercase tracking-widest text-gray-500 leading-none">
+                  Total · x{multiOpen}
                 </span>
-                <span className="text-xs font-bold text-gray-200">
-                  {formatDecimal(openPrice)} {currencyLabel(data.openCurrency)}
+                <span className="text-sm font-black text-amber-300 leading-none mt-0.5">
+                  {isTestCase ? '0' : formatDecimal(payNow)}{' '}
+                  <span className="text-[10px] text-gray-400 font-bold">
+                    {currencyLabel(data.openCurrency)}
+                  </span>
                 </span>
               </div>
               {prePurchased > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-sm h-[42px]">
-                  <span className="text-[10px] uppercase tracking-widest text-emerald-400">
-                    Prepaid
+                <div className="flex flex-col px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-sm h-[42px] justify-center">
+                  <span className="text-[9px] uppercase tracking-widest text-emerald-400 leading-none">
+                    Prepaid free
                   </span>
-                  <span className="text-xs font-bold text-emerald-300">
-                    {freeUnits}/{multiOpen}
+                  <span className="text-sm font-black text-emerald-300 leading-none mt-0.5">
+                    {freeUnits} / {multiOpen}
                   </span>
                 </div>
               )}
@@ -618,35 +616,15 @@ export const RewardCaseDetailView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Ancillary info */}
-      <div className="max-w-3xl mx-auto mt-6 grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
-        <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
-          <div className="text-[9px] uppercase tracking-widest text-gray-500">Open cost</div>
-          <div className="font-bold text-white">
-            {formatDecimal(openPrice)} {currencyLabel(data.openCurrency)}
-          </div>
+      {/* Minimal contextual footer: only non-obvious info. */}
+      {(data.limitMode !== 'NONE' && data.limitRemaining != null) && (
+        <div className="max-w-3xl mx-auto mt-4 text-center text-[11px] text-gray-400">
+          {data.limitMode === 'BY_OPENS' ? 'Opens left: ' : 'Budget left: '}
+          <span className="text-white font-bold">
+            {formatDecimal(Number(data.limitRemaining))}
+          </span>
         </div>
-        {prePrice != null && (
-          <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
-            <div className="text-[9px] uppercase tracking-widest text-gray-500">Pre-sale price</div>
-            <div className="font-bold text-cyan-300">
-              {formatDecimal(prePrice)} {currencyLabel(data.openCurrency)}
-            </div>
-          </div>
-        )}
-        {data.limitMode !== 'NONE' && data.limitRemaining != null && (
-          <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
-            <div className="text-[9px] uppercase tracking-widest text-gray-500">
-              {data.limitMode === 'BY_OPENS' ? 'Opens left' : 'Budget left'}
-            </div>
-            <div className="font-bold text-white">{formatDecimal(Number(data.limitRemaining))}</div>
-          </div>
-        )}
-        <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
-          <div className="text-[9px] uppercase tracking-widest text-gray-500">Status</div>
-          <div className="font-bold text-white">{statusText}</div>
-        </div>
-      </div>
+      )}
 
       {resultSummary && !isSpinning && (
         <div className="max-w-3xl mx-auto mt-4 text-[10px] text-center text-gray-500">

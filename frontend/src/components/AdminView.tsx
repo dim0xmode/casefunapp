@@ -1212,7 +1212,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   (tx.walletAddress ? `${tx.walletAddress.slice(0, 6)}…${tx.walletAddress.slice(-4)}` : null) ||
                   (tx.userId ? tx.userId.slice(0, 8) : 'unknown');
                 return (
-                  <div key={tx.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
+                <div key={tx.id} className="grid grid-cols-1 md:grid-cols-7 gap-3 items-center bg-black/30 border border-white/[0.08] rounded-xl p-3 text-xs text-gray-400">
                     <div className="md:col-span-2 font-mono truncate">{tx.id}</div>
                     <div className="truncate">
                       {tx.userId ? (
@@ -1234,14 +1234,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <div>
                       <span className="inline-flex px-2 py-0.5 rounded-md bg-white/5 text-[10px] font-bold">{tx.type}</span>
                     </div>
-                    <div>{tx.amount} {tx.currency}</div>
+                  <div>{tx.amount} {tx.currency}</div>
                     <div>
                       <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold ${tx.status === 'completed' ? 'bg-web3-success/20 text-web3-success' : tx.status === 'failed' ? 'bg-red-500/15 text-red-300' : 'bg-yellow-400/15 text-yellow-300'}`}>
                         {tx.status}
                       </span>
                     </div>
-                    <div>{formatDate(tx.timestamp)}</div>
-                  </div>
+                  <div>{formatDate(tx.timestamp)}</div>
+                </div>
                 );
               })}
               {sortedTransactions.length > 0 && (
