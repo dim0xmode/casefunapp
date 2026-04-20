@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../services/api';
 import { formatUsdt } from '../../utils/number';
 
@@ -639,6 +640,13 @@ type EditorProps = {
 };
 
 const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onSave, saving }) => {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
   const patchCase = (patch: Partial<CaseDraft>) =>
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   const patchDrop = (idx: number, patch: Partial<DropDraft>) =>
@@ -699,9 +707,12 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
     onSave();
   };
 
-  return (
+  const modal = (
     <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm p-2 sm:p-4 flex items-stretch sm:items-center justify-center">
-      <div className="w-full max-w-4xl bg-[#0B0C10] border border-white/[0.08] rounded-2xl flex flex-col max-h-[100vh] sm:max-h-[92vh] overflow-hidden">
+      <div
+        className="w-full max-w-4xl bg-[#0B0C10] border border-white/[0.08] rounded-2xl flex flex-col overflow-hidden"
+        style={{ maxHeight: 'min(92vh, 100dvh - 16px)' }}
+      >
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/[0.05] bg-[#0B0C10] shrink-0">
           <div className="text-base sm:text-lg font-bold text-white">
             {draft.id ? 'Edit Reward Case' : 'New Reward Case'}
@@ -1008,6 +1019,8 @@ const RewardCaseEditor: React.FC<EditorProps> = ({ draft, setDraft, onClose, onS
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : modal;
 };
 
 const ImageUploadField: React.FC<{
