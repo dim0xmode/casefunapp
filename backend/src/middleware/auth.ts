@@ -59,6 +59,32 @@ export const requireAuth = async (
   }
 };
 
+export const optionalAuth = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) => {
+  try {
+    const cookieHeader = req.headers.cookie || '';
+    const sessionToken = getCookieValue(cookieHeader, 'session');
+    if (!sessionToken) return next();
+
+    const session = await prisma.session.findUnique({
+      where: { token: sessionToken },
+      include: { user: true },
+    });
+    if (!session || session.expiresAt <= new Date() || session.user.isBanned) {
+      return next();
+    }
+    req.userId = session.userId;
+    req.walletAddress = session.user.walletAddress;
+    req.role = session.user.role;
+    return next();
+  } catch {
+    return next();
+  }
+};
+
 export const requireRole = (roles: string[]) => {
   const allowed = roles.map((r) => String(r).toUpperCase());
   return (req: AuthRequest, res: Response, next: NextFunction) => {

@@ -852,6 +852,105 @@ class ApiClient {
   async getAdminPromoActivations() {
     return this.request<{ activations: any[] }>('/admin/promo/activations');
   }
+
+  async getAdminRewardCases(params?: { status?: string; search?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.search) qs.set('search', params.search);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<any>(`/admin/reward-cases${suffix}`);
+  }
+
+  async getAdminRewardCaseById(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}`);
+  }
+
+  async createAdminRewardCase(payload: any) {
+    return this.request<any>('/admin/reward-cases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateAdminRewardCase(id: string, payload: any) {
+    return this.request<any>(`/admin/reward-cases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}`, { method: 'DELETE' });
+  }
+
+  async publishAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/publish`, { method: 'POST' });
+  }
+
+  async pauseAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/pause`, { method: 'POST' });
+  }
+
+  async resumeAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/resume`, { method: 'POST' });
+  }
+
+  async completeAdminRewardCase(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'complete' }),
+    });
+  }
+
+  async refundAdminRewardCasePrePurchases(id: string) {
+    return this.request<any>(`/admin/reward-cases/${id}/refund-pre-purchases`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'refund' }),
+    });
+  }
+
+  async getAdminRewardCaseStats(params?: { from?: string; to?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<any>(`/admin/reward-cases/stats${suffix}`);
+  }
+
+  // Public reward-case endpoints (user-facing)
+  async getRewardCases() {
+    return this.request<any>('/reward-cases');
+  }
+
+  async getRewardCaseById(id: string) {
+    return this.request<any>(`/reward-cases/${id}`);
+  }
+
+  async prePurchaseRewardCase(id: string, count: number) {
+    return this.request<any>(`/reward-cases/${id}/pre-purchase`, {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    });
+  }
+
+  async openRewardCase(id: string, count: number) {
+    return this.request<any>(`/reward-cases/${id}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    });
+  }
+
+  async getMyRewardInventory() {
+    return this.request<any>('/reward-cases/me/inventory');
+  }
+
+  async claimRewardStack(stackId: string) {
+    return this.request<any>(`/reward-cases/me/stacks/${stackId}/claim`, { method: 'POST' });
+  }
+
+  async claimRewardNft(nftId: string) {
+    return this.request<any>(`/reward-cases/me/nfts/${nftId}/claim`, { method: 'POST' });
+  }
 }
 
 export const api = new ApiClient(API_URL);

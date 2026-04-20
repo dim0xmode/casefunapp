@@ -3,14 +3,18 @@ import { Case } from '../types';
 import { SearchInput } from './ui/SearchInput';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { formatDecimal } from '../utils/number';
+import { RewardCasesGrid } from './reward/RewardCasesGrid';
+
+export type CaseListMode = 'active' | 'inactive' | 'rewards';
 
 interface CaseListViewProps {
   cases: Case[];
   onSelectCase: (caseData: Case, mode?: 'open' | 'stats') => void;
   userName: string;
-  viewMode: 'active' | 'inactive';
-  onViewModeChange: (mode: 'active' | 'inactive') => void;
+  viewMode: CaseListMode;
+  onViewModeChange: (mode: CaseListMode) => void;
   isTelegramMiniApp?: boolean;
+  onSelectReward?: (id: string) => void;
 }
 
 export const CaseListView: React.FC<CaseListViewProps> = ({
@@ -20,6 +24,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
   viewMode,
   onViewModeChange,
   isTelegramMiniApp = false,
+  onSelectReward,
 }) => {
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -46,9 +51,10 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     const tokenSearch = hasTokenFilter ? searchTrimmed.slice(1).toLowerCase() : '';
     const hasNameFilter = searchLower.length > 0 && !hasPriceFilter && !hasTokenFilter;
     
-    let base = cases.filter((caseData) =>
-      viewMode === 'inactive' ? isCaseExpired(caseData) : !isCaseExpired(caseData)
-    );
+    let base = cases.filter((caseData) => {
+      if (viewMode === 'rewards') return false;
+      return viewMode === 'inactive' ? isCaseExpired(caseData) : !isCaseExpired(caseData);
+    });
     
     if (hasPriceFilter) {
       base = base.filter(c => c.price <= priceQuery);
@@ -210,7 +216,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
         <div className="mb-3 flex items-center gap-1 rounded-xl border border-white/[0.1] bg-black/35 p-1">
           <button
             onClick={() => onViewModeChange('active')}
-            className={`flex-1 px-3 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
+            className={`flex-1 px-2 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
               viewMode === 'active'
                 ? 'bg-web3-accent/20 border border-web3-accent/50 text-web3-accent'
                 : 'text-gray-400'
@@ -220,7 +226,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
           </button>
           <button
             onClick={() => onViewModeChange('inactive')}
-            className={`flex-1 px-3 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
+            className={`flex-1 px-2 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
               viewMode === 'inactive'
                 ? 'bg-web3-purple/20 border border-web3-purple/45 text-web3-purple'
                 : 'text-gray-400'
@@ -228,30 +234,49 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
           >
             Unavailable
           </button>
+          <button
+            onClick={() => onViewModeChange('rewards')}
+            className={`flex-1 px-2 py-2 rounded-lg text-[10px] uppercase tracking-widest transition ${
+              viewMode === 'rewards'
+                ? 'bg-amber-400/15 border border-amber-400/45 text-amber-300'
+                : 'text-gray-400'
+            }`}
+          >
+            Rewards
+          </button>
         </div>
 
-        {ownCasesMini.length > 0 && viewMode === 'active' && (
-          <div className="mb-4">
-            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">My cases</div>
-            <div className="grid grid-cols-3 gap-2">
-              {ownCasesMini.map((caseData) => renderCaseCard(caseData, false))}
-            </div>
-          </div>
-        )}
-
-        <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">
-          {viewMode === 'inactive' ? 'Unavailable cases' : 'Community cases'}
-        </div>
-        {(viewMode === 'inactive' ? allCases : communityCases).length === 0 ? (
-          <div className="rounded-lg border border-white/[0.08] bg-black/25 px-3 py-4 text-center text-[10px] uppercase tracking-widest text-gray-500">
-            {viewMode === 'inactive' ? 'No unavailable cases' : 'No community cases'}
-          </div>
+        {viewMode === 'rewards' ? (
+          <RewardCasesGrid
+            onSelect={(id) => onSelectReward?.(id)}
+            isTelegramMiniApp
+          />
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            {(viewMode === 'inactive' ? allCases : communityCases).map((caseData) =>
-              renderCaseCard(caseData, viewMode === 'inactive')
+          <>
+            {ownCasesMini.length > 0 && viewMode === 'active' && (
+              <div className="mb-4">
+                <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">My cases</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {ownCasesMini.map((caseData) => renderCaseCard(caseData, false))}
+                </div>
+              </div>
             )}
-          </div>
+
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">
+              {viewMode === 'inactive' ? 'Unavailable cases' : 'Community cases'}
+            </div>
+            {(viewMode === 'inactive' ? allCases : communityCases).length === 0 ? (
+              <div className="rounded-lg border border-white/[0.08] bg-black/25 px-3 py-4 text-center text-[10px] uppercase tracking-widest text-gray-500">
+                {viewMode === 'inactive' ? 'No unavailable cases' : 'No community cases'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {(viewMode === 'inactive' ? allCases : communityCases).map((caseData) =>
+                  renderCaseCard(caseData, viewMode === 'inactive')
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -283,8 +308,28 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             >
               Unavailable
             </button>
+            <button
+              onClick={() => onViewModeChange('rewards')}
+              className={`px-4 py-2 rounded-full text-xs uppercase tracking-widest transition-all ${
+                viewMode === 'rewards'
+                  ? 'bg-gradient-to-r from-amber-400 to-web3-accent text-black shadow-[0_0_20px_rgba(251,191,36,0.5)]'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Rewards
+            </button>
                   </div>
                 </div>
+        {viewMode === 'rewards' ? (
+          <div className="mb-8">
+            <div className="mb-6 flex items-center justify-center">
+              <div className="text-2xl font-black tracking-tighter">
+                REWARD<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-web3-success to-web3-accent">CASES</span>
+              </div>
+            </div>
+            <RewardCasesGrid onSelect={(id) => onSelectReward?.(id)} />
+          </div>
+        ) : (<>
         {ownCases.length > 0 && (
           <div className="mb-8">
             {/* MY CASES Header - Centered */}
@@ -327,6 +372,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
             {allCases.map((caseData) => renderCaseCard(caseData, viewMode === 'inactive'))}
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

@@ -4,12 +4,14 @@ import { formatTokenValue, formatUsdt, formatCrypto, getLevelInfo } from '../uti
 import { SearchInput } from './ui/SearchInput';
 import { Pagination } from './ui/Pagination';
 import { StatCard } from './ui/StatCard';
+import { AdminRewardCasesTab } from './admin/AdminRewardCasesTab';
 
 type TabKey =
   | 'overview'
   | 'analytics'
   | 'users'
   | 'cases'
+  | 'rewardCases'
   | 'battles'
   | 'inventory'
   | 'transactions'
@@ -26,6 +28,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'analytics', label: 'Analytics' },
   { key: 'users', label: 'Users' },
   { key: 'cases', label: 'Cases' },
+  { key: 'rewardCases', label: 'Reward Cases' },
   { key: 'battles', label: 'Battles' },
   { key: 'inventory', label: 'Inventory' },
   { key: 'transactions', label: 'Transactions' },
@@ -238,6 +241,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           break;
         }
         case 'mailing':
+          setData(null);
+          break;
+        case 'rewardCases':
+          // Tab component loads its own data; keep outer loader idle.
           setData(null);
           break;
         default:
@@ -2427,6 +2434,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               </div>
             </div>
           )}
+
+          {activeTab === 'rewardCases' && <AdminRewardCasesTab />}
 
           {activeTab === 'mailing' && (
             <div className="space-y-6 max-w-2xl">

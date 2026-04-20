@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -59,160 +58,195 @@ enum BattleLobbyStatus {
   FINISHED
 }
 
+enum RewardCaseStatus {
+  DRAFT // hidden from users; admin can still edit
+  SCHEDULED // visible, pre-purchase open, not active yet
+  ACTIVE // fully open — users can open + pre-purchase
+  PAUSED // temporarily disabled (manually or via exhausted limits); stats preserved
+  COMPLETED // finalized — read-only statistics, no further interaction, no refunds
+}
+
+enum RewardCaseCurrency {
+  CFP
+  USDT
+  TEST_CFP
+  TEST_USDT
+}
+
+enum RewardDropKind {
+  USDT
+  CFT
+  NFT
+  TEST_USDT
+  TEST_CFT
+  TEST_NFT
+}
+
+enum RewardCaseLimitMode {
+  NONE // unlimited opens
+  BY_OPENS // total opens capped (multivalent cases use this)
+  BY_DROP // monovalent cases — capped by cumulative drop amount
+}
+
 model User {
-  id            String   @id @default(cuid())
-  username      String   @unique
-  walletAddress String   @unique
-  hasLinkedWallet Boolean @default(true)
-  walletLinkedAt DateTime?
-  balance       Float    @default(0)
-  avatarUrl     String?
-  avatarMeta    Json?
-  telegramId    String?  @unique
-  telegramUsername String?
-  telegramFirstName String?
-  telegramLastName String?
-  telegramPhotoUrl String?
-  telegramLinkedAt DateTime?
-  twitterId     String?  @unique
-  twitterUsername String?
-  twitterName   String?
-  twitterLinkedAt DateTime?
-  twitterAccessToken  String?
-  twitterRefreshToken String?
-  tonAddress    String?  @unique
-  tonLinkedAt   DateTime?
-  rewardPoints  Float    @default(0)
-  role          UserRole @default(USER)
-  isBanned      Boolean  @default(false)
-  banReason     String?
-  referralCode              String?   @unique
-  referredById              String?
-  referralConfirmedAt       DateTime?
-  referralConfirmedCount    Int       @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  username               String    @unique
+  walletAddress          String    @unique
+  hasLinkedWallet        Boolean   @default(true)
+  walletLinkedAt         DateTime?
+  balance                Float     @default(0)
+  avatarUrl              String?
+  avatarMeta             Json?
+  telegramId             String?   @unique
+  telegramUsername       String?
+  telegramFirstName      String?
+  telegramLastName       String?
+  telegramPhotoUrl       String?
+  telegramLinkedAt       DateTime?
+  twitterId              String?   @unique
+  twitterUsername        String?
+  twitterName            String?
+  twitterLinkedAt        DateTime?
+  twitterAccessToken     String?
+  twitterRefreshToken    String?
+  tonAddress             String?   @unique
+  tonLinkedAt            DateTime?
+  rewardPoints           Float     @default(0)
+  role                   UserRole  @default(USER)
+  isBanned               Boolean   @default(false)
+  banReason              String?
+  referralCode           String?   @unique
+  referredById           String?
+  referralConfirmedAt    DateTime?
+  referralConfirmedCount Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Relations
-  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
-  referrals     User[]    @relation("Referrals")
-  cases         Case[]
-  inventory     InventoryItem[]
-  openings      CaseOpening[]
-  transactions  Transaction[]
-  battles       Battle[]
-  sessions      Session[]
-  auditLogs     AdminAuditLog[] @relation("AdminAuditLogs")
-  rtuEvents     RtuEvent[]
-  deposits      Deposit[]
-  claims        Claim[]
-  feedbacks     FeedbackMessage[]
-  hostedBattleLobbies BattleLobby[] @relation("BattleLobbyHost")
-  joinedBattleLobbies BattleLobby[] @relation("BattleLobbyJoiner")
+  referredBy          User?               @relation("Referrals", fields: [referredById], references: [id])
+  referrals           User[]              @relation("Referrals")
+  cases               Case[]
+  inventory           InventoryItem[]
+  openings            CaseOpening[]
+  transactions        Transaction[]
+  battles             Battle[]
+  sessions            Session[]
+  auditLogs           AdminAuditLog[]     @relation("AdminAuditLogs")
+  rtuEvents           RtuEvent[]
+  deposits            Deposit[]
+  claims              Claim[]
+  feedbacks           FeedbackMessage[]
+  hostedBattleLobbies BattleLobby[]       @relation("BattleLobbyHost")
+  joinedBattleLobbies BattleLobby[]       @relation("BattleLobbyJoiner")
   rewardClaims        RewardClaim[]
-  createdRewardTasks  RewardTask[]  @relation("RewardTaskCreator")
-  fundedPromos        PromoCode[]        @relation("PromoFunder")
+  createdRewardTasks  RewardTask[]        @relation("RewardTaskCreator")
+  fundedPromos        PromoCode[]         @relation("PromoFunder")
   promoActivations    PromoActivation[]
-  
+  rewardCases         RewardCase[]        @relation("RewardCaseCreator")
+  rewardCaseOpenings  RewardCaseOpening[] @relation("RewardCaseOpener")
+  rewardPrePurchases  RewardPrePurchase[] @relation("RewardPrePurchaseUser")
+  rewardStacks        RewardStack[]       @relation("RewardStackUser")
+  rewardNftItems      RewardNftItem[]     @relation("RewardNftItemUser")
+
   @@index([walletAddress])
   @@index([referredById])
   @@map("users")
 }
 
 model Case {
-  id            String   @id @default(cuid())
-  name          String
-  currency      String
-  tokenTicker   String?
-  tokenPrice    Float?
-  price         Float
-  imageUrl      String?
-  imageMeta     Json?
-  tokenAddress  String?
-  tokenDecimals Int      @default(18)
-  mintedAt      DateTime?
-  totalSupply   Float?
-  payoutAt      DateTime?
-  payoutTxHash  String?
-  payoutEth     Float?
-  payoutUsdt    Float?
-  payoutPriceUsdt Float?
-  rtu           Float    @default(96) // Return to User %
-  chainType     String   @default("EVM") // "EVM" or "TON"
-  tonTokenAddress String?
+  id                String    @id @default(cuid())
+  name              String
+  currency          String
+  tokenTicker       String?
+  tokenPrice        Float?
+  price             Float
+  imageUrl          String?
+  imageMeta         Json?
+  tokenAddress      String?
+  tokenDecimals     Int       @default(18)
+  mintedAt          DateTime?
+  totalSupply       Float?
+  payoutAt          DateTime?
+  payoutTxHash      String?
+  payoutEth         Float?
+  payoutUsdt        Float?
+  payoutPriceUsdt   Float?
+  rtu               Float     @default(96) // Return to User %
+  chainType         String    @default("EVM") // "EVM" or "TON"
+  tonTokenAddress   String?
   openDurationHours Float?
-  isActive      Boolean  @default(true)
-  createdById   String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive          Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relations
-  createdBy     User     @relation(fields: [createdById], references: [id])
-  drops         CaseDrop[]
-  openings      CaseOpening[]
-  rtuLedgers    RtuLedger[]
-  rtuEvents     RtuEvent[]
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  drops          CaseDrop[]
+  openings       CaseOpening[]
+  rtuLedgers     RtuLedger[]
+  rtuEvents      RtuEvent[]
   inventoryItems InventoryItem[]
-  claims        Claim[]
-  
+  claims         Claim[]
+
   @@index([createdById])
   @@map("cases")
 }
 
 model CaseDrop {
-  id        String @id @default(cuid())
-  caseId    String
-  name      String
-  value     Float
-  currency  String
-  rarity    String // COMMON, UNCOMMON, RARE, LEGENDARY, MYTHIC
+  id          String  @id @default(cuid())
+  caseId      String
+  name        String
+  value       Float
+  currency    String
+  rarity      String // COMMON, UNCOMMON, RARE, LEGENDARY, MYTHIC
   probability Float // 0-100
-  color     String
-  image     String?
+  color       String
+  image       String?
 
   // Relations
-  case      Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
   @@index([caseId])
   @@map("case_drops")
 }
 
 model CaseOpening {
-  id          String   @id @default(cuid())
-  userId      String
-  caseId      String
-  wonDropId   String
-  wonValue    Float
-  timestamp   DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  caseId    String
+  wonDropId String
+  wonValue  Float
+  timestamp DateTime @default(now())
 
   // Relations
-  case        Case     @relation(fields: [caseId], references: [id])
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  case Case @relation(fields: [caseId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([caseId])
   @@map("case_openings")
 }
 
 model InventoryItem {
-  id        String   @id @default(cuid())
-  userId    String
-  caseId    String?
-  name      String
-  value     Float
-  currency  String
-  rarity    String
-  color     String
-  image     String?
-  status    InventoryStatus @default(ACTIVE)
-  claimedAt DateTime?
+  id            String          @id @default(cuid())
+  userId        String
+  caseId        String?
+  name          String
+  value         Float
+  currency      String
+  rarity        String
+  color         String
+  image         String?
+  status        InventoryStatus @default(ACTIVE)
+  claimedAt     DateTime?
   claimedTxHash String?
-  createdAt DateTime @default(now())
+  createdAt     DateTime        @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  case      Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
-  
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case Case? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
   @@index([userId])
   @@index([caseId])
   @@index([status])
@@ -222,16 +256,16 @@ model InventoryItem {
 model Transaction {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // DEPOSIT, WITHDRAW, CASE_OPEN, UPGRADE, BATTLE
+  type      String // DEPOSIT, WITHDRAW, CASE_OPEN, UPGRADE, BATTLE
   amount    Float
   currency  String   @default("USDT")
   status    String   @default("completed") // pending, completed, failed
-  metadata  Json?    // Additional data
+  metadata  Json? // Additional data
   timestamp DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([type])
   @@map("transactions")
@@ -243,7 +277,7 @@ model Deposit {
   txHash        String   @unique
   chainId       Int
   chainType     String   @default("EVM") // "EVM" or "TON"
-  amountEth     Float    // Native amount: ETH for EVM, TON for TON
+  amountEth     Float // Native amount: ETH for EVM, TON for TON
   amountUsdt    Float
   confirmations Int      @default(0)
   blockNumber   Int?
@@ -251,7 +285,7 @@ model Deposit {
   metadata      Json?
   createdAt     DateTime @default(now())
 
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([chainType])
@@ -269,8 +303,8 @@ model Claim {
   metadata  Json?
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([caseId])
@@ -278,33 +312,33 @@ model Claim {
 }
 
 model Battle {
-  id          String   @id @default(cuid())
-  userId      String
-  opponentId  String?  // null if bot
-  result      String   // WIN, LOSS
-  cost        Float
-  wonValue    Float
-  wonItems    Json     // Array of items won
-  roundCount  Int?     // cases / rounds in this battle (both players get same count)
-  timestamp   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  opponentId String? // null if bot
+  result     String // WIN, LOSS
+  cost       Float
+  wonValue   Float
+  wonItems   Json // Array of items won
+  roundCount Int? // cases / rounds in this battle (both players get same count)
+  timestamp  DateTime @default(now())
 
   // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@map("battles")
 }
 
 model Session {
-  id          String   @id @default(cuid())
-  userId      String
-  token       String   @unique
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
-  lastSeenAt  DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
 
   // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -333,7 +367,7 @@ model AdminAuditLog {
   createdAt DateTime @default(now())
 
   // Relations
-  admin     User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+  admin User @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
 
   @@index([adminId])
   @@index([action])
@@ -350,27 +384,27 @@ model SiteSetting {
 }
 
 model RtuLedger {
-  id                   String   @id @default(cuid())
-  caseId               String
-  tokenSymbol          String
-  tokenPriceUsdt       Float
-  rtuPercent           Float
-  totalSpentUsdt       Float    @default(0)
-  totalTokenIssued     Float    @default(0)
-  bufferDebtToken      Float    @default(0)
-  excludedFromMetrics  Boolean  @default(false)
-  excludedAt           DateTime?
-  excludedReason       String?
-  updatedAt            DateTime @updatedAt
-  createdAt            DateTime @default(now())
+  id                  String    @id @default(cuid())
+  caseId              String
+  tokenSymbol         String
+  tokenPriceUsdt      Float
+  rtuPercent          Float
+  totalSpentUsdt      Float     @default(0)
+  totalTokenIssued    Float     @default(0)
+  bufferDebtToken     Float     @default(0)
+  excludedFromMetrics Boolean   @default(false)
+  excludedAt          DateTime?
+  excludedReason      String?
+  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime  @default(now())
 
   // Relations
-  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  events           RtuEvent[]
+  case   Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  events RtuEvent[]
 
+  @@unique([caseId, tokenSymbol])
   @@index([caseId])
   @@index([tokenSymbol])
-  @@unique([caseId, tokenSymbol])
   @@map("rtu_ledgers")
 }
 
@@ -387,9 +421,9 @@ model RtuEvent {
   createdAt      DateTime @default(now())
 
   // Relations
-  case           Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  ledger         RtuLedger? @relation(fields: [ledgerId], references: [id], onDelete: SetNull)
+  case   Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user   User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ledger RtuLedger? @relation(fields: [ledgerId], references: [id], onDelete: SetNull)
 
   @@index([caseId])
   @@index([ledgerId])
@@ -400,18 +434,18 @@ model RtuEvent {
 }
 
 model FeedbackMessage {
-  id        String        @id @default(cuid())
-  userId    String
-  topic     FeedbackTopic
-  status    FeedbackStatus @default(PENDING)
-  contact   String
-  message   String
-  isRead    Boolean       @default(false)
-  createdAt DateTime      @default(now())
-  readAt    DateTime?
+  id         String         @id @default(cuid())
+  userId     String
+  topic      FeedbackTopic
+  status     FeedbackStatus @default(PENDING)
+  contact    String
+  message    String
+  isRead     Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  readAt     DateTime?
   reviewedAt DateTime?
 
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([topic])
@@ -423,7 +457,7 @@ model FeedbackMessage {
 }
 
 model BattleLobby {
-  id           String           @id @default(cuid())
+  id           String            @id @default(cuid())
   hostUserId   String
   joinerUserId String?
   hostName     String
@@ -434,13 +468,13 @@ model BattleLobby {
   roundsJson   Json?
   winnerName   String?
   status       BattleLobbyStatus @default(OPEN)
-  createdAt    DateTime         @default(now())
+  createdAt    DateTime          @default(now())
   startedAt    DateTime?
-  updatedAt    DateTime         @updatedAt
+  updatedAt    DateTime          @updatedAt
   finishedAt   DateTime?
 
-  hostUser     User             @relation("BattleLobbyHost", fields: [hostUserId], references: [id], onDelete: Cascade)
-  joinerUser   User?            @relation("BattleLobbyJoiner", fields: [joinerUserId], references: [id], onDelete: SetNull)
+  hostUser   User  @relation("BattleLobbyHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  joinerUser User? @relation("BattleLobbyJoiner", fields: [joinerUserId], references: [id], onDelete: SetNull)
 
   @@index([hostUserId])
   @@index([joinerUserId])
@@ -450,27 +484,27 @@ model BattleLobby {
 }
 
 model RewardTask {
-  id                  String          @id @default(cuid())
+  id                  String         @id @default(cuid())
   type                RewardTaskType
   title               String
   description         String
   targetUrl           String?
-  reward              Int             @default(1)
-  isDefault           Boolean         @default(false)
-  isActive            Boolean         @default(true)
-  sortOrder           Int             @default(0)
+  reward              Int            @default(1)
+  isDefault           Boolean        @default(false)
+  isActive            Boolean        @default(true)
+  sortOrder           Int            @default(0)
   createdById         String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  category            String          @default("SOCIAL")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  category            String         @default("SOCIAL")
   targetCount         Int?
   targetAmount        Float?
   targetCaseId        String?
   repeatIntervalHours Int?
   activeUntil         DateTime?
 
-  createdBy   User?           @relation("RewardTaskCreator", fields: [createdById], references: [id])
-  claims      RewardClaim[]
+  createdBy User?         @relation("RewardTaskCreator", fields: [createdById], references: [id])
+  claims    RewardClaim[]
 
   @@index([isActive])
   @@index([type])
@@ -479,16 +513,16 @@ model RewardTask {
 }
 
 model RewardClaim {
-  id        String      @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   taskId    String?
   reward    Float
-  type      String      @default("TASK")
+  type      String   @default("TASK")
   metadata  Json?
-  claimedAt DateTime    @default(now())
+  claimedAt DateTime @default(now())
 
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task      RewardTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task RewardTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([taskId])
@@ -497,18 +531,18 @@ model RewardClaim {
 }
 
 model PromoCode {
-  id              String   @id @default(cuid())
-  code            String   @unique
-  amount          Float
-  maxUses         Int      @default(1)
-  usesPerUser     Int      @default(1)
-  currentUses     Int      @default(0)
-  fundingUserId   String
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  id            String   @id @default(cuid())
+  code          String   @unique
+  amount        Float
+  maxUses       Int      @default(1)
+  usesPerUser   Int      @default(1)
+  currentUses   Int      @default(0)
+  fundingUserId String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
-  fundingUser     User              @relation("PromoFunder", fields: [fundingUserId], references: [id])
-  activations     PromoActivation[]
+  fundingUser User              @relation("PromoFunder", fields: [fundingUserId], references: [id])
+  activations PromoActivation[]
 
   @@index([code])
   @@index([isActive])
@@ -522,10 +556,178 @@ model PromoActivation {
   amount      Float
   activatedAt DateTime @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  promo       PromoCode @relation(fields: [promoId], references: [id])
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promo PromoCode @relation(fields: [promoId], references: [id])
 
   @@index([userId])
   @@index([promoId])
   @@map("promo_activations")
+}
+
+// ---------------------------------------------------------------------------
+// Reward Cases — a separate case system that does NOT participate in the RTU
+// economy. Admin-only creation, manual probabilities, per-case statistics,
+// pre-purchase, manual completion. See spec in repo for full semantics.
+// ---------------------------------------------------------------------------
+
+model RewardCase {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  imageMeta   Json?
+  status      RewardCaseStatus @default(DRAFT)
+
+  openCurrency RewardCaseCurrency
+  openPrice    Float
+  prePrice     Float? // optional pre-purchase price (shown struck-through when > openPrice)
+  chain        String? // "EVM" / "TON" / null for test-only
+
+  startAt DateTime? // null while DRAFT
+  endAt   DateTime? // null → infinite until manual Complete
+
+  limitMode      RewardCaseLimitMode @default(NONE)
+  limitTotal     Float? // initial limit budget (opens or drop-units)
+  limitRemaining Float? // remaining budget; decremented per open
+
+  totalOpens        Int       @default(0)
+  totalPrePurchased Int       @default(0)
+  completedAt       DateTime?
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy    User                @relation("RewardCaseCreator", fields: [createdById], references: [id])
+  drops        RewardDrop[]
+  openings     RewardCaseOpening[]
+  prePurchases RewardPrePurchase[]
+  stacks       RewardStack[]
+  nftItems     RewardNftItem[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([startAt])
+  @@index([endAt])
+  @@map("reward_cases")
+}
+
+model RewardDrop {
+  id          String         @id @default(cuid())
+  caseId      String
+  kind        RewardDropKind
+  name        String
+  amount      Float // per-drop quantity (1 for NFT)
+  probability Float // 0..100, admin-controlled
+  rarity      String         @default("COMMON")
+  color       String         @default("#9CA3AF")
+  image       String?
+  sortOrder   Int            @default(0)
+
+  // NFT-specific (only meaningful for NFT / TEST_NFT kinds)
+  nftChain    String?
+  nftContract String?
+  nftMetadata Json?
+
+  case     RewardCase          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  openings RewardCaseOpening[]
+  nftItems RewardNftItem[]
+
+  @@index([caseId])
+  @@map("reward_drops")
+}
+
+model RewardPrePurchase {
+  id          String             @id @default(cuid())
+  userId      String
+  caseId      String
+  remaining   Int // unused pre-paid opens
+  totalBought Int // lifetime bought on this case
+  pricePaid   Float // per-unit cost at purchase time
+  currency    RewardCaseCurrency
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user User       @relation("RewardPrePurchaseUser", fields: [userId], references: [id], onDelete: Cascade)
+  case RewardCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, caseId])
+  @@index([userId])
+  @@index([caseId])
+  @@map("reward_pre_purchases")
+}
+
+model RewardCaseOpening {
+  id              String             @id @default(cuid())
+  userId          String
+  caseId          String
+  dropId          String
+  usedPrePurchase Boolean            @default(false)
+  pricePaid       Float              @default(0) // 0 when consumed pre-purchase
+  currency        RewardCaseCurrency
+  dropKind        RewardDropKind
+  dropAmount      Float
+  timestamp       DateTime           @default(now())
+
+  user User       @relation("RewardCaseOpener", fields: [userId], references: [id], onDelete: Cascade)
+  case RewardCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  drop RewardDrop @relation(fields: [dropId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([caseId])
+  @@index([dropId])
+  @@index([timestamp])
+  @@map("reward_case_openings")
+}
+
+// Fungible accumulator per (user, case, kind) — USDT / CFT and their TEST_* variants.
+// NFTs are NOT stored here (1:1, use RewardNftItem).
+model RewardStack {
+  id            String         @id @default(cuid())
+  userId        String
+  caseId        String
+  kind          RewardDropKind
+  amount        Float          @default(0)
+  claimedAmount Float          @default(0) // tracked when claim becomes available (post-mainnet)
+  lastDropAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  user User       @relation("RewardStackUser", fields: [userId], references: [id], onDelete: Cascade)
+  case RewardCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, caseId, kind])
+  @@index([userId])
+  @@index([caseId])
+  @@index([kind])
+  @@map("reward_stacks")
+}
+
+// 1:1 NFT items — one row per distinct NFT dropped to the user.
+model RewardNftItem {
+  id              String         @id @default(cuid())
+  userId          String
+  caseId          String
+  dropId          String
+  kind            RewardDropKind
+  name            String
+  image           String?
+  rarity          String         @default("COMMON")
+  color           String         @default("#9CA3AF")
+  tokenId         Int? // assigned on future mint
+  contractAddress String?
+  chain           String?
+  metadata        Json?
+  claimedAt       DateTime?
+  claimTxHash     String?
+  createdAt       DateTime       @default(now())
+
+  user User       @relation("RewardNftItemUser", fields: [userId], references: [id], onDelete: Cascade)
+  case RewardCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  drop RewardDrop @relation(fields: [dropId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([caseId])
+  @@index([dropId])
+  @@map("reward_nft_items")
 }

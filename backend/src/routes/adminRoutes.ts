@@ -97,4 +97,30 @@ router.patch('/promo/:id', adminUpdatePromoCode);
 router.delete('/promo/:id', adminDeletePromoCode);
 router.get('/promo/activations', adminListPromoActivations);
 
+import {
+  adminListRewardCases,
+  adminGetRewardCase,
+  adminCreateRewardCase,
+  adminUpdateRewardCase,
+  adminDeleteRewardCase,
+  adminPublishRewardCase,
+  adminPauseRewardCase,
+  adminResumeRewardCase,
+  adminCompleteRewardCase,
+  adminRefundRewardCasePrePurchases,
+  adminRewardCaseStats,
+} from '../controllers/rewardCaseController.js';
+
+router.get('/reward-cases', adminListRewardCases);
+router.get('/reward-cases/stats', adminRewardCaseStats);
+router.get('/reward-cases/:id', adminGetRewardCase);
+router.post('/reward-cases', adminCreateRewardCase);
+router.patch('/reward-cases/:id', adminUpdateRewardCase);
+router.delete('/reward-cases/:id', adminDeleteRewardCase);
+router.post('/reward-cases/:id/publish', adminPublishRewardCase);
+router.post('/reward-cases/:id/pause', adminPauseRewardCase);
+router.post('/reward-cases/:id/resume', adminResumeRewardCase);
+router.post('/reward-cases/:id/complete', adminCompleteRewardCase);
+router.post('/reward-cases/:id/refund-pre-purchases', adminRefundRewardCasePrePurchases);
+
 export default router;

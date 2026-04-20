@@ -10,6 +10,7 @@ import { StatCard } from './ui/StatCard';
 import { ItemGrid } from './ui/ItemGrid';
 import { ImageAdjustModal } from './ui/ImageAdjustModal';
 import { ImageWithMeta } from './ui/ImageWithMeta';
+import { RewardInventoryPanel } from './reward/RewardInventoryPanel';
 import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { api } from '../services/api';
@@ -123,7 +124,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setLinkingTon(false);
     }
   }, [onLinkTonWallet, linkingTon]);
-  const [tab, setTab] = useState<'inventory' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
+  const [tab, setTab] = useState<'inventory' | 'rewards' | 'expired' | 'claimed' | 'burnt' | 'battles'>('inventory');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [portfolioSort, setPortfolioSort] = useState<'name' | 'amount'>('name');
   const [portfolioTab, setPortfolioTab] = useState<'active' | 'claimed'>('active');
@@ -1453,6 +1454,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-black/30 p-0.5 overflow-x-auto">
             {([
               { id: 'inventory', label: 'Items' },
+              { id: 'rewards', label: 'Rewards' },
               { id: 'expired', label: 'Expired' },
               { id: 'claimed', label: 'Claimed' },
               { id: 'burnt', label: 'Burnt' },
@@ -1486,6 +1488,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           className="flex-1"
           tabs={[
               { id: 'inventory', label: 'Items' },
+              { id: 'rewards', label: 'Rewards' },
             { id: 'expired', label: 'Expired' },
             { id: 'claimed', label: 'Claimed' },
               { id: 'burnt', label: 'Burnt' },
@@ -1546,6 +1549,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     />
                   </div>
                 )}
+              </div>
+            )}
+
+            {tab === 'rewards' && (
+              <div className="flex flex-col h-full min-h-0 overflow-y-auto">
+                <RewardInventoryPanel isTelegramMiniApp={isTelegramMiniApp} />
               </div>
             )}
 

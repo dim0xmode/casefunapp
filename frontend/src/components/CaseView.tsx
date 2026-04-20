@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Case, Item } from '../types';
 import { CaseListView } from './CaseListView';
 import { CaseOpeningView } from './CaseOpeningView';
+import { RewardCaseDetailView } from './reward/RewardCaseDetailView';
 
 interface CaseViewProps {
   cases: Case[];
@@ -14,6 +15,8 @@ interface CaseViewProps {
   isAdmin: boolean;
   isTelegramMiniApp?: boolean;
 }
+
+export type CaseListMode = 'active' | 'inactive' | 'rewards';
 
 export const CaseView: React.FC<CaseViewProps> = ({
   cases,
@@ -28,7 +31,8 @@ export const CaseView: React.FC<CaseViewProps> = ({
 }) => {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [selectedMode, setSelectedMode] = useState<'open' | 'stats'>('open');
-  const [listViewMode, setListViewMode] = useState<'active' | 'inactive'>('active');
+  const [listViewMode, setListViewMode] = useState<CaseListMode>('active');
+  const [selectedRewardId, setSelectedRewardId] = useState<string | null>(null);
 
   const handleSelectCase = (caseData: Case, mode: 'open' | 'stats' = 'open') => {
     setSelectedCase(caseData);
@@ -39,6 +43,20 @@ export const CaseView: React.FC<CaseViewProps> = ({
   const handleBackToList = () => {
     setSelectedCase(null);
   };
+
+  if (selectedRewardId) {
+    return (
+      <RewardCaseDetailView
+        caseId={selectedRewardId}
+        onBack={() => setSelectedRewardId(null)}
+        balance={balance}
+        onOpenTopUp={onOpenTopUp}
+        isAuthenticated={isAuthenticated}
+        onOpenWalletConnect={onOpenWalletConnect}
+        isTelegramMiniApp={isTelegramMiniApp}
+      />
+    );
+  }
 
   return (
     <>
@@ -63,6 +81,7 @@ export const CaseView: React.FC<CaseViewProps> = ({
           viewMode={listViewMode}
           onViewModeChange={setListViewMode}
           isTelegramMiniApp={isTelegramMiniApp}
+          onSelectReward={setSelectedRewardId}
         />
       )}
     </>

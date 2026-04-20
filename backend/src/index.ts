@@ -7,12 +7,14 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { apiRateLimit } from './middleware/rateLimit.js';
 import authRoutes from './routes/authRoutes.js';
 import caseRoutes from './routes/caseRoutes.js';
+import rewardCaseRoutes from './routes/rewardCaseRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import walletRoutes from './routes/walletRoutes.js';
 import tokenRoutes from './routes/tokenRoutes.js';
 import prisma from './config/database.js';
 import { startCaseExpiryWorker } from './workers/caseExpiryWorker.js';
+import { startRewardCaseStatusWorker } from './workers/rewardCaseStatusWorker.js';
 import { syncTelegramMiniAppMenuButton, ensureTelegramBotLinkPolling } from './services/telegramLinkBotService.js';
 
 const app = express();
@@ -97,6 +99,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cases', caseRoutes);
+app.use('/api/reward-cases', rewardCaseRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/wallet', walletRoutes);
@@ -145,6 +148,7 @@ const server = app.listen(config.port, async () => {
   }
 
   startCaseExpiryWorker();
+  startRewardCaseStatusWorker();
 });
 
 // Cloudflare keeps connections to origin alive for ~100s.
