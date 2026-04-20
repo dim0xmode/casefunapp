@@ -385,9 +385,9 @@ export const prePurchaseRewardCase = async ({
   return prisma.$transaction(async (tx) => {
     const caseRow = await tx.rewardCase.findUnique({ where: { id: caseId } });
     if (!caseRow) throw new AppError('Reward case not found', 404);
-    if (caseRow.status !== 'SCHEDULED' && caseRow.status !== 'ACTIVE') {
+    if (caseRow.status !== 'SCHEDULED') {
       throw new AppError(
-        `Pre-purchase only allowed in SCHEDULED or ACTIVE status (current: ${caseRow.status})`,
+        `Pre-purchase is only available during PRE-SALE (current status: ${caseRow.status}).`,
         400
       );
     }

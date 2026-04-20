@@ -1,16 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ShoppingCart, PackageOpen, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Package, ShoppingCart, ChevronRight, ChevronsRight, Zap } from 'lucide-react';
 import { api } from '../../services/api';
-import { ImageWithMeta } from '../ui/ImageWithMeta';
-import { formatDecimal } from '../../utils/number';
+import { formatDecimal, formatShortfallUp } from '../../utils/number';
+import { CaseRoulette, SPIN_DURATION_MS } from '../CaseRoulette';
+import { ItemCard } from '../ItemCard';
+import { AdminActionButton } from '../ui/AdminActionButton';
+import { Case, Item, Rarity } from '../../types';
 import {
   RewardCaseSummary,
   RewardOpenResult,
+  RewardDropSummary,
   currencyLabel,
   dropKindLabel,
   isNftDrop,
   isTestCurrency,
-  isTestDrop,
 } from '../../types/reward';
 
 interface Props {
@@ -20,23 +23,47 @@ interface Props {
   onOpenTopUp: (prefillUsdt?: number) => void;
   isAuthenticated: boolean;
   onOpenWalletConnect: () => void;
+  isAdmin?: boolean;
   isTelegramMiniApp?: boolean;
   onOpened?: () => void;
 }
 
-const statusBadge = (status: RewardCaseSummary['status']) => {
-  switch (status) {
-    case 'ACTIVE':
-      return { label: 'OPEN', cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' };
-    case 'SCHEDULED':
-      return { label: 'PRE-SALE', cls: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30' };
-    case 'PAUSED':
-      return { label: 'PAUSED', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30' };
-    case 'COMPLETED':
-      return { label: 'ENDED', cls: 'bg-purple-500/15 text-purple-400 border-purple-500/30' };
-    default:
-      return { label: status, cls: 'bg-gray-500/15 text-gray-400 border-gray-500/30' };
-  }
+type OpenMode = 'normal' | 'fast' | 'instant';
+const OPEN_MODE_SPEEDS: Record<OpenMode, number> = { normal: 1, fast: 3, instant: 0 };
+
+const toRarityEnum = (raw: string | null | undefined): Rarity => {
+  const r = String(raw || '').toUpperCase();
+  if (r === 'UNCOMMON') return Rarity.UNCOMMON;
+  if (r === 'RARE') return Rarity.RARE;
+  if (r === 'LEGENDARY') return Rarity.LEGENDARY;
+  if (r === 'MYTHIC') return Rarity.MYTHIC;
+  return Rarity.COMMON;
+};
+
+const dropToItem = (d: RewardDropSummary): Item => ({
+  id: d.id,
+  name: d.name,
+  value: Number(d.amount) || 0,
+  currency: dropKindLabel(d.kind),
+  rarity: toRarityEnum(d.rarity),
+  image: d.image || (isNftDrop(d.kind) ? '🖼️' : '🪙'),
+  color: d.color || '#9CA3AF',
+});
+
+const resultDropToItem = (
+  drop: RewardOpenResult['drops'][number],
+  fallback: Map<string, RewardDropSummary>
+): Item => {
+  const matched = fallback.get(drop.dropId);
+  return {
+    id: drop.dropId,
+    name: drop.name,
+    value: Number(drop.amount) || 0,
+    currency: dropKindLabel(drop.kind),
+    rarity: toRarityEnum(drop.rarity || matched?.rarity),
+    image: drop.image || matched?.image || (isNftDrop(drop.kind) ? '🖼️' : '🪙'),
+    color: drop.color || matched?.color || '#9CA3AF',
+  };
 };
 
 const countdown = (iso: string | null | undefined): string | null => {
@@ -59,16 +86,28 @@ export const RewardCaseDetailView: React.FC<Props> = ({
   onOpenTopUp,
   isAuthenticated,
   onOpenWalletConnect,
+  isAdmin = false,
   isTelegramMiniApp = false,
   onOpened,
 }) => {
   const [data, setData] = useState<RewardCaseSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'open' | 'buy' | null>(null);
-  const [count, setCount] = useState(1);
-  const [result, setResult] = useState<RewardOpenResult | null>(null);
+
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [openMode, setOpenMode] = useState<OpenMode>('normal');
+  const [hasOpened, setHasOpened] = useState(false);
+  const [multiOpen, setMultiOpen] = useState<number>(1);
+  const [activeOpenCount, setActiveOpenCount] = useState<number>(1);
+  const [revealedPrefixCount, setRevealedPrefixCount] = useState(0);
+  const [multiResults, setMultiResults] = useState<Item[]>([]);
+  const [currentRevealFrom, setCurrentRevealFrom] = useState(0);
+  const [spinToken, setSpinToken] = useState(0);
+
+  const [busyBuy, setBusyBuy] = useState(false);
+  const [buyCount, setBuyCount] = useState(1);
   const [flashMsg, setFlashMsg] = useState<string | null>(null);
+  const [resultSummary, setResultSummary] = useState<RewardOpenResult | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,66 +127,110 @@ export const RewardCaseDetailView: React.FC<Props> = ({
   }, [load]);
 
   const isTestCase = data ? isTestCurrency(data.openCurrency) : false;
-  const unitPrice = useMemo(() => {
-    if (!data) return 0;
-    if (data.status === 'SCHEDULED' && data.prePrice != null) return Number(data.prePrice);
-    return Number(data.openPrice);
-  }, [data]);
   const prePurchased = data?.userPrePurchase?.remaining || 0;
-  const freeUnits = data?.status === 'ACTIVE' ? Math.min(prePurchased, count) : 0;
-  const paidUnits = Math.max(0, count - freeUnits);
-  const needBalance = isTestCase ? 0 : paidUnits * unitPrice;
+  const openPrice = data ? Number(data.openPrice) : 0;
+  const prePrice = data && data.prePrice != null ? Number(data.prePrice) : null;
 
-  const canBuy = data?.status === 'SCHEDULED' || data?.status === 'ACTIVE';
-  const canOpen = data?.status === 'ACTIVE';
+  // Build a Case-shaped adapter to feed CaseRoulette.
+  const caseAdapter: Case | null = useMemo(() => {
+    if (!data) return null;
+    return {
+      id: data.id,
+      name: data.name,
+      currency: currencyLabel(data.openCurrency),
+      price: openPrice,
+      image: data.imageUrl || '🎁',
+      rtu: 0,
+      possibleDrops: data.drops.map(dropToItem),
+    };
+  }, [data, openPrice]);
 
-  const handleBuy = async () => {
-    if (!data || !isAuthenticated) {
+  const dropMap = useMemo(() => {
+    const m = new Map<string, RewardDropSummary>();
+    if (data) data.drops.forEach((d) => m.set(d.id, d));
+    return m;
+  }, [data]);
+
+  const freeUnits = data?.status === 'ACTIVE' ? Math.min(prePurchased, multiOpen) : 0;
+  const paidUnits = Math.max(0, multiOpen - freeUnits);
+  const payNow = isTestCase ? 0 : paidUnits * openPrice;
+  const canAfford = isTestCase || balance >= payNow;
+
+  const buyPayNow = useMemo(() => {
+    if (!data || data.status !== 'SCHEDULED') return 0;
+    if (isTestCase) return 0;
+    const unit = prePrice != null ? prePrice : openPrice;
+    return unit * buyCount;
+  }, [data, isTestCase, prePrice, openPrice, buyCount]);
+
+  const handleSpin = async () => {
+    if (!data || data.status !== 'ACTIVE' || isSpinning) return;
+    if (!isAuthenticated) {
       onOpenWalletConnect();
       return;
     }
-    setBusy('buy');
+
+    const prevActiveOpenCount = activeOpenCount;
+    const prevRevealedPrefixCount = revealedPrefixCount;
+    setRevealedPrefixCount(hasOpened ? activeOpenCount : 0);
+    setActiveOpenCount(multiOpen);
+    setMultiResults([]);
+    setCurrentRevealFrom(0);
+    setSpinToken((p) => p + 1);
+    setIsSpinning(true);
+    setHasOpened(true);
+    setFlashMsg(null);
+
+    try {
+      const res: any = await api.openRewardCase(data.id, multiOpen);
+      const payload: RewardOpenResult = res?.data;
+      if (!payload || !Array.isArray(payload.drops) || payload.drops.length === 0) {
+        throw new Error('Empty response');
+      }
+      const items = payload.drops.map((d) => resultDropToItem(d, dropMap));
+      setMultiResults(items);
+      setResultSummary(payload);
+
+      const speed = OPEN_MODE_SPEEDS[openMode] || 1;
+      const totalDuration =
+        openMode === 'instant' ? 200 : SPIN_DURATION_MS / speed + 1200 + 200;
+      setTimeout(() => setIsSpinning(false), totalDuration);
+      onOpened?.();
+      load();
+    } catch (err: any) {
+      setActiveOpenCount(prevActiveOpenCount);
+      setRevealedPrefixCount(prevRevealedPrefixCount);
+      setIsSpinning(false);
+      setFlashMsg(err?.message || 'Failed to open case');
+    }
+  };
+
+  const handleBuyPre = async () => {
+    if (!data || data.status !== 'SCHEDULED') return;
+    if (!isAuthenticated) {
+      onOpenWalletConnect();
+      return;
+    }
+    setBusyBuy(true);
     setFlashMsg(null);
     try {
-      await api.prePurchaseRewardCase(data.id, count);
-      setFlashMsg(`Pre-purchased ${count} open${count === 1 ? '' : 's'}.`);
+      await api.prePurchaseRewardCase(data.id, buyCount);
+      setFlashMsg(`Pre-purchased ${buyCount} open${buyCount === 1 ? '' : 's'}.`);
       await load();
       onOpened?.();
     } catch (err: any) {
       setFlashMsg(err?.message || 'Failed to pre-purchase');
     } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleOpen = async () => {
-    if (!data || !isAuthenticated) {
-      onOpenWalletConnect();
-      return;
-    }
-    setBusy('open');
-    setFlashMsg(null);
-    setResult(null);
-    try {
-      const res: any = await api.openRewardCase(data.id, count);
-      setResult(res?.data || null);
-      await load();
-      onOpened?.();
-    } catch (err: any) {
-      setFlashMsg(err?.message || 'Failed to open case');
-    } finally {
-      setBusy(null);
+      setBusyBuy(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="w-full text-white p-4 text-center text-xs text-gray-500">Loading…</div>
-    );
+    return <div className="w-full text-white p-6 text-center text-xs text-gray-500">Loading…</div>;
   }
-  if (error || !data) {
+  if (error || !data || !caseAdapter) {
     return (
-      <div className="w-full text-white p-4">
+      <div className="w-full text-white p-6">
         <button onClick={onBack} className="text-xs text-gray-400 flex items-center gap-1 mb-4">
           <ArrowLeft size={14} /> Back
         </button>
@@ -156,286 +239,423 @@ export const RewardCaseDetailView: React.FC<Props> = ({
     );
   }
 
-  const sb = statusBadge(data.status);
   const pre = countdown(data.startAt);
   const end = countdown(data.endAt);
+  const rouletteCount = Math.max(1, activeOpenCount);
+  const isSchedPhase = data.status === 'SCHEDULED';
+  const isActivePhase = data.status === 'ACTIVE';
+  const isTerminal = data.status === 'PAUSED' || data.status === 'COMPLETED';
+  const statusText =
+    data.status === 'ACTIVE'
+      ? 'OPEN'
+      : data.status === 'SCHEDULED'
+        ? 'PRE-SALE'
+        : data.status === 'PAUSED'
+          ? 'PAUSED'
+          : 'ENDED';
 
-  const pad = isTelegramMiniApp ? 'px-2 py-2' : 'px-6 py-8';
   return (
-    <div className={`w-full text-white ${pad}`}>
-      <button
-        onClick={onBack}
-        className="text-xs text-gray-400 flex items-center gap-1 mb-3 hover:text-white transition"
-      >
-        <ArrowLeft size={14} /> Cases
-      </button>
-
-      <div className="rounded-2xl border border-white/[0.08] bg-web3-card/40 p-3 md:p-5 mb-4 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.05] to-web3-accent/[0.05] pointer-events-none" />
-        <div className="relative flex items-start gap-3 md:gap-4">
-          <div className="shrink-0">
-            <div className="w-20 h-20 md:w-28 md:h-28 rounded-xl border-2 border-amber-400/40 bg-gradient-to-br from-amber-500/30 to-web3-accent/30 overflow-hidden">
-              {data.imageUrl ? (
-                <ImageWithMeta
-                  src={data.imageUrl}
-                  className="w-full h-full"
-                  imgClassName="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-[10px] uppercase tracking-widest text-gray-500">
-                  Reward
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 min-w-0 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span
-                className={`text-[9px] px-1.5 py-0.5 rounded border uppercase font-black tracking-wider ${sb.cls}`}
-              >
-                {sb.label}
-              </span>
-              {isTestCase && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded border uppercase font-black tracking-wider bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40">
-                  TEST MODE
-                </span>
-              )}
-              {prePurchased > 0 && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded border uppercase font-black tracking-wider bg-emerald-500/15 text-emerald-300 border-emerald-500/40">
-                  {prePurchased} prepaid
-                </span>
-              )}
-            </div>
-            <h2 className="text-lg md:text-2xl font-black leading-tight">{data.name}</h2>
-            {data.description && (
-              <p className="text-[11px] md:text-xs text-gray-400 leading-snug">
-                {data.description}
-              </p>
-            )}
-            <div className="text-[11px] text-gray-500 mt-1">
-              {data.status === 'SCHEDULED' && pre && <span>Starts in {pre}</span>}
-              {data.status === 'ACTIVE' && end && <span>Ends in {end}</span>}
-              {data.status === 'PAUSED' && <span>Temporarily paused</span>}
-              {data.status === 'COMPLETED' && <span>Finished</span>}
-              {data.limitMode !== 'NONE' && data.limitRemaining != null && (
-                <span className="ml-2">
-                  · {data.limitMode === 'BY_OPENS' ? 'opens' : 'budget'} left:{' '}
-                  {formatDecimal(Number(data.limitRemaining))}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className={`w-full text-white relative ${isTelegramMiniApp ? 'px-2 py-3' : 'px-6 py-12'}`}>
+      <div className={`max-w-7xl mx-auto ${isTelegramMiniApp ? 'mb-4' : 'mb-6'}`}>
+        <button
+          onClick={onBack}
+          disabled={isSpinning}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-web3-card/50 border border-gray-800 hover:border-amber-400/50 transition-all duration-300 text-gray-400 hover:text-white ${
+            isSpinning ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <ArrowLeft size={20} />
+          <span className="font-bold">{isTelegramMiniApp ? 'Back' : 'Back to Cases'}</span>
+        </button>
       </div>
 
-      {/* Drop table */}
-      <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3 md:p-4 mb-4">
-        <div className="text-[11px] uppercase tracking-widest text-gray-500 mb-2">
-          Possible drops
-        </div>
-        <div className="space-y-1.5">
-          {data.drops.map((d) => {
-            const testDrop = isTestDrop(d.kind);
-            return (
-              <div
-                key={d.id}
-                className="flex items-center gap-3 rounded-lg border border-white/[0.05] bg-black/20 px-2.5 py-2"
-              >
-                <div
-                  className="w-8 h-8 rounded-md border overflow-hidden shrink-0"
-                  style={{ borderColor: (d.color || '#9CA3AF') + '60' }}
-                >
-                  {d.image ? (
-                    <ImageWithMeta
-                      src={d.image}
-                      className="w-full h-full"
-                      imgClassName="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[8px] text-gray-500">
-                      {isNftDrop(d.kind) ? 'NFT' : dropKindLabel(d.kind).slice(0, 3)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-bold text-white truncate">{d.name}</span>
-                    {testDrop && (
-                      <span className="text-[8px] font-black px-1 py-0.5 rounded border border-fuchsia-500/40 text-fuchsia-300">
-                        TEST
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    {isNftDrop(d.kind)
-                      ? `1× ${dropKindLabel(d.kind)}`
-                      : `${formatDecimal(d.amount)} ${dropKindLabel(d.kind)}`}
-                  </div>
-                </div>
-                <div className="text-[10px] font-bold text-amber-300 shrink-0">
-                  {d.probability.toFixed(d.probability < 1 ? 3 : 2)}%
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Action panel */}
-      <div className="rounded-2xl border border-white/[0.08] bg-black/30 p-3 md:p-4 backdrop-blur-xl">
-        <div className="mb-3">
-          <div className="text-[11px] uppercase tracking-widest text-gray-500 mb-1.5">Count</div>
-          <div className="flex items-center gap-1 flex-wrap">
-            {[1, 3, 5, 10].map((n) => (
-              <button
-                key={n}
-                onClick={() => setCount(n)}
-                className={`min-w-[40px] px-2 py-1.5 rounded-md text-[11px] font-bold border transition ${
-                  count === n
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : 'bg-white/[0.03] text-gray-400 border-white/[0.06]'
-                }`}
-              >
-                ×{n}
-              </button>
-            ))}
-            <input
-              type="number"
-              min={1}
-              max={25}
-              value={count}
-              onChange={(e) => {
-                const n = Math.max(1, Math.min(25, Number(e.target.value) || 1));
-                setCount(n);
-              }}
-              className="w-14 px-2 py-1.5 rounded-md text-[11px] font-bold bg-white/[0.03] border border-white/[0.06] text-white text-center"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-[11px] mb-3">
-          <span className="text-gray-500">Unit price</span>
-          <span className="font-bold text-white">
-            {formatDecimal(unitPrice)} {currencyLabel(data.openCurrency)}
-            {data.status === 'SCHEDULED' && data.prePrice != null && data.prePrice < data.openPrice && (
-              <span className="ml-1 text-[9px] text-emerald-400 uppercase">pre-sale</span>
-            )}
+      {/* Header pill, like CaseOpeningView */}
+      <div className={`max-w-7xl mx-auto text-center ${isTelegramMiniApp ? 'mb-4' : 'mb-6'}`}>
+        <div
+          className={`inline-flex items-center gap-2 rounded-full border font-bold uppercase backdrop-blur-sm animate-fade-in ${
+            isTelegramMiniApp
+              ? 'px-3 py-1.5 text-[10px] tracking-[0.16em] bg-amber-400/10 border-amber-400/35 text-amber-300'
+              : 'px-5 py-2.5 text-xs tracking-widest bg-gradient-to-r from-amber-400/10 to-web3-accent/10 border-amber-400/35 text-amber-300'
+          }`}
+        >
+          <Package size={14} />
+          {data.name}
+          <span
+            className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border ${
+              isActivePhase
+                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+                : isSchedPhase
+                  ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                  : 'bg-gray-500/20 border-gray-400/40 text-gray-300'
+            }`}
+          >
+            {statusText}
           </span>
-        </div>
-        {data.status === 'ACTIVE' && prePurchased > 0 && (
-          <div className="flex items-center justify-between text-[11px] mb-3">
-            <span className="text-gray-500">Free from pre-purchase</span>
-            <span className="font-bold text-emerald-400">
-              {freeUnits} / {count}
+          {isTestCase && (
+            <span className="px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border bg-fuchsia-500/20 border-fuchsia-400/40 text-fuchsia-300">
+              TEST
             </span>
-          </div>
-        )}
-        <div className="flex items-center justify-between text-xs mb-4">
-          <span className="text-gray-500">You pay</span>
-          <span className="font-black text-amber-300">
-            {isTestCase ? 0 : formatDecimal(paidUnits * unitPrice)} {currencyLabel(data.openCurrency)}
-          </span>
+          )}
         </div>
-
-        {flashMsg && (
-          <div className="mb-3 text-[11px] text-center rounded-md border border-white/[0.06] bg-black/30 px-2 py-1.5 text-gray-300">
-            {flashMsg}
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={handleBuy}
-            disabled={!canBuy || busy !== null || (!isTestCase && needBalance > balance && count * unitPrice > balance)}
-            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-cyan-500 to-blue-500 text-black disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ShoppingCart size={14} />
-            {busy === 'buy' ? 'Buying…' : 'Pre-purchase'}
-          </button>
-          <button
-            onClick={handleOpen}
-            disabled={!canOpen || busy !== null}
-            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-amber-400 to-web3-accent text-black disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <PackageOpen size={14} />
-            {busy === 'open' ? 'Opening…' : 'Open'}
-          </button>
+        <div className="mt-2 text-[11px] uppercase tracking-widest text-gray-500">
+          {isSchedPhase && pre && <>Starts in {pre}</>}
+          {isActivePhase && end && <>Ends in {end}</>}
+          {data.status === 'PAUSED' && <>Temporarily paused</>}
+          {data.status === 'COMPLETED' && <>Ended</>}
+          {!pre && !end && isActivePhase && <>Open — unlimited time</>}
+          {!pre && isSchedPhase && <>Pre-sale is live</>}
         </div>
-        {!isTestCase && data.status === 'ACTIVE' && paidUnits > 0 && paidUnits * unitPrice > balance && (
-          <button
-            onClick={() => onOpenTopUp(paidUnits * unitPrice)}
-            className="w-full mt-2 text-[10px] text-gray-400 flex items-center justify-center gap-1 hover:text-white"
-          >
-            <AlertTriangle size={11} /> Insufficient balance — top up
-          </button>
+        {data.description && (
+          <div className={`mx-auto mt-2 text-[11px] md:text-xs text-gray-400 leading-snug max-w-2xl`}>
+            {data.description}
+          </div>
         )}
       </div>
 
-      {result && <ResultOverlay result={result} onClose={() => setResult(null)} />}
-    </div>
-  );
-};
-
-const ResultOverlay: React.FC<{
-  result: RewardOpenResult;
-  onClose: () => void;
-}> = ({ result, onClose }) => {
-  return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="max-w-md w-full rounded-2xl border border-white/[0.08] bg-web3-card p-4 space-y-3 max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-black text-white uppercase tracking-widest">
-            You got
-          </div>
-          <button
-            onClick={onClose}
-            className="text-xs text-gray-400 px-2 py-1 rounded hover:bg-white/[0.05]"
-          >
-            Close
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {result.drops.map((d, idx) => (
-            <div
-              key={idx}
-              className="rounded-lg border p-2 flex flex-col items-center gap-1 bg-black/30"
-              style={{ borderColor: (d.color || '#9CA3AF') + '80' }}
-            >
-              <div
-                className="w-full aspect-square rounded-md overflow-hidden border"
-                style={{ borderColor: (d.color || '#9CA3AF') + '40' }}
-              >
-                {d.image ? (
-                  <img src={d.image} alt={d.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] uppercase text-gray-500">
-                    {dropKindLabel(d.kind)}
-                  </div>
-                )}
-              </div>
-              <div className="text-[10px] font-bold text-white text-center truncate w-full">
-                {d.name}
-              </div>
-              <div className="text-[10px] text-amber-300 font-bold">
-                {isNftDrop(d.kind) ? '×1' : `${formatDecimal(d.amount)}`} {dropKindLabel(d.kind)}
-              </div>
-              {d.isTest && (
-                <div className="text-[8px] font-black text-fuchsia-300 uppercase">TEST</div>
-              )}
-            </div>
+      {/* Roulette area for ACTIVE (or PAUSED preview). In PRE-SALE show hero card. */}
+      {isActivePhase ? (
+        <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mb-4' : 'mb-6'}`}>
+          {Array.from({ length: rouletteCount }).map((_, idx) => (
+            <CaseRoulette
+              key={`reward-roulette-${idx}`}
+              caseData={caseAdapter}
+              winner={multiResults[idx] || null}
+              openMode={openMode}
+              index={idx}
+              skipReveal={idx < currentRevealFrom}
+              initiallyRevealed={idx < revealedPrefixCount}
+              spinToken={spinToken}
+              soundEnabled={true}
+              clickSoundEnabled={true}
+              resultSoundEnabled={true}
+              clickVolume={idx === 0 ? 0.15 : 0.08}
+              compactContent={isTelegramMiniApp}
+            />
           ))}
         </div>
-        <div className="text-[10px] text-gray-500 text-center">
-          Check the <span className="font-bold text-white">Rewards</span> tab in your profile to
-          manage these.
+      ) : (
+        <div className="max-w-2xl mx-auto mb-6 rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/[0.06] to-web3-accent/[0.06] p-4 md:p-6 flex items-center gap-4">
+          <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border-2 border-amber-400/40 bg-black/30 overflow-hidden shrink-0">
+            {data.imageUrl ? (
+              <img src={data.imageUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-3xl">🎁</div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            {isSchedPhase && (
+              <>
+                <div className="text-[10px] uppercase tracking-widest text-cyan-300 mb-1">
+                  Pre-sale active
+                </div>
+                <div className="text-sm text-gray-300">
+                  Secure your opens before the case goes live. Every pre-purchase turns into a free
+                  open once activated.
+                </div>
+              </>
+            )}
+            {data.status === 'PAUSED' && (
+              <>
+                <div className="text-[10px] uppercase tracking-widest text-amber-300 mb-1">
+                  Paused
+                </div>
+                <div className="text-sm text-gray-300">
+                  Opening is paused. Pre-purchased opens are safe and redeemable when the case
+                  resumes.
+                </div>
+              </>
+            )}
+            {data.status === 'COMPLETED' && (
+              <>
+                <div className="text-[10px] uppercase tracking-widest text-purple-300 mb-1">
+                  Ended
+                </div>
+                <div className="text-sm text-gray-300">This case is permanently closed.</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main action strip — mirrors CaseOpeningView for ACTIVE. */}
+      {isActivePhase && (
+        <div className="max-w-7xl mx-auto">
+          <div className={`flex justify-center ${isTelegramMiniApp ? 'mb-3' : 'mb-4'}`}>
+            <div className="flex items-center gap-1 bg-web3-card/50 p-1 rounded-lg border border-gray-700/50 backdrop-blur-sm h-[42px]">
+              {[1, 2, 3, 4, 5].map((count) => (
+                <button
+                  key={count}
+                  onClick={() => !isSpinning && setMultiOpen(count)}
+                  disabled={isSpinning}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all duration-200 ${
+                    multiOpen === count
+                      ? 'bg-amber-400/20 border border-amber-400 text-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                      : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/30'
+                  } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  x{count}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div
+            className={`${
+              isTelegramMiniApp
+                ? 'grid grid-cols-1 gap-3'
+                : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'
+            } max-w-6xl mx-auto`}
+          >
+            <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
+              <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
+                <span className="text-[10px] uppercase tracking-widest text-gray-500">
+                  Per open
+                </span>
+                <span className="text-xs font-bold text-gray-200">
+                  {formatDecimal(openPrice)} {currencyLabel(data.openCurrency)}
+                </span>
+              </div>
+              {prePurchased > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 backdrop-blur-sm h-[42px]">
+                  <span className="text-[10px] uppercase tracking-widest text-emerald-400">
+                    Prepaid
+                  </span>
+                  <span className="text-xs font-bold text-emerald-300">
+                    {freeUnits}/{multiOpen}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <AdminActionButton
+              isAuthenticated={isAuthenticated}
+              isAdmin={isAdmin}
+              balance={balance}
+              cost={payNow}
+              onConnect={onOpenWalletConnect}
+              onTopUp={onOpenTopUp}
+              onAction={handleSpin}
+              readyLabel={
+                payNow === 0
+                  ? hasOpened
+                    ? 'Open Again'
+                    : prePurchased > 0
+                      ? 'Open (free)'
+                      : 'Open'
+                  : hasOpened
+                    ? `Open Again · ${formatDecimal(payNow)} ${currencyLabel(data.openCurrency)}`
+                    : `Open · ${formatDecimal(payNow)} ${currencyLabel(data.openCurrency)}`
+              }
+              topUpLabel={(shortfall) =>
+                `Need ${formatShortfallUp(shortfall)} ${currencyLabel(data.openCurrency)} more • Top up`
+              }
+              labelOverride={isSpinning ? 'Opening...' : undefined}
+              forceLabel={Boolean(isSpinning)}
+              disabled={isSpinning || !canAfford || isTerminal}
+              showPing={!isSpinning && canAfford}
+              className={`group ${isTelegramMiniApp ? 'px-6' : 'px-8'} py-3 text-base font-black rounded-xl overflow-hidden transform transition-all duration-300`}
+            />
+
+            <div className={`flex items-center gap-1 ${isTelegramMiniApp ? 'justify-center' : 'justify-start'}`}>
+              <button
+                onClick={() => !isSpinning && setOpenMode('normal')}
+                disabled={isSpinning}
+                className={`flex items-center justify-center h-[42px] w-[42px] rounded-md transition-all duration-200 ${
+                  openMode === 'normal'
+                    ? 'bg-gray-700/50 border border-gray-500 text-gray-300 shadow-[0_0_8px_rgba(156,163,175,0.3)]'
+                    : 'bg-web3-card/30 border border-gray-800 text-gray-600 hover:text-gray-400 hover:border-gray-700'
+                } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <ChevronRight size={18} />
+              </button>
+              <button
+                onClick={() => !isSpinning && setOpenMode('fast')}
+                disabled={isSpinning}
+                className={`flex items-center justify-center h-[42px] w-[42px] rounded-md transition-all duration-200 ${
+                  openMode === 'fast'
+                    ? 'bg-amber-400/20 border border-amber-400 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                    : 'bg-web3-card/30 border border-gray-800 text-gray-600 hover:text-amber-300/70 hover:border-amber-400/30'
+                } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <ChevronsRight size={18} />
+              </button>
+              <button
+                onClick={() => !isSpinning && setOpenMode('instant')}
+                disabled={isSpinning}
+                className={`flex items-center justify-center h-[42px] w-[42px] rounded-md transition-all duration-200 ${
+                  openMode === 'instant'
+                    ? 'bg-web3-purple/20 border border-web3-purple text-web3-purple shadow-[0_0_12px_rgba(139,92,246,0.3)]'
+                    : 'bg-web3-card/30 border border-gray-800 text-gray-600 hover:text-web3-purple/70 hover:border-web3-purple/30'
+                } ${isSpinning ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <Zap size={18} />
+              </button>
+            </div>
+          </div>
+
+          {flashMsg && (
+            <div className="mt-3 text-[11px] text-center text-gray-300">{flashMsg}</div>
+          )}
+        </div>
+      )}
+
+      {/* PRE-SALE purchase panel */}
+      {isSchedPhase && (
+        <div className="max-w-lg mx-auto mb-6">
+          <div className="rounded-2xl border border-cyan-400/25 bg-black/30 p-4 backdrop-blur-xl">
+            <div className="text-[11px] uppercase tracking-widest text-gray-500 mb-1">
+              Pre-sale price
+            </div>
+            <div className="text-2xl font-black text-cyan-300">
+              {formatDecimal(prePrice != null ? prePrice : openPrice)}{' '}
+              <span className="text-sm text-gray-400">{currencyLabel(data.openCurrency)}</span>
+            </div>
+            {prePrice != null && prePrice < openPrice && (
+              <div className="text-[11px] text-gray-500 mt-0.5">
+                Regular price on launch:{' '}
+                <span className="line-through">{formatDecimal(openPrice)}</span>{' '}
+                {currencyLabel(data.openCurrency)}
+              </div>
+            )}
+
+            <div className="my-3 h-px bg-white/[0.06]" />
+
+            <div className="text-[11px] uppercase tracking-widest text-gray-500 mb-1.5">
+              Units to pre-purchase
+            </div>
+            <div className="flex items-center gap-1 flex-wrap mb-3">
+              {[1, 3, 5, 10].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setBuyCount(n)}
+                  className={`min-w-[44px] px-3 py-1.5 rounded-md text-xs font-bold border transition ${
+                    buyCount === n
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                      : 'bg-white/[0.03] text-gray-400 border-white/[0.06]'
+                  }`}
+                >
+                  ×{n}
+                </button>
+              ))}
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={buyCount}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.min(100, Number(e.target.value) || 1));
+                  setBuyCount(n);
+                }}
+                className="w-16 px-2 py-1.5 rounded-md text-xs font-bold bg-white/[0.03] border border-white/[0.06] text-white text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-sm mb-3">
+              <span className="text-gray-500">You pay</span>
+              <span className="font-black text-cyan-300">
+                {isTestCase ? 0 : formatDecimal(buyPayNow)} {currencyLabel(data.openCurrency)}
+              </span>
+            </div>
+
+            {flashMsg && (
+              <div className="mb-3 text-[11px] text-center rounded-md border border-white/[0.06] bg-black/30 px-2 py-1.5 text-gray-300">
+                {flashMsg}
+              </div>
+            )}
+
+            <button
+              onClick={handleBuyPre}
+              disabled={busyBuy || (!isTestCase && buyPayNow > balance)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-black bg-gradient-to-r from-cyan-500 to-blue-500 text-black disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ShoppingCart size={16} />
+              {busyBuy ? 'Buying…' : 'Pre-purchase'}
+            </button>
+            {!isTestCase && buyPayNow > balance && (
+              <button
+                onClick={() => onOpenTopUp(buyPayNow)}
+                className="w-full mt-2 text-[10px] text-gray-400 hover:text-white"
+              >
+                Insufficient balance · Top up
+              </button>
+            )}
+            {prePurchased > 0 && (
+              <div className="mt-3 text-[11px] text-gray-400 text-center">
+                You already have{' '}
+                <span className="font-bold text-emerald-300">{prePurchased}</span> reserved open
+                {prePurchased === 1 ? '' : 's'}.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Possible drops grid — same shape as regular opening */}
+      <div className={`max-w-5xl mx-auto ${isTelegramMiniApp ? 'mt-4' : 'mt-10'}`}>
+        <div
+          className={`flex items-center justify-center ${
+            isTelegramMiniApp ? 'gap-2 mb-3 text-[10px]' : 'gap-4 mb-6 text-xs'
+          } text-gray-400 uppercase tracking-widest`}
+        >
+          <div className="h-px w-12 bg-gray-700" />
+          <span>Possible drops</span>
+          <div className="h-px w-12 bg-gray-700" />
+        </div>
+        <div
+          className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${
+            isTelegramMiniApp ? 'gap-2' : 'gap-4'
+          }`}
+        >
+          {data.drops.map((d, idx) => (
+            <ItemCard
+              key={`${d.id}-${idx}`}
+              item={dropToItem(d)}
+              size="md"
+              currencyPrefix=""
+              compactContent={isTelegramMiniApp}
+            />
+          ))}
         </div>
       </div>
+
+      {/* Ancillary info */}
+      <div className="max-w-3xl mx-auto mt-6 grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
+        <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
+          <div className="text-[9px] uppercase tracking-widest text-gray-500">Open cost</div>
+          <div className="font-bold text-white">
+            {formatDecimal(openPrice)} {currencyLabel(data.openCurrency)}
+          </div>
+        </div>
+        {prePrice != null && (
+          <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
+            <div className="text-[9px] uppercase tracking-widest text-gray-500">Pre-sale price</div>
+            <div className="font-bold text-cyan-300">
+              {formatDecimal(prePrice)} {currencyLabel(data.openCurrency)}
+            </div>
+          </div>
+        )}
+        {data.limitMode !== 'NONE' && data.limitRemaining != null && (
+          <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
+            <div className="text-[9px] uppercase tracking-widest text-gray-500">
+              {data.limitMode === 'BY_OPENS' ? 'Opens left' : 'Budget left'}
+            </div>
+            <div className="font-bold text-white">{formatDecimal(Number(data.limitRemaining))}</div>
+          </div>
+        )}
+        <div className="rounded-lg border border-white/[0.05] bg-black/20 px-3 py-2">
+          <div className="text-[9px] uppercase tracking-widest text-gray-500">Status</div>
+          <div className="font-bold text-white">{statusText}</div>
+        </div>
+      </div>
+
+      {resultSummary && !isSpinning && (
+        <div className="max-w-3xl mx-auto mt-4 text-[10px] text-center text-gray-500">
+          Last open: {resultSummary.usedPrePurchase} free · paid{' '}
+          {formatDecimal(resultSummary.pricePaid)}{' '}
+          {currencyLabel(resultSummary.currency)}. Drops stacked to your{' '}
+          <span className="text-white font-bold">Rewards</span> tab.
+        </div>
+      )}
     </div>
   );
 };

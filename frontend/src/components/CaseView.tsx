@@ -53,6 +53,7 @@ export const CaseView: React.FC<CaseViewProps> = ({
         onOpenTopUp={onOpenTopUp}
         isAuthenticated={isAuthenticated}
         onOpenWalletConnect={onOpenWalletConnect}
+        isAdmin={isAdmin}
         isTelegramMiniApp={isTelegramMiniApp}
       />
     );
