@@ -85,6 +85,33 @@ export const optionalAuth = async (
   }
 };
 
+export const requireTelegramLinked = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.userId) {
+      return next(new AppError('Authentication required', 401));
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { telegramId: true },
+    });
+    if (!user || !user.telegramId) {
+      return next(
+        new AppError(
+          'Link your Telegram account before creating a case.',
+          403
+        )
+      );
+    }
+    return next();
+  } catch (error) {
+    return next(new AppError('Telegram verification failed', 500));
+  }
+};
+
 export const requireRole = (roles: string[]) => {
   const allowed = roles.map((r) => String(r).toUpperCase());
   return (req: AuthRequest, res: Response, next: NextFunction) => {

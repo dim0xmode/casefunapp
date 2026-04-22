@@ -8,7 +8,7 @@ import {
   uploadCaseImage,
   getActivityFeed,
 } from '../controllers/caseController.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireTelegramLinked } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({
@@ -19,8 +19,8 @@ const upload = multer({
 router.get('/feed', getActivityFeed);
 router.get('/', getAllCases);
 router.get('/:id', getCaseById);
-router.post('/upload', requireAuth, upload.single('file'), uploadCaseImage);
-router.post('/', requireAuth, createCase);
+router.post('/upload', requireAuth, requireTelegramLinked, upload.single('file'), uploadCaseImage);
+router.post('/', requireAuth, requireTelegramLinked, createCase);
 router.post('/:caseId/open', requireAuth, openCase);
 
 export default router;

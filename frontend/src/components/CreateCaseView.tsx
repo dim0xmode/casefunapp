@@ -34,6 +34,8 @@ interface CreateCaseViewProps {
   isAdmin: boolean;
   cases: Case[];
   isTelegramMiniApp?: boolean;
+  hasTelegramLinked?: boolean;
+  onOpenTelegramLink?: () => void;
 }
 
 export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
@@ -47,6 +49,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   isAdmin,
   cases,
   isTelegramMiniApp = false,
+  hasTelegramLinked = true,
+  onOpenTelegramLink,
 }) => {
   const [name, setName] = useState('');
   const [chainType, setChainType] = useState<'EVM' | 'TON'>('EVM');
@@ -375,7 +379,8 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     !dropsAreValid ||
     !imageIsValid ||
     isImageUploading ||
-    isCreating;
+    isCreating ||
+    (isAuthenticated && !hasTelegramLinked);
 
   const priceValue = Number(price);
   const rtuValue = Number(rtu);
@@ -396,6 +401,10 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const handleSubmit = async () => {
     if (isCreating) return;
     setSubmitError(null);
+    if (!hasTelegramLinked) {
+      setSubmitError('Link your Telegram account before creating a case.');
+      return;
+    }
     if (isImageUploading) {
       setSubmitError('Wait for image upload to finish.');
       return;
@@ -949,6 +958,23 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
           )}
 
           <div className={`mt-6 flex flex-col items-center gap-3 ${isTelegramMiniApp ? 'sticky bottom-0 z-20 bg-[#0B1018]/95 backdrop-blur-xl rounded-xl p-3 border border-white/[0.08]' : ''}`}>
+            {isAuthenticated && !hasTelegramLinked && (
+              <div className="w-full max-w-md rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                <div className="font-bold uppercase tracking-wider mb-1">Telegram required</div>
+                <div className="text-amber-200/80 mb-2">
+                  Link your Telegram account to create cases. This helps us fight spam and bot-created cases.
+                </div>
+                {onOpenTelegramLink && (
+                  <button
+                    type="button"
+                    onClick={onOpenTelegramLink}
+                    className="text-[11px] font-bold uppercase tracking-widest text-amber-300 hover:text-amber-200 underline underline-offset-2"
+                  >
+                    Link Telegram →
+                  </button>
+                )}
+              </div>
+            )}
             {submitError && (
               <div className="text-[11px] uppercase tracking-widest text-red-400">{submitError}</div>
             )}

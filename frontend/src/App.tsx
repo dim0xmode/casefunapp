@@ -2241,6 +2241,8 @@ const App = () => {
                   onOpenWalletConnect={() => { setConnectModalMode('login'); setIsWalletConnectOpen(true); }}
                   isAdmin={true}
                   cases={cases}
+                  hasTelegramLinked={Boolean(user?.telegramId)}
+                  onOpenTelegramLink={() => setActiveTab('profile')}
                 />
               </div>
             )}

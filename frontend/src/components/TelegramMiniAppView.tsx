@@ -811,6 +811,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         onOpenTopUp={() => goToTab('topup')} onBalanceUpdate={onBalanceUpdate}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin cases={cases} isTelegramMiniApp
+        hasTelegramLinked={Boolean(user?.telegramId)}
+        onOpenTelegramLink={() => goToTab('profile')}
       />
     );
 
