@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
+  ChevronRight,
   Coins,
   Copy,
   ExternalLink,
@@ -948,8 +949,25 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
             const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN').sort((a, b) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
             const now = Date.now();
+            const socialsMissing = Boolean(user) && (!user?.twitterId || !user?.telegramId);
       return (
             <div className="space-y-1.5">
+              {socialsMissing && (
+                <button
+                  type="button"
+                  onClick={() => setRewardsSubTab('social')}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/15 to-orange-500/10 active:scale-[0.99] transition text-left"
+                >
+                  <div className="w-7 h-7 rounded-full border border-amber-400/40 bg-amber-500/15 flex items-center justify-center shrink-0">
+                    <Lock size={12} className="text-amber-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-amber-200 uppercase tracking-wider">Rewards locked</div>
+                    <div className="text-[10px] text-amber-100/80 mt-0.5 leading-snug">Link Twitter & Telegram to claim any task. Tap to connect →</div>
+                  </div>
+                  <ChevronRight size={16} className="text-amber-300/70 shrink-0" />
+                </button>
+              )}
               {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
               {!rewardsLoading && allTasks.length === 0 && (
                 <div className="text-center py-8">
@@ -995,6 +1013,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 const isComplete = progress >= target && !task.onCooldown;
                 const isCooldown = task.onCooldown && task.cooldownEndsAt;
                 const isDone = task.claimed && !task.onCooldown;
+                const isLocked = Boolean(task.locked);
                 const fmt = (v: number) => isUsdt ? `${v.toFixed(2)} USDT` : `${Math.floor(v)}`;
                 const timeLabel = task.activeUntil ? `Until ${new Date(task.activeUntil).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}` : 'Always active';
                 let cooldownLabel = '';
@@ -1003,11 +1022,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   if (ms > 0) { const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000); cooldownLabel = h > 0 ? `${h}h ${m}m` : `${m}m`; }
                 }
                 return (
-                <div key={task.id} className={`px-3 py-2.5 rounded-xl border bg-black/20 ${isCooldown || isDone ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
+                <div key={task.id} className={`px-3 py-2.5 rounded-xl border bg-black/20 ${isLocked ? 'border-white/[0.04] opacity-60' : isCooldown || isDone ? 'border-white/[0.04] opacity-60' : 'border-white/[0.08]'}`}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] text-white font-medium">{task.title}</div>
-                      <div className="text-[10px] text-gray-500">{task.description} · <span className="text-gray-600">{timeLabel}</span></div>
+                    <div className="flex-1 min-w-0 flex items-start gap-1.5">
+                      {isLocked && <Lock size={11} className="text-gray-500 mt-0.5 shrink-0" />}
+                      <div className="min-w-0">
+                        <div className="text-[11px] text-white font-medium">{task.title}</div>
+                        <div className="text-[10px] text-gray-500">{isLocked ? <span className="text-amber-300/80">Link Twitter & Telegram first</span> : <>{task.description} · <span className="text-gray-600">{timeLabel}</span></>}</div>
+                      </div>
                     </div>
                     <span className="text-[10px] font-mono text-web3-accent shrink-0 ml-2">+{task.reward} CFP</span>
                   </div>
@@ -1018,9 +1040,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                     <div className="text-[10px] text-gray-500">
                       {isCooldown ? <span className="text-yellow-500">Next in {cooldownLabel}</span> : isDone ? <span className="text-gray-600">Completed</span> : <span>{fmt(progress)} / {fmt(target)} · {pct}%</span>}
                     </div>
-                    {isComplete && (
+                    {isComplete && !isLocked && (
                       <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-web3-accent to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
                         {claimingTaskId === task.id ? '…' : 'Claim'}
+                      </button>
+                    )}
+                    {isComplete && isLocked && (
+                      <button type="button" onClick={() => setRewardsSubTab('social')} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-amber-400/40 text-amber-300 active:scale-[0.97] transition">
+                        Connect
                       </button>
                     )}
                   </div>
