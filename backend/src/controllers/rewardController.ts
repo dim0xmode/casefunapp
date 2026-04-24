@@ -413,11 +413,19 @@ export const listRewardTasks = async (
       }
     }
 
+    // Global anti-multiaccount gate: to claim ANY task the user must have
+    // both Twitter and Telegram linked. Exceptions are the LINK_* tasks
+    // themselves. This covers CaseFun tasks (OPEN_CASE, CREATE_CASES, …)
+    // which were being farmed across throwaway accounts.
+    const socialsMissing = Boolean(user) && (!user?.twitterId || !user?.telegramId);
+
     const taskList = await Promise.all(tasks.map(async (task) => {
       if (task.activeUntil && task.activeUntil < now) return null;
 
       const isCaseFun = CASEFUN_TYPES.has(task.type);
       const claimInfo = claimsByTask.get(task.id);
+      const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
+      const socialGateLocked = socialsMissing && !exemptFromSocialGate;
 
       if (isCaseFun) {
         const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
@@ -443,7 +451,7 @@ export const listRewardTasks = async (
             targetAmount: task.targetAmount,
             unit,
             progress: target,
-            claimed: true, completed: true, locked: false,
+            claimed: true, completed: true, locked: socialGateLocked,
             onCooldown: false, cooldownEndsAt: null,
             activeUntil: task.activeUntil,
             targetCaseId: task.targetCaseId,
@@ -474,7 +482,7 @@ export const listRewardTasks = async (
           unit,
           progress: Math.min(progress, target),
           claimed: false, completed: progress >= target && !onCooldown,
-          locked: false,
+          locked: socialGateLocked,
           onCooldown,
           cooldownEndsAt,
           activeUntil: task.activeUntil,
@@ -492,8 +500,7 @@ export const listRewardTasks = async (
           default: completed = claimed || Boolean(user.twitterId && user.telegramId); break;
         }
       }
-      const requiresSocial = !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
-      const locked = requiresSocial && (!user?.twitterId || !user?.telegramId);
+      const locked = socialGateLocked;
 
       return {
         id: task.id, type: task.type, title: task.title,
@@ -561,6 +568,13 @@ export const claimReward = async (
     const isCaseFun = CASEFUN_TYPES.has(task.type);
     const lastClaim = existingClaims[0] || null;
 
+    // Global anti-multiaccount gate — both Twitter and Telegram must be
+    // linked to claim anything other than the two LINK_* tasks themselves.
+    const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
+    if (!exemptFromSocialGate && (!user.twitterId || !user.telegramId)) {
+      return next(new AppError('Link both Twitter and Telegram first to unlock this task', 403));
+    }
+
     if (isCaseFun) {
       const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
       const isInstantRepeat = task.repeatIntervalHours === 0;
@@ -595,11 +609,6 @@ export const claimReward = async (
       // Social tasks — one-time only
       if (lastClaim) {
         return next(new AppError('Reward already claimed', 409));
-      }
-
-      const requiresSocial = !['LINK_TWITTER', 'LINK_TELEGRAM'].includes(task.type);
-      if (requiresSocial && (!user.twitterId || !user.telegramId)) {
-        return next(new AppError('Link both Twitter and Telegram first to unlock this task', 403));
       }
 
       let verified = false;
