@@ -199,7 +199,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           setData((await api.getAdminInventory()).data?.items ?? []);
           break;
         case 'transactions':
-          setData((await api.getAdminTransactions()).data?.transactions ?? []);
+          setData((await api.getAdminTransactions({ type: filters.txType })).data?.transactions ?? []);
           break;
         case 'rtu': {
           const [ledgers, events] = await Promise.all([
@@ -259,7 +259,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Re-fetch transactions list when the type filter changes — backend now
+  // filters server-side so we need a fresh page rather than client-side trim.
+  useEffect(() => {
+    if (activeTab !== 'transactions') return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.txType]);
 
   useEffect(() => {
     let mounted = true;

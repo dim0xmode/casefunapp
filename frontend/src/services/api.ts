@@ -691,8 +691,13 @@ class ApiClient {
     return this.request<{ items: any[] }>('/admin/inventory');
   }
 
-  async getAdminTransactions() {
-    return this.request<{ transactions: any[] }>('/admin/transactions');
+  async getAdminTransactions(opts?: { type?: string; take?: number; skip?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.type && opts.type !== 'all') params.set('type', opts.type);
+    if (opts?.take) params.set('take', String(opts.take));
+    if (opts?.skip) params.set('skip', String(opts.skip));
+    const qs = params.toString();
+    return this.request<{ transactions: any[]; total?: number }>(`/admin/transactions${qs ? `?${qs}` : ''}`);
   }
 
   async getAdminRtuLedgers() {

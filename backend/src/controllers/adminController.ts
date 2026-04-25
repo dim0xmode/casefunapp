@@ -735,8 +735,15 @@ export const listTransactions = async (req: Request, res: Response, next: NextFu
     const take = Number.isFinite(rawTake) ? Math.min(Math.max(Math.floor(rawTake), 1), 500) : 200;
     const skip = Number.isFinite(rawSkip) ? Math.max(Math.floor(rawSkip), 0) : 0;
 
+    // Server-side type filter so the admin UI can ask for e.g. only DEPOSITs
+    // without us having to ship every CASE_OPEN row (>90% of the table) just
+    // for the client to throw them away.
+    const rawType = String(req.query.type ?? '').trim().toUpperCase();
+    const where = rawType && rawType !== 'ALL' ? { type: rawType } : {};
+
     const [transactions, total] = await Promise.all([
       prisma.transaction.findMany({
+        where,
         orderBy: { timestamp: 'desc' },
         take,
         skip,
@@ -751,7 +758,7 @@ export const listTransactions = async (req: Request, res: Response, next: NextFu
           },
         },
       }),
-      prisma.transaction.count(),
+      prisma.transaction.count({ where }),
     ]);
     const enriched = transactions.map((tx) => ({
       ...tx,
