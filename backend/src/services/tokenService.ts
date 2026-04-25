@@ -4,14 +4,17 @@ import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getTokenFactoryContract, getTreasuryContract } from './blockchain.js';
 import { getEthUsdPrice } from './priceService.js';
+import { evmQueue } from './chainQueue.js';
 
 export const deployCaseToken = async (name: string, symbol: string) => {
   const factory = getTokenFactoryContract();
   if (!factory) {
     throw new AppError('Token factory is not configured', 500);
   }
-  const tx = await factory.createToken(name, symbol);
-  const receipt = await tx.wait(config.confirmations);
+  const receipt = await evmQueue.enqueue(`deployCaseToken:${symbol}`, async () => {
+    const tx = await factory.createToken(name, symbol);
+    return tx.wait(config.confirmations);
+  });
   const parsed = receipt?.logs
     .map((log: any) => {
       try {
@@ -64,8 +67,10 @@ export const mintCaseIfNeeded = async (caseId: string) => {
       throw new AppError('Treasury is not configured', 500);
     }
     const amount = ethers.parseUnits(totalValue.toFixed(6), caseInfo.tokenDecimals || 18);
-    const tx = await treasury.mintToken(caseInfo.tokenAddress, config.treasuryAddress, amount);
-    await tx.wait(config.confirmations);
+    await evmQueue.enqueue(`mintCase:${caseId}`, async () => {
+      const tx = await treasury.mintToken(caseInfo.tokenAddress, config.treasuryAddress, amount);
+      return tx.wait(config.confirmations);
+    });
   }
 
   return prisma.case.update({
@@ -120,8 +125,11 @@ export const payoutCaseRevenue = async (caseId: string) => {
   }
 
   const amountWei = ethers.parseEther(payoutEth.toFixed(6));
-  const tx = await treasury.withdraw(payoutAddress, amountWei);
-  await tx.wait(config.confirmations);
+  const tx = await evmQueue.enqueue(`payoutCase:${caseId}`, async () => {
+    const sent = await treasury.withdraw(payoutAddress, amountWei);
+    await sent.wait(config.confirmations);
+    return sent;
+  });
 
   return prisma.case.update({
     where: { id: caseId },

@@ -6,6 +6,7 @@ import { config } from '../config/env.js';
 import { getTreasuryContract, normalizeAddress } from '../services/blockchain.js';
 import { isCaseExpired, mintCaseIfNeeded } from '../services/tokenService.js';
 import { mintJetton } from '../services/tonService.js';
+import { evmQueue } from '../services/chainQueue.js';
 
 export const claimToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -83,8 +84,11 @@ export const claimToken = async (req: Request, res: Response, next: NextFunction
       }
       tokenAddress = caseInfo.tokenAddress!;
       const amount = ethers.parseUnits(total.toFixed(6), caseInfo.tokenDecimals || 18);
-      const tx = await treasury.transferToken(tokenAddress, user.walletAddress, amount);
-      await tx.wait(config.confirmations);
+      const tx = await evmQueue.enqueue(`claimToken:${caseId}:${userId}`, async () => {
+        const sent = await treasury.transferToken(tokenAddress, user.walletAddress, amount);
+        await sent.wait(config.confirmations);
+        return sent;
+      });
       txHash = tx.hash;
     }
 

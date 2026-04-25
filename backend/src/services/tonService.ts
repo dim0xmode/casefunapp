@@ -2,6 +2,7 @@ import { TonClient, WalletContractV4, internal, toNano, beginCell, Address, Cell
 import { contractAddress } from '@ton/core';
 import { mnemonicToPrivateKey } from '@ton/crypto';
 import { config } from '../config/env.js';
+import { tonQueue } from './chainQueue.js';
 
 let _client: TonClient | null = null;
 let _keypair: { publicKey: Buffer; secretKey: Buffer } | null = null;
@@ -174,7 +175,7 @@ export const deployJetton = async (
   name: string,
   ticker: string,
   decimals: number = 9
-): Promise<string> => {
+): Promise<string> => tonQueue.enqueue(`deployJetton:${ticker}`, async () => {
   const client = getTonClient();
   const keypair = await getTonKeypair();
   const wallet = await getTonTreasuryWallet();
@@ -228,7 +229,7 @@ export const deployJetton = async (
   }
 
   return minterAddress.toString();
-};
+});
 
 /**
  * Mint Jettons from the deployed minter to a destination address.
@@ -238,7 +239,7 @@ export const mintJetton = async (
   jettonMasterAddress: string,
   toAddress: string,
   amount: bigint
-): Promise<string> => {
+): Promise<string> => tonQueue.enqueue(`mintJetton:${jettonMasterAddress.slice(0, 8)}`, async () => {
   const client = getTonClient();
   const keypair = await getTonKeypair();
   const wallet = await getTonTreasuryWallet();
@@ -280,7 +281,7 @@ export const mintJetton = async (
     }
   }
   return `ton_mint_pending_${seqno}`;
-};
+});
 
 /**
  * Transfer Jettons already held by the treasury to a destination address.
@@ -290,7 +291,7 @@ export const transferJetton = async (
   jettonMasterAddress: string,
   toAddress: string,
   amount: bigint
-): Promise<string> => {
+): Promise<string> => tonQueue.enqueue(`transferJetton:${jettonMasterAddress.slice(0, 8)}`, async () => {
   const client = getTonClient();
   const keypair = await getTonKeypair();
   const wallet = await getTonTreasuryWallet();
@@ -340,7 +341,7 @@ export const transferJetton = async (
     }
   }
   return `ton_tx_pending_${seqno}`;
-};
+});
 
 /**
  * Look up a TON deposit transaction by its lt+hash on the treasury address.
