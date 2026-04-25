@@ -725,19 +725,34 @@ export const listInventory = async (req: Request, res: Response, next: NextFunct
 
 export const listTransactions = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const transactions = await prisma.transaction.findMany({
-      orderBy: { timestamp: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            walletAddress: true,
-            telegramUsername: true,
+    // Bound the result set hard. The full table is hundreds of thousands of
+    // rows joined with users — pulling it all on every admin poll pegged the
+    // backend at >100% CPU and tripped 5s Prisma transaction timeouts on
+    // unrelated requests (e.g. wallet login). Honour ?take/?skip from the
+    // client and clamp take to a safe ceiling.
+    const rawTake = Number(req.query.take ?? req.query.limit ?? 200);
+    const rawSkip = Number(req.query.skip ?? req.query.offset ?? 0);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(Math.floor(rawTake), 1), 500) : 200;
+    const skip = Number.isFinite(rawSkip) ? Math.max(Math.floor(rawSkip), 0) : 0;
+
+    const [transactions, total] = await Promise.all([
+      prisma.transaction.findMany({
+        orderBy: { timestamp: 'desc' },
+        take,
+        skip,
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              walletAddress: true,
+              telegramUsername: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.transaction.count(),
+    ]);
     const enriched = transactions.map((tx) => ({
       ...tx,
       username: tx.user?.username ?? null,
@@ -745,7 +760,7 @@ export const listTransactions = async (req: Request, res: Response, next: NextFu
       walletAddress: tx.user?.walletAddress ?? null,
       user: undefined,
     }));
-    res.json({ status: 'success', data: { transactions: enriched } });
+    res.json({ status: 'success', data: { transactions: enriched, total, take, skip } });
   } catch (error) {
     next(error);
   }
@@ -753,8 +768,11 @@ export const listTransactions = async (req: Request, res: Response, next: NextFu
 
 export const listRtuLedgers = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const rawTake = Number(req.query.take ?? req.query.limit ?? 500);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(Math.floor(rawTake), 1), 1000) : 500;
     const ledgers = await prisma.rtuLedger.findMany({
       orderBy: { updatedAt: 'desc' },
+      take,
     });
     res.json({ status: 'success', data: { ledgers } });
   } catch (error) {
@@ -764,8 +782,14 @@ export const listRtuLedgers = async (req: Request, res: Response, next: NextFunc
 
 export const listRtuEvents = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const rawTake = Number(req.query.take ?? req.query.limit ?? 500);
+    const rawSkip = Number(req.query.skip ?? req.query.offset ?? 0);
+    const take = Number.isFinite(rawTake) ? Math.min(Math.max(Math.floor(rawTake), 1), 1000) : 500;
+    const skip = Number.isFinite(rawSkip) ? Math.max(Math.floor(rawSkip), 0) : 0;
     const events = await prisma.rtuEvent.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
     res.json({ status: 'success', data: { events } });
   } catch (error) {
