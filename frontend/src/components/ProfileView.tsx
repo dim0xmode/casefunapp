@@ -11,6 +11,7 @@ import { ItemGrid } from './ui/ItemGrid';
 import { ImageAdjustModal } from './ui/ImageAdjustModal';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { RewardInventoryPanel } from './reward/RewardInventoryPanel';
+import { DailyStreakCard } from './DailyStreakCard';
 import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { api } from '../services/api';
@@ -1319,10 +1320,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
               {rewardsSubTab === 'earn' && (() => {
-                const socialTasks = rewardTasks.filter((t: any) => (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
-                const cfTasks = rewardTasks.filter((t: any) => t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
+                const dailyTasks = rewardTasks.filter((t: any) => t.type === 'DAILY_STREAK');
+                const socialTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
+                const cfTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
                 const now = Date.now();
-                const hasAny = socialTasks.length > 0 || cfTasks.length > 0;
+                const hasAny = dailyTasks.length > 0 || socialTasks.length > 0 || cfTasks.length > 0;
                 const socialsMissing = Boolean(user) && (!user?.twitterId || !user?.telegramId);
                 return (
                 <div className="space-y-1.5">
@@ -1349,6 +1351,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
               </div>
                   )}
+                  {dailyTasks.map((task) => (
+                    <DailyStreakCard
+                      key={task.id}
+                      task={task}
+                      isEditable={isEditable}
+                      isClaiming={claimingTaskId === task.id}
+                      onClaim={handleClaimReward}
+                      onConnectSocials={() => setRewardsSubTab('social')}
+                    />
+                  ))}
                   {socialTasks.map((task) => {
                     const needsAction = taskNeedsAction(task);
                     const isActivated = activatedTasks.has(task.id);

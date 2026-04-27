@@ -295,6 +295,58 @@ const CASEFUN_ACTION_TYPES = new Set([
   'CREATE_BATTLES', 'JOIN_BATTLES', 'CLAIM_TOKENS', 'CREATE_CASES',
 ]);
 
+// ──────── Daily streak helpers ────────
+// Streak day is determined by UTC calendar date — simpler than rolling 24h
+// windows and matches user expectations ("come back tomorrow"). The whole
+// world rolls over at the same instant (00:00 UTC).
+const STREAK_LENGTH = 7;
+
+const utcDayKey = (d: Date): number => Math.floor(d.getTime() / 86_400_000);
+
+const nextUtcMidnight = (d: Date): Date => {
+  const ms = d.getTime();
+  const dayMs = 86_400_000;
+  return new Date(Math.ceil((ms + 1) / dayMs) * dayMs);
+};
+
+interface StreakState {
+  nextDay: number;          // 1..STREAK_LENGTH — what gets claimed next
+  lastDay: number;          // 0..STREAK_LENGTH — what was claimed last time
+  claimedToday: boolean;
+  cooldownEndsAt: Date | null;
+}
+
+const computeStreakState = (
+  lastClaim: { claimedAt: Date; metadata: any } | null,
+): StreakState => {
+  const now = new Date();
+  const todayKey = utcDayKey(now);
+
+  if (!lastClaim) {
+    return { nextDay: 1, lastDay: 0, claimedToday: false, cooldownEndsAt: null };
+  }
+
+  const lastKey = utcDayKey(lastClaim.claimedAt);
+  const lastDay = Number((lastClaim.metadata as any)?.streakDay ?? 0) || 0;
+
+  if (lastKey === todayKey) {
+    // Already claimed today. The "next" day shown to the UI is what would
+    // be claimed at next reset — either lastDay+1, or back to 1 after a
+    // full cycle. Spec: after claiming day 7 the cycle restarts at 1.
+    const nextDay = lastDay >= STREAK_LENGTH ? 1 : lastDay + 1;
+    return { nextDay, lastDay, claimedToday: true, cooldownEndsAt: nextUtcMidnight(now) };
+  }
+
+  if (lastKey === todayKey - 1) {
+    // Consecutive day — progress, with cycle restart after 7.
+    const nextDay = lastDay >= STREAK_LENGTH ? 1 : lastDay + 1;
+    return { nextDay, lastDay, claimedToday: false, cooldownEndsAt: null };
+  }
+
+  // Missed at least one day — streak resets.
+  return { nextDay: 1, lastDay: 0, claimedToday: false, cooldownEndsAt: null };
+};
+
 // Any non-social, action-tracked task — including deposits — uses the
 // same progress / cooldown machinery as legacy CaseFun tasks.
 const CASEFUN_TYPES = new Set<string>([
@@ -426,6 +478,39 @@ export const listRewardTasks = async (
       const claimInfo = claimsByTask.get(task.id);
       const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
       const socialGateLocked = socialsMissing && !exemptFromSocialGate;
+
+      if (task.type === 'DAILY_STREAK') {
+        // Streak status — needs the full last claim record (metadata.streakDay
+        // determines the next reward), so we re-fetch instead of using the
+        // claimsByTask aggregate which only stores claimedAt.
+        let lastClaim: { claimedAt: Date; metadata: any } | null = null;
+        if (userId) {
+          lastClaim = await prisma.rewardClaim.findFirst({
+            where: { userId, taskId: task.id },
+            orderBy: { claimedAt: 'desc' },
+            select: { claimedAt: true, metadata: true },
+          });
+        }
+        const state = computeStreakState(lastClaim);
+        return {
+          id: task.id, type: task.type, title: task.title,
+          description: task.description,
+          reward: state.nextDay,
+          category: task.category || 'DAILY',
+          completed: !state.claimedToday,
+          claimed: state.claimedToday,
+          locked: socialGateLocked,
+          activeUntil: task.activeUntil,
+          streak: {
+            length: STREAK_LENGTH,
+            nextDay: state.nextDay,
+            lastDay: state.lastDay,
+            claimedToday: state.claimedToday,
+            cooldownEndsAt: state.cooldownEndsAt,
+            schedule: Array.from({ length: STREAK_LENGTH }, (_, i) => i + 1),
+          },
+        };
+      }
 
       if (isCaseFun) {
         const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
@@ -573,6 +658,44 @@ export const claimReward = async (
     const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
     if (!exemptFromSocialGate && (!user.twitterId || !user.telegramId)) {
       return next(new AppError('Link both Twitter and Telegram first to unlock this task', 403));
+    }
+
+    if (task.type === 'DAILY_STREAK') {
+      const state = computeStreakState(lastClaim);
+      if (state.claimedToday) {
+        return next(new AppError('Already claimed today — come back after 00:00 UTC', 400));
+      }
+      const reward = state.nextDay;
+
+      const result = await prisma.$transaction(async (tx) => {
+        const claim = await tx.rewardClaim.create({
+          data: {
+            userId,
+            taskId,
+            reward,
+            metadata: { streakDay: reward, length: STREAK_LENGTH },
+          },
+        });
+        const updatedUser = await tx.user.update({
+          where: { id: userId },
+          data: { rewardPoints: { increment: reward } },
+          select: { rewardPoints: true },
+        });
+        return { claim, totalPoints: updatedUser.rewardPoints };
+      });
+
+      void awardReferralKickback(prisma, userId, reward, task.title).catch(() => {});
+
+      return res.json({
+        status: 'success',
+        data: {
+          claimId: result.claim.id,
+          reward: result.claim.reward,
+          totalPoints: result.totalPoints,
+          streakDay: reward,
+          streakLength: STREAK_LENGTH,
+        },
+      });
     }
 
     if (isCaseFun) {

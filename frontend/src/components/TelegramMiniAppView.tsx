@@ -25,6 +25,7 @@ import { CreateCaseView } from './CreateCaseView';
 import { UpgradeView } from './UpgradeView';
 import { BattleView } from './BattleView';
 import { ProfileView } from './ProfileView';
+import { DailyStreakCard } from './DailyStreakCard';
 
 const tgHandleFromUrl = (url?: string | null): string | null => {
   if (!url) return null;
@@ -945,7 +946,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
           {/* ── Earn: all reward tasks merged ── */}
           {rewardsSubTab === 'earn' && (() => {
-            const allTasks = rewardTasks.filter((t) => !t.claimed);
+            const dailyTasks = rewardTasks.filter((t) => t.type === 'DAILY_STREAK');
+            const allTasks = rewardTasks.filter((t) => t.type !== 'DAILY_STREAK' && !t.claimed);
             const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
             const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN').sort((a, b) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
             const now = Date.now();
@@ -969,13 +971,23 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 </button>
               )}
               {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
-              {!rewardsLoading && allTasks.length === 0 && (
+              {!rewardsLoading && dailyTasks.length === 0 && allTasks.length === 0 && (
                 <div className="text-center py-8">
                   <Gift size={24} className="mx-auto text-gray-600 mb-2" />
                   <div className="text-[11px] text-gray-500">All tasks completed!</div>
                   <div className="text-[10px] text-gray-600 mt-1">More tasks coming soon — stay tuned</div>
                 </div>
               )}
+              {dailyTasks.map((task) => (
+                <DailyStreakCard
+                  key={task.id}
+                  task={task}
+                  isEditable={true}
+                  isClaiming={claimingTaskId === task.id}
+                  onClaim={handleClaimReward}
+                  onConnectSocials={() => setRewardsSubTab('social')}
+                />
+              ))}
               {socialTasks.map((task) => {
                 const needsAction = taskNeedsAction(task);
                 const isActivated = activatedTasks.has(task.id);

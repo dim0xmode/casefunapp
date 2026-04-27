@@ -139,6 +139,7 @@ export type RewardTaskType =
   | 'JOIN_BATTLES'
   | 'CLAIM_TOKENS'
   | 'CREATE_CASES'
+  | 'DAILY_STREAK'
   | 'DEPOSIT_AMOUNT_EVM'
   | 'DEPOSIT_AMOUNT_TON'
   | 'DEPOSIT_COUNT_ANY'
@@ -165,6 +166,14 @@ export interface RewardTask {
   cooldownEndsAt?: string | null;
   activeUntil?: string | null;
   targetCaseId?: string | null;
+  streak?: {
+    length: number;
+    nextDay: number;
+    lastDay: number;
+    claimedToday: boolean;
+    cooldownEndsAt?: string | null;
+    schedule: number[];
+  } | null;
 }
 
 export interface RewardClaimRecord {
