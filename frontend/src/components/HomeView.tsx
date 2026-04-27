@@ -1,5 +1,32 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowRight, Sparkles, Zap, Shield, TrendingUp, Rocket } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  Sparkles,
+  Zap,
+  Shield,
+  TrendingUp,
+  Rocket,
+  Boxes,
+  Swords,
+  Wand2,
+  Coins,
+  Gift,
+  Layers,
+  Users,
+  Activity,
+  Crown,
+  AlertTriangle,
+  Flame,
+  Lock,
+  Eye,
+  PieChart as PieChartIcon,
+  Mail,
+  MessageCircle,
+  Trophy,
+  Hourglass,
+  CheckCircle2,
+  Target,
+} from 'lucide-react';
 
 interface HomeViewProps {
   onCreateCase: () => void;
@@ -7,432 +34,627 @@ interface HomeViewProps {
   onOpenWalletConnect: () => void;
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({
-  onCreateCase,
-  isAuthenticated: _isAuthenticated,
-  onOpenWalletConnect: _onOpenWalletConnect,
-}) => {
-  const [isVisible, setIsVisible] = useState<{ [key: string]: boolean }>({});
+type Reveal = Record<string, boolean>;
 
+const useReveal = (): Reveal => {
+  const [visible, setVisible] = useState<Reveal>({});
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            setIsVisible((prev) => ({ ...prev, [entry.target.id]: true }));
+            setVisible((prev) => ({ ...prev, [entry.target.id]: true }));
           }
         });
       },
-      { threshold: 0.1 }
+      { threshold: 0.12 }
     );
-
     document.querySelectorAll('[data-animate]').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
   }, []);
+  return visible;
+};
+
+const SectionTitle: React.FC<{
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  id: string;
+  visible: Reveal;
+  small?: boolean;
+}> = ({ title, subtitle, id, visible, small }) => (
+  <div
+    id={id}
+    data-animate
+    className="text-center max-w-3xl mx-auto mb-14"
+    style={{
+      opacity: visible[id] ? 1 : 0,
+      transform: visible[id] ? 'translateY(0)' : 'translateY(24px)',
+      transition: 'all 0.7s ease-out',
+    }}
+  >
+    <h2
+      className={`font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-web3-accent via-emerald-300 to-web3-success ${
+        small ? 'text-3xl md:text-4xl' : 'text-4xl md:text-6xl'
+      }`}
+    >
+      {title}
+    </h2>
+    {subtitle && (
+      <p className="mt-3 text-gray-400 text-base md:text-lg">{subtitle}</p>
+    )}
+  </div>
+);
+
+const Card: React.FC<{
+  id: string;
+  visible: Reveal;
+  delay?: number;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ id, visible, delay = 0, className = '', children }) => (
+  <div
+    id={id}
+    data-animate
+    className={`group relative bg-[#0F1620]/80 border border-white/5 rounded-2xl p-6 md:p-7 backdrop-blur-sm hover:border-web3-accent/40 transition-all duration-500 overflow-hidden ${className}`}
+    style={{
+      opacity: visible[id] ? 1 : 0,
+      transform: visible[id] ? 'translateY(0)' : 'translateY(28px)',
+      transition: `all 0.7s ease-out ${delay}ms`,
+    }}
+  >
+    <div className="absolute inset-0 bg-gradient-to-br from-web3-accent/0 via-transparent to-emerald-400/0 group-hover:from-web3-accent/5 group-hover:to-emerald-400/5 transition-colors duration-500 pointer-events-none" />
+    <div className="relative z-10">{children}</div>
+  </div>
+);
+
+const IconBadge: React.FC<{
+  Icon: React.ComponentType<{ className?: string }>;
+  tone?: 'mint' | 'emerald' | 'gold' | 'red' | 'purple';
+}> = ({ Icon, tone = 'mint' }) => {
+  const map: Record<string, string> = {
+    mint: 'bg-web3-accent/10 text-web3-accent border-web3-accent/30',
+    emerald: 'bg-emerald-400/10 text-emerald-300 border-emerald-400/30',
+    gold: 'bg-amber-400/10 text-amber-300 border-amber-400/30',
+    red: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+    purple: 'bg-violet-400/10 text-violet-300 border-violet-400/30',
+  };
+  return (
+    <div
+      className={`w-11 h-11 rounded-xl flex items-center justify-center border ${map[tone]} mb-4`}
+    >
+      <Icon className="w-5 h-5" />
+    </div>
+  );
+};
+
+export const HomeView: React.FC<HomeViewProps> = ({
+  onCreateCase,
+  isAuthenticated: _isAuthenticated,
+  onOpenWalletConnect: _onOpenWalletConnect,
+}) => {
+  const visible = useReveal();
+
+  const tokenomics = useMemo(
+    () => [
+      { label: 'Community Rewards', value: 35, color: '#66FCF1' },
+      { label: 'Liquidity', value: 20, color: '#10B981' },
+      { label: 'Team', value: 15, color: '#8B5CF6' },
+      { label: 'Treasury', value: 15, color: '#F59E0B' },
+      { label: 'Marketing', value: 10, color: '#3B82F6' },
+      { label: 'Advisors', value: 5, color: '#EF4444' },
+    ],
+    []
+  );
+
+  const donut = useMemo(() => {
+    const total = tokenomics.reduce((acc, slice) => acc + slice.value, 0);
+    let acc = 0;
+    return tokenomics.map((slice) => {
+      const start = (acc / total) * 360;
+      acc += slice.value;
+      const end = (acc / total) * 360;
+      return { ...slice, start, end };
+    });
+  }, [tokenomics]);
+
+  const donutBg = `conic-gradient(${donut
+    .map((s) => `${s.color} ${s.start}deg ${s.end}deg`)
+    .join(', ')})`;
 
   return (
-    <div className="w-full min-h-screen text-white overflow-x-hidden relative">
-      {/* Block 1: Hero Section */}
-      <section className="relative min-h-[95vh] flex flex-col items-center justify-center text-center px-4 overflow-hidden">
-        <div className="z-10 max-w-6xl space-y-8 flex flex-col items-center">
-          {/* Badge with animation */}
-          <div 
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-web3-accent/10 to-web3-purple/10 border border-web3-accent/30 text-web3-accent text-xs font-bold uppercase tracking-widest mb-4 animate-fade-in backdrop-blur-sm"
+    <div className="w-full text-white relative overflow-hidden">
+      {/* Ambient backdrop: starfield + soft mint glow blobs */}
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(102,252,241,0.10),transparent_45%),radial-gradient(circle_at_85%_30%,rgba(16,185,129,0.10),transparent_40%),radial-gradient(circle_at_50%_85%,rgba(139,92,246,0.10),transparent_45%)]" />
+        <div
+          className="absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage:
+              'radial-gradient(rgba(255,255,255,0.18) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }}
+        />
+      </div>
+
+      {/* HERO — pitch deck cover */}
+      <section className="relative px-4 pt-20 md:pt-28 pb-20 md:pb-28 text-center">
+        <div className="max-w-5xl mx-auto flex flex-col items-center">
+          <div
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-web3-accent/30 bg-web3-accent/5 text-web3-accent text-[11px] font-semibold uppercase tracking-[0.18em]"
             style={{ animation: 'fadeInUp 0.6s ease-out' }}
           >
-            <Sparkles size={14} className="animate-pulse" />
-            Welcome to CaseFun
-            <Sparkles size={14} className="animate-pulse" />
+            <Sparkles size={12} />
+            Public Testnet · Live
           </div>
 
-          {/* Main Heading with stagger animation */}
-          <h1 
-            className="text-6xl md:text-8xl font-black tracking-tighter leading-tight"
-            style={{ animation: 'fadeInUp 0.8s ease-out 0.2s backwards' }}
+          <h1
+            className="mt-8 text-6xl md:text-8xl font-black tracking-tight leading-[0.95]"
+            style={{ animation: 'fadeInUp 0.8s ease-out 0.15s backwards' }}
           >
-            Your Token, Your Cases, <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-white to-web3-purple animate-gradient">
-              Your Rules.
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-web3-accent via-emerald-300 to-web3-success">
+              Case
+            </span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 via-web3-success to-web3-accent">
+              Fun
             </span>
           </h1>
-          
-          <p 
-            className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed mb-8"
-            style={{ animation: 'fadeInUp 1s ease-out 0.4s backwards' }}
+
+          <p
+            className="mt-6 text-xl md:text-2xl text-gray-200 font-semibold"
+            style={{ animation: 'fadeInUp 0.9s ease-out 0.3s backwards' }}
           >
-            Turn your token into an exciting game. Create custom loot boxes, launch battles, and grow your community in a single click.
+            Your Token. Your Cases. Your Rules.
+          </p>
+          <p
+            className="mt-4 max-w-2xl text-gray-400 text-base md:text-lg leading-relaxed"
+            style={{ animation: 'fadeInUp 1s ease-out 0.45s backwards' }}
+          >
+            CaseFun turns any token into a playable, on‑chain economy — loot
+            cases, PvP battles, upgrades and provably fair drops. Launch in
+            minutes, no code required.
           </p>
 
-          {/* CTA Buttons with pulse animation */}
-          <div 
-            className="flex flex-col sm:flex-row items-center justify-center gap-6 mt-8 w-full"
-            style={{ animation: 'fadeInUp 1.4s ease-out 0.8s backwards' }}
+          <div
+            className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full"
+            style={{ animation: 'fadeInUp 1.1s ease-out 0.6s backwards' }}
           >
             <button
               onClick={onCreateCase}
-              className="group relative w-full sm:w-auto px-12 py-6 text-xl font-black rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-[0_0_60px_rgba(102,252,241,0.6)]"
+              className="group relative w-full sm:w-auto px-10 py-5 text-lg font-black rounded-xl bg-gradient-to-r from-web3-accent to-web3-success text-black overflow-hidden transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_50px_rgba(102,252,241,0.55)]"
             >
-              {/* Animated shine effect */}
-              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-              <span className="relative flex items-center gap-2">
-                <Rocket className="w-6 h-6" />
+              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+              <span className="relative flex items-center justify-center gap-2">
+                <Rocket className="w-5 h-5" />
                 Create a Case
-                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </span>
-              {/* Pulse rings */}
-              <span className="absolute -inset-2 rounded-xl bg-web3-accent/30 animate-ping opacity-75"></span>
             </button>
-
             <button
-              onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-              className="w-full sm:w-auto px-12 py-6 text-xl font-bold rounded-xl border-2 border-white/20 hover:border-web3-accent/50 hover:bg-white/5 transition-all duration-300 backdrop-blur-sm"
+              onClick={() =>
+                document
+                  .getElementById('product')
+                  ?.scrollIntoView({ behavior: 'smooth' })
+              }
+              className="w-full sm:w-auto px-10 py-5 text-lg font-bold rounded-xl border border-white/15 hover:border-web3-accent/40 hover:bg-white/5 transition-all duration-300"
             >
-              Learn More
+              See how it works
             </button>
           </div>
         </div>
       </section>
 
-      {/* Block 2: How It Works */}
-      <section id="how-it-works" className="py-24 px-6 relative">
-        <div className="max-w-7xl mx-auto">
-          <div 
-            className="text-center mb-20"
-            data-animate
-            id="how-section"
-            style={{ 
-              opacity: isVisible['how-section'] ? 1 : 0,
-              transform: isVisible['how-section'] ? 'translateY(0)' : 'translateY(30px)',
-              transition: 'all 0.8s ease-out'
-            }}
-          >
-            <h2 className="text-5xl font-black mb-4 uppercase tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-              How It Works
-            </h2>
-            <p className="text-gray-400 text-2xl max-w-2xl mx-auto font-bold">
-              Simple. Fair. Effective.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-            {/* Step 1 */}
-            <div 
-              data-animate
-              id="step-1"
-              className="group relative bg-gradient-to-br from-web3-card to-web3-card/50 p-10 rounded-3xl border border-gray-800 hover:border-web3-accent/50 transition-all duration-500 overflow-hidden"
-              style={{ 
-                opacity: isVisible['step-1'] ? 1 : 0,
-                transform: isVisible['step-1'] ? 'translateY(0)' : 'translateY(50px)',
-                transition: 'all 0.8s ease-out 0.2s'
-              }}
-            >
-              {/* Glow effect */}
-              <div className="absolute inset-0 bg-web3-accent/0 group-hover:bg-web3-accent/5 transition-all duration-500"></div>
-              <div className="absolute -top-20 -right-20 w-40 h-40 bg-web3-accent/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-500"></div>
-              
-              <div className="relative z-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-web3-accent to-web3-accent/50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-                  <Sparkles className="w-8 h-8 text-black" />
+      {/* PROBLEM — "One-day Token" Culture */}
+      <section className="relative px-4 py-16 md:py-24">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="problem"
+            visible={visible}
+            title={<>The “One‑day Token” Culture</>}
+            subtitle="Most projects launch with hype and die within a week. CaseFun fixes the post‑launch black hole with retention‑first mechanics."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {[
+              {
+                icon: Flame,
+                title: 'Instant Death',
+                text: 'New tokens lose 90% of holders in the first 48 hours after launch.',
+              },
+              {
+                icon: AlertTriangle,
+                title: 'Zero Retention',
+                text: 'No reason to stay: holders sell on the first green candle.',
+              },
+              {
+                icon: Eye,
+                title: 'Bot Wars',
+                text: 'Snipers and bots dominate early volume, real users churn.',
+              },
+              {
+                icon: Activity,
+                title: 'Stagnation',
+                text: 'Even surviving projects flatline — no usage, no narrative.',
+              },
+            ].map((it, i) => (
+              <Card
+                key={it.title}
+                id={`problem-${i}`}
+                visible={visible}
+                delay={i * 80}
+              >
+                <div className="flex items-start gap-4">
+                  <IconBadge Icon={it.icon} tone="red" />
+                  <div>
+                    <h3 className="text-lg font-bold">{it.title}</h3>
+                    <p className="text-gray-400 text-sm md:text-base mt-1.5 leading-relaxed">
+                      {it.text}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-6xl font-black text-web3-accent/20 mb-4">01</div>
-                <h3 className="text-3xl font-black mb-4 text-web3-accent">Create</h3>
-                <p className="text-gray-300 leading-relaxed text-lg">
-                  Launch your own token directly on the platform. Set your prizes and odds—our algorithm instantly handles the math for your cases.
-                </p>
-              </div>
-            </div>
-
-            {/* Step 2 */}
-            <div 
-              data-animate
-              id="step-2"
-              className="group relative bg-gradient-to-br from-web3-card to-web3-card/50 p-10 rounded-3xl border border-gray-800 hover:border-web3-success/50 transition-all duration-500 overflow-hidden"
-              style={{ 
-                opacity: isVisible['step-2'] ? 1 : 0,
-                transform: isVisible['step-2'] ? 'translateY(0)' : 'translateY(50px)',
-                transition: 'all 0.8s ease-out 0.4s'
-              }}
-            >
-              <div className="absolute inset-0 bg-web3-success/0 group-hover:bg-web3-success/5 transition-all duration-500"></div>
-              <div className="absolute -top-20 -right-20 w-40 h-40 bg-web3-success/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-500"></div>
-              
-              <div className="relative z-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-web3-success to-web3-success/50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-                  <Rocket className="w-8 h-8 text-black" />
-                </div>
-                <div className="text-6xl font-black text-web3-success/20 mb-4">02</div>
-                <h3 className="text-3xl font-black mb-4 text-web3-success">Launch</h3>
-                <p className="text-gray-300 leading-relaxed text-lg">
-                  Share the link with your audience. Your holders get the thrill of the game, while your token gains activity and volume.
-                </p>
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div 
-              data-animate
-              id="step-3"
-              className="group relative bg-gradient-to-br from-web3-card to-web3-card/50 p-10 rounded-3xl border border-gray-800 hover:border-web3-purple/50 transition-all duration-500 overflow-hidden"
-              style={{ 
-                opacity: isVisible['step-3'] ? 1 : 0,
-                transform: isVisible['step-3'] ? 'translateY(0)' : 'translateY(50px)',
-                transition: 'all 0.8s ease-out 0.6s'
-              }}
-            >
-              <div className="absolute inset-0 bg-web3-purple/0 group-hover:bg-web3-purple/5 transition-all duration-500"></div>
-              <div className="absolute -top-20 -right-20 w-40 h-40 bg-web3-purple/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-500"></div>
-              
-              <div className="relative z-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-web3-purple to-web3-purple/50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-                  <TrendingUp className="w-8 h-8 text-black" />
-                </div>
-                <div className="text-6xl font-black text-web3-purple/20 mb-4">03</div>
-                <h3 className="text-3xl font-black mb-4 text-web3-purple">Scale</h3>
-                <p className="text-gray-300 leading-relaxed text-lg">
-                  Track your results and create new case collections to keep your fans engaged.
-                </p>
-              </div>
-            </div>
-
-            {/* Connecting line */}
-            <div className="hidden md:block absolute top-1/2 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-web3-accent/30 to-transparent -translate-y-1/2 pointer-events-none"></div>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Block 3: Core Functions */}
-      <section className="py-24 px-6 relative overflow-hidden">
-        
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div 
-            className="text-center mb-20"
-            data-animate
-            id="core-section"
-            style={{ 
-              opacity: isVisible['core-section'] ? 1 : 0,
-              transform: isVisible['core-section'] ? 'translateY(0)' : 'translateY(30px)',
-              transition: 'all 0.8s ease-out'
-            }}
-          >
-            <h2 className="text-5xl font-black mb-4 uppercase tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-              Core Functions
-            </h2>
-            <p className="text-gray-400 text-xl">Choose your game mode</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Cases Card */}
-            <div 
-              data-animate
-              id="feature-1"
-              className="group relative bg-gradient-to-br from-web3-card via-web3-card to-web3-accent/5 p-8 rounded-3xl border border-gray-800 hover:border-web3-gold/50 overflow-hidden transition-all duration-500 hover:scale-105"
-              style={{ 
-                opacity: isVisible['feature-1'] ? 1 : 0,
-                transform: isVisible['feature-1'] ? 'scale(1)' : 'scale(0.9)',
-                transition: 'all 0.6s ease-out 0.2s'
-              }}
-            >
-              {/* Animated background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-web3-gold/0 to-web3-gold/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-web3-gold/20 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-              
-              <div className="relative z-10">
-                <div className="text-5xl mb-6 group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">📦</div>
-                <h3 className="text-3xl font-black mb-4 text-white group-hover:text-web3-gold transition-colors duration-300">
-                  Cases (Classic)
-                </h3>
-                <p className="text-gray-300 leading-relaxed text-lg mb-6">
-                  Classic unboxing experience. Test your luck and claim project tokens directly to your wallet. Fast, transparent, and fair.
-                </p>
-                <div className="flex items-center gap-2 text-web3-gold font-bold">
-                  <span>Try Now</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-2 transition-transform" />
-                </div>
+      {/* GROWTH STATS */}
+      <section className="relative px-4 py-12 md:py-16">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="growth"
+            visible={visible}
+            title={<>Exponential Growth</>}
+            subtitle="The unboxing economy is one of the fastest growing categories in crypto‑gaming."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <Card id="g-1" visible={visible} delay={60}>
+              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
+                Pump.fun cumulative
               </div>
-            </div>
-
-            {/* Battle Card */}
-            <div 
-              data-animate
-              id="feature-2"
-              className="group relative bg-gradient-to-br from-web3-card via-web3-card to-web3-danger/5 p-8 rounded-3xl border border-gray-800 hover:border-web3-danger/50 overflow-hidden transition-all duration-500 hover:scale-105"
-              style={{ 
-                opacity: isVisible['feature-2'] ? 1 : 0,
-                transform: isVisible['feature-2'] ? 'scale(1)' : 'scale(0.9)',
-                transition: 'all 0.6s ease-out 0.4s'
-              }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-web3-danger/0 to-web3-danger/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-web3-danger/20 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-              
-              <div className="relative z-10">
-                <div className="text-5xl mb-6 group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">⚔️</div>
-                <h3 className="text-3xl font-black mb-4 text-white group-hover:text-web3-danger transition-colors duration-300">
-                  Case Battle (Duels)
-                </h3>
-                <p className="text-gray-300 leading-relaxed text-lg mb-6">
-                  A battle of luck! Create a duel and wait for a real opponent or fight a bot. Player with the highest total token value takes the pot.
-                </p>
-                <div className="flex items-center gap-2 text-web3-danger font-bold">
-                  <span>Challenge</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-2 transition-transform" />
-                </div>
+              <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-web3-accent to-emerald-300">
+                $100M+
               </div>
-            </div>
-
-            {/* Upgrade Card */}
-            <div 
-              data-animate
-              id="feature-3"
-              className="group relative bg-gradient-to-br from-web3-card via-web3-card to-web3-purple/5 p-8 rounded-3xl border border-gray-800 hover:border-web3-purple/50 overflow-hidden transition-all duration-500 hover:scale-105"
-              style={{ 
-                opacity: isVisible['feature-3'] ? 1 : 0,
-                transform: isVisible['feature-3'] ? 'scale(1)' : 'scale(0.9)',
-                transition: 'all 0.6s ease-out 0.6s'
-              }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-web3-purple/0 to-web3-purple/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <div className="absolute -bottom-20 -right-20 w-60 h-60 bg-web3-purple/20 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-              
-              <div className="relative z-10">
-                <div className="text-5xl mb-6 group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">⚡</div>
-                <h3 className="text-3xl font-black mb-4 text-white group-hover:text-web3-purple transition-colors duration-300">
-                  Upgrade (Power-up)
-                </h3>
-                <p className="text-gray-300 leading-relaxed text-lg mb-6">
-                  Risk it all to turn your tokens into a massive jackpot! System calculates your odds. One click: secure the prize or try again.
-                </p>
-                <div className="flex items-center gap-2 text-web3-purple font-bold">
-                  <span>Power Up</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-2 transition-transform" />
-                </div>
+              <p className="mt-3 text-sm text-gray-400">
+                Daily revenue across launchpads — a market hungry for the next
+                step beyond meme launches.
+              </p>
+            </Card>
+            <Card id="g-2" visible={visible} delay={140}>
+              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
+                Unbox category
               </div>
-            </div>
+              <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-web3-success">
+                +400%
+              </div>
+              <p className="mt-3 text-sm text-gray-400">
+                YoY growth in on‑chain unboxing volume across CS:GO inspired
+                Web3 projects.
+              </p>
+            </Card>
+            <Card id="g-3" visible={visible} delay={220}>
+              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
+                DEX share
+              </div>
+              <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-violet-300 to-web3-accent">
+                30%
+              </div>
+              <p className="mt-3 text-sm text-gray-400">
+                Of weekly DEX volume now flows through gamified token products.
+              </p>
+            </Card>
           </div>
         </div>
       </section>
 
-      {/* Block 4: Why CaseFun? */}
-      <section className="py-24 px-6 relative">
-        <div className="max-w-7xl mx-auto">
-          <div 
-            className="text-center mb-20"
-            data-animate
-            id="why-section"
-            style={{ 
-              opacity: isVisible['why-section'] ? 1 : 0,
-              transform: isVisible['why-section'] ? 'translateY(0)' : 'translateY(30px)',
-              transition: 'all 0.8s ease-out'
-            }}
-          >
-            <h2 className="text-5xl font-black mb-4 uppercase tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-              Why CaseFun?
-            </h2>
-            <p className="text-gray-400 text-xl">Built for creators, loved by communities</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div 
-              data-animate
-              id="why-1"
-              className="group bg-web3-card/50 backdrop-blur-sm p-8 rounded-2xl border border-gray-800 hover:border-web3-accent/50 hover:bg-web3-card transition-all duration-500"
-              style={{ 
-                opacity: isVisible['why-1'] ? 1 : 0,
-                transform: isVisible['why-1'] ? 'translateX(0)' : 'translateX(-30px)',
-                transition: 'all 0.6s ease-out 0.2s'
-              }}
-            >
-              <div className="w-14 h-14 rounded-xl bg-web3-accent/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                <Zap className="w-7 h-7 text-web3-accent" />
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-web3-accent">Full Automation</h3>
-              <p className="text-gray-300 leading-relaxed text-lg">
-                System manages prize distribution and odds calculation automatically. You just sit back and watch the results.
-              </p>
-            </div>
-
-            <div 
-              data-animate
-              id="why-2"
-              className="group bg-web3-card/50 backdrop-blur-sm p-8 rounded-2xl border border-gray-800 hover:border-web3-success/50 hover:bg-web3-card transition-all duration-500"
-              style={{ 
-                opacity: isVisible['why-2'] ? 1 : 0,
-                transform: isVisible['why-2'] ? 'translateY(0)' : 'translateY(30px)',
-                transition: 'all 0.6s ease-out 0.4s'
-              }}
-            >
-              <div className="w-14 h-14 rounded-xl bg-web3-success/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                <Shield className="w-7 h-7 text-web3-success" />
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-web3-success">Provably Fair</h3>
-              <p className="text-gray-300 leading-relaxed text-lg">
-                We use transparent algorithms. Every player knows their exact win probability before they even click.
-              </p>
-            </div>
-
-            <div 
-              data-animate
-              id="why-3"
-              className="group bg-web3-card/50 backdrop-blur-sm p-8 rounded-2xl border border-gray-800 hover:border-web3-purple/50 hover:bg-web3-card transition-all duration-500"
-              style={{ 
-                opacity: isVisible['why-3'] ? 1 : 0,
-                transform: isVisible['why-3'] ? 'translateX(0)' : 'translateX(30px)',
-                transition: 'all 0.6s ease-out 0.6s'
-              }}
-            >
-              <div className="w-14 h-14 rounded-xl bg-web3-purple/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                <Sparkles className="w-7 h-7 text-web3-purple" />
-              </div>
-              <h3 className="text-2xl font-bold mb-4 text-web3-purple">No-Code Launch</h3>
-              <p className="text-gray-300 leading-relaxed text-lg">
-                No developer skills required. Everything—from cases to battles—is ready to go right out of the box.
-              </p>
-            </div>
+      {/* PRODUCT — Interactive Evolution of Assets */}
+      <section id="product" className="relative px-4 py-16 md:py-24">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="product-title"
+            visible={visible}
+            title={<>Interactive Evolution of Assets</>}
+            subtitle="A complete launchpad‑grade product suite, designed around long‑term engagement."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {[
+              {
+                icon: Wand2,
+                tone: 'mint' as const,
+                title: 'One‑Click Creation',
+                text: 'Spin up a token + cases in minutes. No Solidity, no UI work, no audits to coordinate.',
+              },
+              {
+                icon: Boxes,
+                tone: 'emerald' as const,
+                title: 'Case Unboxing',
+                text: 'Provably fair drops with adjustable rarity. Every roll is verifiable on‑chain.',
+              },
+              {
+                icon: Coins,
+                tone: 'gold' as const,
+                title: 'Tokens as a Resource',
+                text: 'Holders use tokens to play, upgrade, and battle — utility from day one.',
+              },
+              {
+                icon: Target,
+                tone: 'purple' as const,
+                title: 'Mission‑Driven',
+                text: 'Built for creators who care about retention, not just the launch candle.',
+              },
+            ].map((it, i) => (
+              <Card key={it.title} id={`prod-${i}`} visible={visible} delay={i * 80}>
+                <IconBadge Icon={it.icon} tone={it.tone} />
+                <h3 className="text-xl font-bold">{it.title}</h3>
+                <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                  {it.text}
+                </p>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Block 5: Final CTA */}
-      <section className="py-32 px-6 bg-gradient-to-t from-web3-accent/10 via-web3-purple/5 to-transparent text-center relative overflow-hidden">
-        
-        <div 
-          className="relative z-10 max-w-4xl mx-auto"
+      {/* CORE FEATURES — Cases / Battle / Upgrade */}
+      <section className="relative px-4 py-16 md:py-24">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="modes-title"
+            visible={visible}
+            title={<>Three Game Modes</>}
+            subtitle="Pick your loop — luck, skill, or risk. All three reinforce token velocity."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <Card id="mode-1" visible={visible} delay={60}>
+              <IconBadge Icon={Boxes} tone="mint" />
+              <h3 className="text-2xl font-black">Cases</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                Classic unboxing. Set odds and prizes once — players unbox
+                forever. Drops settle straight to the wallet.
+              </p>
+              <div className="mt-5 inline-flex items-center gap-2 text-web3-accent font-semibold text-sm">
+                Try unboxing <ArrowRight className="w-4 h-4" />
+              </div>
+            </Card>
+            <Card id="mode-2" visible={visible} delay={140}>
+              <IconBadge Icon={Swords} tone="red" />
+              <h3 className="text-2xl font-black">Case Battle</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                1v1 PvP duels — both players unbox, the higher payout takes the
+                pot. Fights bots if no opponent shows up.
+              </p>
+              <div className="mt-5 inline-flex items-center gap-2 text-rose-300 font-semibold text-sm">
+                Challenge <ArrowRight className="w-4 h-4" />
+              </div>
+            </Card>
+            <Card id="mode-3" visible={visible} delay={220}>
+              <IconBadge Icon={Zap} tone="purple" />
+              <h3 className="text-2xl font-black">Upgrade</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                Risk a small drop for a big one. Transparent odds, instant
+                resolution, no middlemen.
+              </p>
+              <div className="mt-5 inline-flex items-center gap-2 text-violet-300 font-semibold text-sm">
+                Power up <ArrowRight className="w-4 h-4" />
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* RETENTION — Luck Hour & Referral */}
+      <section className="relative px-4 py-12 md:py-16">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="retention-title"
+            visible={visible}
+            title={<>Luck Hour &amp; Referral</>}
+            subtitle="Mechanics designed to bring users back every day."
+            small
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <Card id="ret-1" visible={visible} delay={60}>
+              <div className="flex items-start gap-4">
+                <IconBadge Icon={Hourglass} tone="mint" />
+                <div>
+                  <h3 className="text-lg font-bold">Luck Hour</h3>
+                  <p className="text-gray-400 text-sm md:text-base mt-1.5 leading-relaxed">
+                    Random hourly windows with boosted odds. Active users get
+                    rewarded just for showing up.
+                  </p>
+                </div>
+              </div>
+            </Card>
+            <Card id="ret-2" visible={visible} delay={140}>
+              <div className="flex items-start gap-4">
+                <IconBadge Icon={Users} tone="emerald" />
+                <div>
+                  <h3 className="text-lg font-bold">Referral Program</h3>
+                  <p className="text-gray-400 text-sm md:text-base mt-1.5 leading-relaxed">
+                    Multi‑tier rewards from invites. Communities grow themselves
+                    with built‑in incentives.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* TRUST — Provably Fair */}
+      <section className="relative px-4 py-16 md:py-24">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="trust-title"
+            visible={visible}
+            title={<>Provably Fair</>}
+            subtitle="Cryptographic randomness. Every roll is auditable, every probability is public."
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <Card id="trust-1" visible={visible} delay={60}>
+              <IconBadge Icon={Shield} tone="emerald" />
+              <h3 className="text-lg font-bold">Open Algorithm</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                Drop probabilities are derived from token price and case cost,
+                visible in the UI before every spin.
+              </p>
+            </Card>
+            <Card id="trust-2" visible={visible} delay={140}>
+              <IconBadge Icon={Lock} tone="mint" />
+              <h3 className="text-lg font-bold">On‑chain Settlement</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                Outcomes are committed and settled on‑chain — no off‑chain
+                operator can rewrite history.
+              </p>
+            </Card>
+            <Card id="trust-3" visible={visible} delay={220}>
+              <IconBadge Icon={CheckCircle2} tone="purple" />
+              <h3 className="text-lg font-bold">Verifiable RNG</h3>
+              <p className="text-gray-400 text-sm md:text-base mt-2 leading-relaxed">
+                Each roll exposes a seed and proof so anyone can replay the
+                drop and confirm the outcome.
+              </p>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* TOKEN UTILITIES */}
+      <section className="relative px-4 py-12 md:py-16">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="utility-title"
+            visible={visible}
+            title={<>$CF Token Utilities</>}
+            subtitle="Real demand sinks for the platform token."
+            small
+          />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { icon: TrendingUp, tone: 'mint' as const, label: 'Stat Yield' },
+              { icon: Layers, tone: 'emerald' as const, label: 'CryptPad' },
+              { icon: Crown, tone: 'gold' as const, label: 'Upgrade Boost' },
+              { icon: Gift, tone: 'purple' as const, label: 'Gifts & Drops' },
+            ].map((it, i) => (
+              <Card key={it.label} id={`util-${i}`} visible={visible} delay={i * 70}>
+                <IconBadge Icon={it.icon} tone={it.tone} />
+                <div className="text-base font-bold">{it.label}</div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* TOKENOMICS */}
+      <section className="relative px-4 py-16 md:py-24">
+        <div className="max-w-6xl mx-auto">
+          <SectionTitle
+            id="economics-title"
+            visible={visible}
+            title={<>Economics — 100% Community‑Focused</>}
+            subtitle="Allocation is built to fund growth without compromising long‑term holders."
+          />
+          <Card id="economics-card" visible={visible} delay={80}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+              <div className="flex items-center justify-center">
+                <div
+                  className="relative w-56 h-56 md:w-72 md:h-72 rounded-full"
+                  style={{ background: donutBg }}
+                >
+                  <div className="absolute inset-6 rounded-full bg-[#0B1018] border border-white/5 flex flex-col items-center justify-center">
+                    <PieChartIcon className="w-7 h-7 text-web3-accent" />
+                    <div className="mt-2 text-xs uppercase tracking-widest text-gray-500">
+                      Total supply
+                    </div>
+                    <div className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-web3-accent to-emerald-300">
+                      $CF
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2.5">
+                {tokenomics.map((slice) => (
+                  <div
+                    key={slice.label}
+                    className="flex items-center justify-between gap-4 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="w-3 h-3 rounded-sm"
+                        style={{ backgroundColor: slice.color }}
+                      />
+                      <span className="text-sm text-gray-200 font-semibold">
+                        {slice.label}
+                      </span>
+                    </div>
+                    <span className="text-sm font-mono text-gray-300">
+                      {slice.value}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+      <section className="relative px-4 py-20 md:py-28 text-center">
+        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-web3-accent/10 via-transparent to-transparent" />
+        <div
+          id="final-cta"
           data-animate
-          id="cta-section"
-          style={{ 
-            opacity: isVisible['cta-section'] ? 1 : 0,
-            transform: isVisible['cta-section'] ? 'scale(1)' : 'scale(0.95)',
-            transition: 'all 0.8s ease-out'
+          className="max-w-3xl mx-auto"
+          style={{
+            opacity: visible['final-cta'] ? 1 : 0,
+            transform: visible['final-cta'] ? 'scale(1)' : 'scale(0.96)',
+            transition: 'all 0.7s ease-out',
           }}
         >
-          <h2 className="text-5xl md:text-7xl font-black mb-8 uppercase bg-clip-text text-transparent bg-gradient-to-r from-white via-web3-accent to-web3-purple animate-gradient">
-            Ready to bring your token to life?
+          <h2 className="text-4xl md:text-6xl font-black tracking-tight">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-web3-accent via-emerald-300 to-web3-success">
+              Ready to bring your token to life?
+            </span>
           </h2>
-          <p className="text-2xl text-gray-300 max-w-2xl mx-auto mb-12 leading-relaxed">
-            Launch your first case or battle right now. It takes less than a minute.
+          <p className="mt-5 text-gray-300 text-base md:text-lg">
+            Launch your first case in less than a minute. No code, no audit,
+            no overhead.
           </p>
-          
-          {/* Mega CTA Button */}
-          <button
-            onClick={onCreateCase}
-            className="group relative inline-flex items-center gap-3 px-16 py-8 text-3xl font-black rounded-2xl bg-gradient-to-r from-web3-accent via-web3-success to-web3-accent bg-size-200 animate-gradient text-black overflow-hidden transform transition-all duration-300 hover:scale-110 hover:shadow-[0_0_100px_rgba(102,252,241,0.8)]"
-          >
-            {/* Shine effect */}
-            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/40 to-transparent"></div>
-            
-            {/* Content */}
-            <Rocket className="w-10 h-10 group-hover:rotate-12 transition-transform" />
-            <span className="relative">Get Started Now</span>
-            <ArrowRight className="w-10 h-10 group-hover:translate-x-2 transition-transform" />
-            
-            {/* Pulse rings */}
-            <span className="absolute -inset-4 rounded-2xl bg-web3-accent/30 animate-ping"></span>
-            <span className="absolute -inset-8 rounded-2xl bg-web3-accent/20 animate-ping" style={{ animationDelay: '0.5s' }}></span>
-          </button>
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={onCreateCase}
+              className="group relative inline-flex items-center gap-3 px-12 py-6 text-xl font-black rounded-xl bg-gradient-to-r from-web3-accent via-emerald-300 to-web3-success text-black overflow-hidden transition-all duration-300 hover:scale-[1.04] hover:shadow-[0_0_70px_rgba(102,252,241,0.55)]"
+            >
+              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+              <Rocket className="w-6 h-6" />
+              Get Started
+              <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <a
+              href="https://t.me/casefun_bot"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-2 px-8 py-6 text-base font-bold rounded-xl border border-white/15 hover:border-web3-accent/40 hover:bg-white/5 transition-all duration-300"
+            >
+              <MessageCircle className="w-5 h-5" />
+              Open in Telegram
+            </a>
+          </div>
 
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-6 text-sm text-gray-400">
+            <a
+              href="mailto:hello@casefun.net"
+              className="inline-flex items-center gap-2 hover:text-web3-accent transition-colors"
+            >
+              <Mail className="w-4 h-4" />
+              hello@casefun.net
+            </a>
+            <span className="hidden sm:inline text-white/10">•</span>
+            <span className="inline-flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-web3-accent" />
+              Public Testnet · Live now
+            </span>
+          </div>
         </div>
       </section>
-
     </div>
   );
 };
