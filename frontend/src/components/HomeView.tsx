@@ -4,22 +4,17 @@ import {
   Sparkles,
   Zap,
   Shield,
-  TrendingUp,
   Rocket,
   Boxes,
   Swords,
   Wand2,
   Coins,
-  Gift,
-  Layers,
   Users,
   Activity,
-  Crown,
   AlertTriangle,
   Flame,
   Lock,
   Eye,
-  PieChart as PieChartIcon,
   Mail,
   MessageCircle,
   Trophy,
@@ -134,28 +129,64 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const visible = useReveal();
 
-  const tokenomics = useMemo(
+  const economics = useMemo(
     () => [
-      { label: 'Community Rewards', value: 35, color: '#66FCF1' },
-      { label: 'Liquidity', value: 20, color: '#10B981' },
-      { label: 'Team', value: 15, color: '#8B5CF6' },
-      { label: 'Treasury', value: 15, color: '#F59E0B' },
-      { label: 'Marketing', value: 10, color: '#3B82F6' },
-      { label: 'Advisors', value: 5, color: '#EF4444' },
+      {
+        label: '$CF Buyback',
+        value: 25,
+        color: '#66FCF1',
+        note: 'Deflation and market cap support.',
+      },
+      {
+        label: 'Stakers',
+        value: 20,
+        color: '#10B981',
+        note: 'Real Yield for long‑term holders.',
+      },
+      {
+        label: 'Creator Share',
+        value: 20,
+        color: '#8B5CF6',
+        note: 'Direct revenue for token creators.',
+      },
+      {
+        label: 'Treasury',
+        value: 15,
+        color: '#F59E0B',
+        note: 'Marketing, R&D, and Tier‑1 listings.',
+      },
+      {
+        label: 'Investors',
+        value: 10,
+        color: '#3B82F6',
+        note: 'Payouts for early backers.',
+      },
+      {
+        label: 'Referral',
+        value: 5,
+        color: '#EF4444',
+        note: 'Rewards for traffic acquisition.',
+      },
+      {
+        label: 'Luck Hour',
+        value: 5,
+        color: '#EC4899',
+        note: 'Hourly Buyback & Burn pool for top tokens.',
+      },
     ],
     []
   );
 
   const donut = useMemo(() => {
-    const total = tokenomics.reduce((acc, slice) => acc + slice.value, 0);
+    const total = economics.reduce((acc, slice) => acc + slice.value, 0);
     let acc = 0;
-    return tokenomics.map((slice) => {
+    return economics.map((slice) => {
       const start = (acc / total) * 360;
       acc += slice.value;
       const end = (acc / total) * 360;
       return { ...slice, start, end };
     });
-  }, [tokenomics]);
+  }, [economics]);
 
   const donutBg = `conic-gradient(${donut
     .map((s) => `${s.color} ${s.start}deg ${s.end}deg`)
@@ -303,42 +334,58 @@ export const HomeView: React.FC<HomeViewProps> = ({
             id="growth"
             visible={visible}
             title={<>Exponential Growth</>}
-            subtitle="The unboxing economy is one of the fastest growing categories in crypto‑gaming."
+            subtitle={
+              <>
+                The “Fair Launch” market is showing colossal numbers, proving
+                demand is at an all‑time high despite the flaws of current
+                platforms.
+              </>
+            }
           />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <Card id="g-1" visible={visible} delay={60}>
-              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
-                Pump.fun cumulative
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-base font-bold text-white">Pump.fun</div>
+                <span className="text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full bg-web3-accent/15 text-web3-accent border border-web3-accent/30">
+                  Revenue
+                </span>
               </div>
               <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-web3-accent to-emerald-300">
-                $100M+
+                $150M+
               </div>
-              <p className="mt-3 text-sm text-gray-400">
-                Daily revenue across launchpads — a market hungry for the next
-                step beyond meme launches.
+              <p className="mt-3 text-sm text-gray-400 leading-relaxed">
+                Platform revenue exceeded $150M in its first year. At peak
+                times, up to 40,000 new tokens were created daily.
               </p>
             </Card>
             <Card id="g-2" visible={visible} delay={140}>
-              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
-                Unbox category
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-base font-bold text-white">Zora.co</div>
+                <span className="text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
+                  Growth
+                </span>
               </div>
               <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-web3-success">
                 +400%
               </div>
-              <p className="mt-3 text-sm text-gray-400">
-                YoY growth in on‑chain unboxing volume across CS:GO inspired
-                Web3 projects.
+              <p className="mt-3 text-sm text-gray-400 leading-relaxed">
+                Social minting surged, leading to a 400% increase in active
+                users.
               </p>
             </Card>
             <Card id="g-3" visible={visible} delay={220}>
-              <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
-                DEX share
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-base font-bold text-white">DEX Volume</div>
+                <span className="text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full bg-violet-400/15 text-violet-300 border border-violet-400/30">
+                  Share
+                </span>
               </div>
               <div className="mt-3 text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-violet-300 to-web3-accent">
                 30%
               </div>
-              <p className="mt-3 text-sm text-gray-400">
-                Of weekly DEX volume now flows through gamified token products.
+              <p className="mt-3 text-sm text-gray-400 leading-relaxed">
+                Meme tokens and new launches accounted for up to 30% of total
+                decentralized exchange volume in 2025.
               </p>
             </Card>
           </div>
@@ -517,40 +564,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </section>
 
-      {/* TOKEN UTILITIES */}
-      <section className="relative px-4 py-12 md:py-16">
-        <div className="max-w-6xl mx-auto">
-          <SectionTitle
-            id="utility-title"
-            visible={visible}
-            title={<>$CF Token Utilities</>}
-            subtitle="Real demand sinks for the platform token."
-            small
-          />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { icon: TrendingUp, tone: 'mint' as const, label: 'Stat Yield' },
-              { icon: Layers, tone: 'emerald' as const, label: 'CryptPad' },
-              { icon: Crown, tone: 'gold' as const, label: 'Upgrade Boost' },
-              { icon: Gift, tone: 'purple' as const, label: 'Gifts & Drops' },
-            ].map((it, i) => (
-              <Card key={it.label} id={`util-${i}`} visible={visible} delay={i * 70}>
-                <IconBadge Icon={it.icon} tone={it.tone} />
-                <div className="text-base font-bold">{it.label}</div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* TOKENOMICS */}
+      {/* ECONOMICS — distribution of platform commission fees (from pitch) */}
       <section className="relative px-4 py-16 md:py-24">
         <div className="max-w-6xl mx-auto">
           <SectionTitle
             id="economics-title"
             visible={visible}
             title={<>Economics — 100% Community‑Focused</>}
-            subtitle="Allocation is built to fund growth without compromising long‑term holders."
+            subtitle={<>Distribution of platform commission fees.</>}
           />
           <Card id="economics-card" visible={visible} delay={80}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
@@ -559,33 +580,40 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   className="relative w-56 h-56 md:w-72 md:h-72 rounded-full"
                   style={{ background: donutBg }}
                 >
-                  <div className="absolute inset-6 rounded-full bg-[#0B1018] border border-white/5 flex flex-col items-center justify-center">
-                    <PieChartIcon className="w-7 h-7 text-web3-accent" />
-                    <div className="mt-2 text-xs uppercase tracking-widest text-gray-500">
-                      Total supply
+                  <div className="absolute inset-6 rounded-full bg-[#0B1018] border border-white/5 flex flex-col items-center justify-center text-center px-3">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">
+                      Platform fees
                     </div>
-                    <div className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-web3-accent to-emerald-300">
-                      $CF
+                    <div className="mt-1 text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-web3-accent to-emerald-300">
+                      100%
+                    </div>
+                    <div className="mt-1 text-[11px] text-gray-400">
+                      to the community
                     </div>
                   </div>
                 </div>
               </div>
               <div className="space-y-2.5">
-                {tokenomics.map((slice) => (
+                {economics.map((slice) => (
                   <div
                     key={slice.label}
-                    className="flex items-center justify-between gap-4 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5"
+                    className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg bg-white/[0.02] border border-white/5"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
                       <span
-                        className="w-3 h-3 rounded-sm"
+                        className="mt-1.5 w-3 h-3 rounded-sm shrink-0"
                         style={{ backgroundColor: slice.color }}
                       />
-                      <span className="text-sm text-gray-200 font-semibold">
-                        {slice.label}
-                      </span>
+                      <div className="min-w-0">
+                        <div className="text-sm text-white font-semibold">
+                          {slice.label}
+                        </div>
+                        <div className="text-xs text-gray-400 leading-snug mt-0.5">
+                          {slice.note}
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-sm font-mono text-gray-300">
+                    <span className="text-sm font-mono text-gray-200 shrink-0 pt-0.5">
                       {slice.value}%
                     </span>
                   </div>
