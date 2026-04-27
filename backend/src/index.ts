@@ -15,6 +15,7 @@ import tokenRoutes from './routes/tokenRoutes.js';
 import prisma from './config/database.js';
 import { startCaseExpiryWorker } from './workers/caseExpiryWorker.js';
 import { startRewardCaseStatusWorker } from './workers/rewardCaseStatusWorker.js';
+import { startSpamCaseHiderWorker } from './workers/spamCaseHiderWorker.js';
 import { syncTelegramMiniAppMenuButton, ensureTelegramBotLinkPolling } from './services/telegramLinkBotService.js';
 
 const app = express();
@@ -149,6 +150,7 @@ const server = app.listen(config.port, async () => {
 
   startCaseExpiryWorker();
   startRewardCaseStatusWorker();
+  startSpamCaseHiderWorker();
 });
 
 // Cloudflare keeps connections to origin alive for ~100s.
