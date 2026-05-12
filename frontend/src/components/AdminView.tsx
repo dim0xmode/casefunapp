@@ -99,6 +99,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
   });
   const [newRewardTask, setNewRewardTask] = useState({
     type: 'LIKE_TWEET',
+    tab: 'REWARDS' as 'REWARDS' | 'PARTNERSHIPS',
     targetUrl: '',
     reward: 1,
     targetCount: '',
@@ -1789,15 +1790,39 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 const isCountTask = COUNT_TYPES_FE.includes(newRewardTask.type);
                 const needsTweetUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
                 const needsTelegramUrl = newRewardTask.type === 'SUBSCRIBE_TELEGRAM';
-                const needsUrl = needsTweetUrl || needsTelegramUrl;
+                const isVisitLink = newRewardTask.type === 'VISIT_LINK';
+                const isPartnerships = newRewardTask.tab === 'PARTNERSHIPS';
+                const needsExternalUrl = isVisitLink || isPartnerships;
+                const needsUrl = needsTweetUrl || needsTelegramUrl || needsExternalUrl;
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
+                const urlValue = newRewardTask.targetUrl.trim();
+                const urlOk = !needsUrl
+                  || (needsExternalUrl ? /^https?:\/\//i.test(urlValue) : Boolean(urlValue));
                 const canCreate = saving === null
-                  && (!needsUrl || newRewardTask.targetUrl.trim())
+                  && urlOk
                   && (!isCountTask || Number(newRewardTask.targetCount) > 0)
                   && (!isAmountTask || Number(newRewardTask.targetAmount) > 0);
                 return (
               <div className="rounded-xl border border-white/[0.08] bg-black/20 p-5 space-y-4">
                 <div className="text-sm font-bold text-white">Create Reward Task</div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-gray-400 font-medium">Tab</label>
+                  <div className="flex gap-2">
+                    {(['REWARDS','PARTNERSHIPS'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setNewRewardTask((p) => ({ ...p, tab: t }))}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest border transition ${newRewardTask.tab === t ? 'border-web3-accent text-web3-accent bg-web3-accent/10' : 'border-white/10 text-gray-500 hover:text-gray-300'}`}
+                      >
+                        {t === 'REWARDS' ? 'Rewards' : 'Partnerships'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-gray-600">
+                    Partnerships tab skips verification — users click the link and can Claim immediately (one-shot or repeatable by cooldown).
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[11px] text-gray-400 font-medium">Task Type</label>
@@ -1806,6 +1831,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       onChange={(e) => setNewRewardTask((p) => ({ ...p, type: e.target.value, targetUrl: '', targetCount: '', targetAmount: '', targetCaseId: '' }))}
                       className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300"
                     >
+                      <optgroup label="Partner / Generic">
+                        <option value="VISIT_LINK">Visit link (trust-based)</option>
+                      </optgroup>
                       <optgroup label="Social">
                         <option value="LIKE_TWEET">Like post on X</option>
                         <option value="REPOST_TWEET">Repost on X</option>
@@ -1841,18 +1869,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 {needsUrl && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] text-gray-400 font-medium">
-                      {needsTelegramUrl ? 'Telegram channel or chat URL' : 'Post URL'}
+                      {needsTelegramUrl ? 'Telegram channel or chat URL' : needsExternalUrl ? 'External URL (partner link)' : 'Post URL'}
                     </label>
                     <input
                       value={newRewardTask.targetUrl}
                       onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
-                      placeholder={needsTelegramUrl ? 'https://t.me/your_channel' : 'https://x.com/.../status/...'}
+                      placeholder={needsTelegramUrl ? 'https://t.me/your_channel' : needsExternalUrl ? 'https://partner.example.com/...' : 'https://x.com/.../status/...'}
                       className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
                     />
                     {needsTelegramUrl && (
                       <div className="text-[10px] text-gray-600">
                         Public channel/chat only — private invite links (<span className="font-mono">t.me/+…</span>) can't be verified.
                         If the bot isn't an admin of the chat, the task auto-falls back to trust verification.
+                      </div>
+                    )}
+                    {needsExternalUrl && (
+                      <div className="text-[10px] text-gray-600">
+                        Must start with <span className="font-mono">http://</span> or <span className="font-mono">https://</span>. The user is sent here and can Claim on return — no verification.
                       </div>
                     )}
                   </div>
@@ -1879,6 +1912,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         <input value={newRewardTask.targetCaseId} onChange={(e) => setNewRewardTask((p) => ({ ...p, targetCaseId: e.target.value }))} placeholder="Case ID" className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600 font-mono" />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {(isCaseFun || isPartnerships || isVisitLink) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[11px] text-gray-400 font-medium">Repeat Interval</label>
                       <select value={newRewardTask.repeatIntervalHours} onChange={(e) => setNewRewardTask((p) => ({ ...p, repeatIntervalHours: e.target.value }))} className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300">
@@ -1906,8 +1944,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                             onClick={async () => {
                     setSaving('new-reward');
                     try {
+                      const repeatRaw = newRewardTask.repeatIntervalHours;
+                      const repeatNum = repeatRaw === '' ? undefined : Number(repeatRaw);
                       await api.createAdminRewardTask({
                         type: newRewardTask.type, title: '', description: '',
+                        tab: newRewardTask.tab,
                         targetUrl: newRewardTask.targetUrl || undefined,
                         reward: newRewardTask.reward, sortOrder: 100,
                         ...(isCaseFun ? {
@@ -1915,11 +1956,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                             ? { targetAmount: Number(newRewardTask.targetAmount) || 0 }
                             : { targetCount: Number(newRewardTask.targetCount) || 1 }),
                           targetCaseId: newRewardTask.targetCaseId || undefined,
-                          repeatIntervalHours: Number(newRewardTask.repeatIntervalHours) || undefined,
+                        } : {}),
+                        ...((isCaseFun || isPartnerships || isVisitLink) ? {
+                          repeatIntervalHours: repeatNum,
                           activeUntil: newRewardTask.activeUntil || undefined,
                         } : {}),
                       });
-                      setNewRewardTask({ type: 'LIKE_TWEET', targetUrl: '', reward: 1, targetCount: '', targetAmount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
+                      setNewRewardTask({ type: 'LIKE_TWEET', tab: 'REWARDS', targetUrl: '', reward: 1, targetCount: '', targetAmount: '', targetCaseId: '', repeatIntervalHours: '', activeUntil: '' });
                               await load();
                     } catch (err: any) { window.alert(err?.message || 'Failed'); }
                     finally { setSaving(null); }
@@ -1936,15 +1979,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
                 {((data as any)?.tasks || []).map((task: any) => {
-                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases', DEPOSIT_AMOUNT_EVM: 'Deposit USDT (EVM)', DEPOSIT_AMOUNT_TON: 'Deposit USDT (TON)', DEPOSIT_COUNT_ANY: 'Deposits (any chain)', DEPOSIT_COUNT_EVM: 'Deposits (EVM)', DEPOSIT_COUNT_TON: 'Deposits (TON)' };
+                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', VISIT_LINK: 'Visit link', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases', DEPOSIT_AMOUNT_EVM: 'Deposit USDT (EVM)', DEPOSIT_AMOUNT_TON: 'Deposit USDT (TON)', DEPOSIT_COUNT_ANY: 'Deposits (any chain)', DEPOSIT_COUNT_EVM: 'Deposits (EVM)', DEPOSIT_COUNT_TON: 'Deposits (TON)' };
                   const isDepositAmount = task.type === 'DEPOSIT_AMOUNT_EVM' || task.type === 'DEPOSIT_AMOUNT_TON';
                   const isCF = task.category === 'CASEFUN';
+                  const taskTab = task.tab === 'PARTNERSHIPS' ? 'PARTNERSHIPS' : 'REWARDS';
                   const isEditing = editingTask?.id === task.id;
                   return (
                   <div key={task.id} className="rounded-xl border border-white/[0.08] bg-black/20 p-3">
                     <div className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${taskTab === 'PARTNERSHIPS' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>{taskTab === 'PARTNERSHIPS' ? 'Partner' : 'Rewards'}</span>
                           <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${isCF ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>{isCF ? 'CaseFun' : 'Social'}</span>
                           <span className="text-xs text-white font-medium">{TYPE_LABELS[task.type] || task.title}</span>
                         </div>
@@ -1958,7 +2003,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                         {task.targetUrl && <div className="text-[10px] text-web3-accent truncate mt-0.5">{task.targetUrl}</div>}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <button type="button" onClick={() => setEditingTask(isEditing ? null : { id: task.id, reward: task.reward, targetUrl: task.targetUrl || '', targetCount: task.targetCount || '', targetAmount: task.targetAmount || '', repeatIntervalHours: task.repeatIntervalHours ?? '', activeUntil: task.activeUntil ? new Date(task.activeUntil).toISOString().slice(0, 16) : '' })} className="text-[10px] px-2 py-1 rounded-lg border border-web3-accent/30 text-web3-accent">
+                        <button type="button" onClick={() => setEditingTask(isEditing ? null : { id: task.id, reward: task.reward, tab: taskTab, targetUrl: task.targetUrl || '', targetCount: task.targetCount || '', targetAmount: task.targetAmount || '', repeatIntervalHours: task.repeatIntervalHours ?? '', activeUntil: task.activeUntil ? new Date(task.activeUntil).toISOString().slice(0, 16) : '' })} className="text-[10px] px-2 py-1 rounded-lg border border-web3-accent/30 text-web3-accent">
                           {isEditing ? 'Cancel' : 'Edit'}
                         </button>
                         <button type="button" onClick={async () => { setSaving(task.id); try { await api.updateAdminRewardTask(task.id, { isActive: !task.isActive }); await load(); } catch (err: any) { window.alert(err?.message || 'Failed'); } finally { setSaving(null); } }} disabled={saving === task.id} className={`text-[10px] px-2 py-1 rounded-lg border ${task.isActive ? 'border-web3-success/30 text-web3-success' : 'border-gray-600 text-gray-500'}`}>
@@ -1971,6 +2016,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     </div>
                     {isEditing && (
                       <div className="mt-3 pt-3 border-t border-white/[0.06] grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500">Tab</label>
+                          <select value={editingTask.tab} onChange={(e) => setEditingTask((p: any) => ({ ...p, tab: e.target.value }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300">
+                            <option value="REWARDS">Rewards</option>
+                            <option value="PARTNERSHIPS">Partnerships</option>
+                          </select>
+                        </div>
                         <div className="space-y-1">
                           <label className="text-[10px] text-gray-500">Reward (CFP)</label>
                           <input type="number" min={1} value={editingTask.reward} onChange={(e) => setEditingTask((p: any) => ({ ...p, reward: Number(e.target.value) || 1 }))} className="w-full px-2 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300" />
@@ -2009,6 +2061,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                             setSaving(task.id);
                             try {
                               const updates: any = { reward: editingTask.reward };
+                              if (editingTask.tab && editingTask.tab !== taskTab) updates.tab = editingTask.tab;
                               if (!isCF) updates.targetUrl = editingTask.targetUrl || null;
                               if (isCF) {
                                 if (isDepositAmount) {
@@ -2016,7 +2069,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                                 } else if (editingTask.targetCount) {
                                   updates.targetCount = Number(editingTask.targetCount);
                                 }
-                                updates.repeatIntervalHours = Number(editingTask.repeatIntervalHours) || null;
+                                updates.repeatIntervalHours = editingTask.repeatIntervalHours === '' || editingTask.repeatIntervalHours == null ? null : Number(editingTask.repeatIntervalHours);
                                 updates.activeUntil = editingTask.activeUntil || null;
                               }
                               await api.updateAdminRewardTask(task.id, updates);

@@ -216,7 +216,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [referralLoading, setReferralLoading] = useState(false);
   const [referralError, setReferralError] = useState<string | null>(null);
   const canShowReferralLink = true;
-  const [socialRewardsTab, setSocialRewardsTab] = useState<'social' | 'rewards'>('social');
+  const [socialRewardsTab, setSocialRewardsTab] = useState<'social' | 'rewards' | 'partnerships'>('social');
   const [rewardsSubTab, setRewardsSubTab] = useState<'earn' | 'history'>('earn');
   const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
@@ -296,6 +296,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
     if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
+    if (task.type === 'VISIT_LINK') return task.targetUrl || null;
     return task.targetUrl || null;
   };
 
@@ -1162,7 +1163,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             >
               <Gift size={11} />
               Rewards
-              {rewardTasks.some((t: any) => !t.claimed && !(t.onCooldown)) && socialRewardsTab !== 'rewards' && (
+              {rewardTasks.some((t: any) => (t.tab || 'REWARDS') === 'REWARDS' && !t.claimed && !(t.onCooldown)) && socialRewardsTab !== 'rewards' && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSocialRewardsTab('partnerships')}
+              className={`text-xs font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded-lg transition flex items-center gap-1.5 ${
+                socialRewardsTab === 'partnerships'
+                  ? 'text-white bg-white/[0.08]'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <ExternalLink size={11} />
+              Partnerships
+              {rewardTasks.some((t: any) => t.tab === 'PARTNERSHIPS' && !t.claimed && !(t.onCooldown)) && socialRewardsTab !== 'partnerships' && (
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               )}
             </button>
@@ -1320,9 +1336,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
               {rewardsSubTab === 'earn' && (() => {
-                const dailyTasks = rewardTasks.filter((t: any) => t.type === 'DAILY_STREAK');
-                const socialTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
-                const cfTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
+                const inRewardsTab = (t: any) => (t.tab || 'REWARDS') !== 'PARTNERSHIPS';
+                const dailyTasks = rewardTasks.filter((t: any) => t.type === 'DAILY_STREAK' && inRewardsTab(t));
+                const socialTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && inRewardsTab(t) && (t.category || 'SOCIAL') === 'SOCIAL' && !t.claimed);
+                const cfTasks = rewardTasks.filter((t: any) => t.type !== 'DAILY_STREAK' && inRewardsTab(t) && t.category === 'CASEFUN').sort((a: any, b: any) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
                 const now = Date.now();
                 const hasAny = dailyTasks.length > 0 || socialTasks.length > 0 || cfTasks.length > 0;
                 const socialsMissing = Boolean(user) && (!user?.twitterId || !user?.telegramId);
@@ -1331,7 +1348,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   {socialsMissing && (
                     <button
                       type="button"
-                      onClick={() => setRewardsSubTab('social')}
+                      onClick={() => setSocialRewardsTab('social')}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/15 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/15 active:scale-[0.99] transition text-left"
                     >
                       <div className="w-7 h-7 rounded-full border border-amber-400/40 bg-amber-500/15 flex items-center justify-center shrink-0">
@@ -1358,7 +1375,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       isEditable={isEditable}
                       isClaiming={claimingTaskId === task.id}
                       onClaim={handleClaimReward}
-                      onConnectSocials={() => setRewardsSubTab('social')}
+                      onConnectSocials={() => setSocialRewardsTab('social')}
                     />
                   ))}
                   {socialTasks.map((task) => {
@@ -1450,7 +1467,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                           </button>
           )}
                         {isComplete && isEditable && isLocked && (
-                          <button type="button" onClick={() => setRewardsSubTab('social')} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-amber-400/40 text-amber-300 hover:bg-amber-500/10 active:scale-[0.97] transition">
+                          <button type="button" onClick={() => setSocialRewardsTab('social')} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-amber-400/40 text-amber-300 hover:bg-amber-500/10 active:scale-[0.97] transition">
                             Connect
                           </button>
                         )}
@@ -1494,6 +1511,63 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
           )}
+
+          {socialRewardsTab === 'partnerships' && (() => {
+            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && !t.claimed);
+            return (
+              <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[11px] text-gray-400">
+                    Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
+                  </div>
+                  <div className="text-[10px] text-gray-600 uppercase tracking-widest">Partner perks</div>
+                </div>
+                {rewardsLoading && <div className="text-xs text-gray-600">Loading…</div>}
+                {!rewardsLoading && partnershipTasks.length === 0 && (
+                  <div className="text-center py-6">
+                    <ExternalLink size={18} className="mx-auto text-gray-600 mb-2" />
+                    <div className="text-[11px] text-gray-500">No partner offers right now</div>
+                    <div className="text-[10px] text-gray-600 mt-1">Check back soon — we add new deals regularly</div>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  {partnershipTasks.map((task: any) => {
+                    const actionUrl = getTaskActionUrl(task);
+                    const isActivated = activatedTasks.has(task.id);
+                    const onCooldown = Boolean(task.onCooldown && task.cooldownEndsAt);
+                    const showClaim = isEditable && task.completed && !task.locked && isActivated && !onCooldown;
+                    const showGo = isEditable && !task.locked && actionUrl && (!isActivated || !task.completed) && !onCooldown;
+                    return (
+                      <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-emerald-400/15'}`}>
+                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : isActivated ? 'border-emerald-400/40 text-emerald-300' : 'border-white/10 text-gray-500'}`}>
+                          {task.locked ? <Lock size={10} /> : <ExternalLink size={11} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] text-white font-medium truncate">{task.title}</div>
+                          {task.description && <div className="text-[10px] text-gray-500 truncate">{task.description}</div>}
+                          {task.locked && <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>}
+                          {onCooldown && task.cooldownEndsAt && (
+                            <div className="text-[10px] text-amber-400/80 mt-0.5">Next at {new Date(task.cooldownEndsAt).toLocaleString()}</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
+                          {showGo && actionUrl && (
+                            <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/10 active:scale-[0.97] transition flex items-center gap-1">Go <ExternalLink size={10} /></button>
+                          )}
+                          {showClaim && (
+                            <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-400 to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
+                              {claimingTaskId === task.id ? '…' : 'Claim'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
         )}
       </div>

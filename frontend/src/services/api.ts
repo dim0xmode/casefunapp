@@ -793,7 +793,7 @@ class ApiClient {
     return this.request<{ tasks: any[] }>('/admin/rewards/tasks');
   }
 
-  async createAdminRewardTask(payload: { type: string; title: string; description: string; targetUrl?: string; reward?: number; sortOrder?: number; targetCount?: number; targetAmount?: number; targetCaseId?: string; repeatIntervalHours?: number; activeUntil?: string }) {
+  async createAdminRewardTask(payload: { type: string; title: string; description: string; tab?: 'REWARDS' | 'PARTNERSHIPS'; targetUrl?: string; reward?: number; sortOrder?: number; targetCount?: number; targetAmount?: number; targetCaseId?: string; repeatIntervalHours?: number; activeUntil?: string }) {
     return this.request<{ task: any }>('/admin/rewards/tasks', {
       method: 'POST',
       body: JSON.stringify(payload),

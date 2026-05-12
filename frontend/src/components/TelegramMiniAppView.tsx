@@ -408,7 +408,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     });
   }, [inventory, caseMap]);
 
-  const [rewardsSubTab, setRewardsSubTab] = useState<'social' | 'earn' | 'history'>('social');
+  const [rewardsSubTab, setRewardsSubTab] = useState<'social' | 'earn' | 'partnerships' | 'history'>('social');
   const [rewardTasks, setRewardTasks] = useState<RewardTask[]>([]);
   const [rewardHistory, setRewardHistory] = useState<RewardClaimRecord[]>([]);
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints ?? 0);
@@ -476,6 +476,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
     if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
+    if (task.type === 'VISIT_LINK') return task.targetUrl || null;
     return task.targetUrl || null;
   };
 
@@ -832,13 +833,17 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           <div className="text-[11px] text-gray-400">
             Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
           </div>
-          <div className="flex gap-1">
-            <button type="button" onClick={() => setRewardsSubTab('social')} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>Social</button>
-            <button type="button" onClick={() => setRewardsSubTab('earn')} className={`text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'earn' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
+          <div className="flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1">
+            <button type="button" onClick={() => setRewardsSubTab('social')} className={`shrink-0 text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'social' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>Social</button>
+            <button type="button" onClick={() => setRewardsSubTab('earn')} className={`shrink-0 text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'earn' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
               Earn
-              {rewardsSubTab !== 'earn' && rewardTasks.some((t) => !t.claimed && !t.onCooldown && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+              {rewardsSubTab !== 'earn' && rewardTasks.some((t) => (t.tab || 'REWARDS') === 'REWARDS' && !t.claimed && !t.onCooldown && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
             </button>
-            <button type="button" onClick={() => { setRewardsSubTab('history'); loadRewardHistory(); }} className={`text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>History</button>
+            <button type="button" onClick={() => setRewardsSubTab('partnerships')} className={`shrink-0 text-[10px] px-2.5 py-1 rounded-md transition flex items-center gap-1 ${rewardsSubTab === 'partnerships' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>
+              Partners
+              {rewardsSubTab !== 'partnerships' && rewardTasks.some((t) => t.tab === 'PARTNERSHIPS' && !t.claimed && !t.onCooldown && !t.locked) && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+            </button>
+            <button type="button" onClick={() => { setRewardsSubTab('history'); loadRewardHistory(); }} className={`shrink-0 text-[10px] px-2.5 py-1 rounded-md transition ${rewardsSubTab === 'history' ? 'bg-white/[0.08] text-white' : 'text-gray-500'}`}>History</button>
           </div>
         </div>
 
@@ -946,8 +951,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
           {/* ── Earn: all reward tasks merged ── */}
           {rewardsSubTab === 'earn' && (() => {
-            const dailyTasks = rewardTasks.filter((t) => t.type === 'DAILY_STREAK');
-            const allTasks = rewardTasks.filter((t) => t.type !== 'DAILY_STREAK' && !t.claimed);
+            const inRewardsTab = (t: any) => (t.tab || 'REWARDS') !== 'PARTNERSHIPS';
+            const dailyTasks = rewardTasks.filter((t) => t.type === 'DAILY_STREAK' && inRewardsTab(t));
+            const allTasks = rewardTasks.filter((t) => t.type !== 'DAILY_STREAK' && inRewardsTab(t) && !t.claimed);
             const socialTasks = allTasks.filter((t) => (t.category || 'SOCIAL') === 'SOCIAL');
             const cfTasks = allTasks.filter((t) => t.category === 'CASEFUN').sort((a, b) => (a.onCooldown ? 1 : 0) - (b.onCooldown ? 1 : 0));
             const now = Date.now();
@@ -1068,6 +1074,57 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
               })}
               {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
             </div>
+            );
+          })()}
+
+          {/* ── Partnerships: trust-based external link tasks ── */}
+          {rewardsSubTab === 'partnerships' && (() => {
+            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && !t.claimed);
+            return (
+              <div className="space-y-1.5">
+                {rewardsLoading && <div className="text-xs text-gray-600">Loading…</div>}
+                {!rewardsLoading && partnershipTasks.length === 0 && (
+                  <div className="text-center py-8">
+                    <ExternalLink size={22} className="mx-auto text-gray-600 mb-2" />
+                    <div className="text-[11px] text-gray-500">No partner offers right now</div>
+                    <div className="text-[10px] text-gray-600 mt-1">Check back soon — we add new deals regularly</div>
+                  </div>
+                )}
+                {partnershipTasks.map((task: any) => {
+                  const actionUrl = getTaskActionUrl(task);
+                  const isActivated = activatedTasks.has(task.id);
+                  const onCooldown = Boolean(task.onCooldown && task.cooldownEndsAt);
+                  const showClaim = task.completed && !task.locked && isActivated && !onCooldown;
+                  const showGo = !task.locked && actionUrl && (!isActivated || !task.completed) && !onCooldown;
+                  return (
+                    <div key={task.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-black/20 ${task.locked ? 'border-white/[0.04] opacity-60' : 'border-emerald-400/15'}`}>
+                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${task.locked ? 'border-white/10 text-gray-600' : isActivated ? 'border-emerald-400/40 text-emerald-300' : 'border-white/10 text-gray-500'}`}>
+                        {task.locked ? <Lock size={10} /> : <ExternalLink size={11} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] text-white font-medium truncate">{task.title}</div>
+                        {task.description && <div className="text-[10px] text-gray-500 truncate">{task.description}</div>}
+                        {task.locked && <div className="text-[10px] text-gray-500 mt-0.5">Link Twitter & Telegram first</div>}
+                        {onCooldown && task.cooldownEndsAt && (
+                          <div className="text-[10px] text-amber-400/80 mt-0.5">Next at {new Date(task.cooldownEndsAt).toLocaleString()}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-mono text-web3-accent">+{task.reward}</span>
+                        {showGo && actionUrl && (
+                          <button type="button" onClick={() => openExternalUrl(actionUrl, task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-emerald-400/40 text-emerald-300 active:scale-[0.97] transition flex items-center gap-1">Go <ExternalLink size={10} /></button>
+                        )}
+                        {showClaim && (
+                          <button type="button" disabled={claimingTaskId === task.id} onClick={() => handleClaimReward(task.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-400 to-web3-success text-black disabled:opacity-50 active:scale-[0.97] transition">
+                            {claimingTaskId === task.id ? '…' : 'Claim'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {rewardError && <div className="text-[10px] text-red-400 mt-1">{rewardError}</div>}
+              </div>
             );
           })()}
 

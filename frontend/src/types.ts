@@ -144,7 +144,10 @@ export type RewardTaskType =
   | 'DEPOSIT_AMOUNT_TON'
   | 'DEPOSIT_COUNT_ANY'
   | 'DEPOSIT_COUNT_EVM'
-  | 'DEPOSIT_COUNT_TON';
+  | 'DEPOSIT_COUNT_TON'
+  | 'VISIT_LINK';
+
+export type RewardTaskTab = 'REWARDS' | 'PARTNERSHIPS';
 
 export interface RewardTask {
   id: string;
@@ -158,6 +161,7 @@ export interface RewardTask {
   claimed: boolean;
   locked: boolean;
   category?: string;
+  tab?: RewardTaskTab;
   targetCount?: number;
   targetAmount?: number | null;
   unit?: 'count' | 'usdt';

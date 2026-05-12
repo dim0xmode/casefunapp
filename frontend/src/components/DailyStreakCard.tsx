@@ -43,15 +43,16 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({
   const claimedToday = streak.claimedToday;
 
   // Visual state per cell:
-  // - "claimed" = day is part of the user's currently-running streak (1..lastDay)
-  // - "today"   = the cell that the user can claim right now (or has just claimed today)
+  // - "claimed" = day is part of the user's currently-running streak (1..lastDay).
+  //   Day `lastDay` itself stays "claimed" even after the cooldown ends — until
+  //   the user claims the next day. Previously `<` caused that cell to dim out
+  //   the moment cooldown expired, even though the day had been claimed.
+  // - "today"   = the cell that the user can claim right now
   // - "future"  = dim, not yet reached
   const cellState = (dayIdx: number): 'claimed' | 'today' | 'future' => {
-    if (dayIdx < lastDay) return 'claimed';
-    if (claimedToday) {
-      return dayIdx === lastDay ? 'claimed' : 'future';
-    }
-    return dayIdx === nextDay ? 'today' : 'future';
+    if (dayIdx <= lastDay) return 'claimed';
+    if (!claimedToday && dayIdx === nextDay) return 'today';
+    return 'future';
   };
 
   let countdown = '';

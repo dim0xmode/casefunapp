@@ -478,6 +478,39 @@ export const listRewardTasks = async (
       const claimInfo = claimsByTask.get(task.id);
       const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
       const socialGateLocked = socialsMissing && !exemptFromSocialGate;
+      const tab = (task as any).tab === 'PARTNERSHIPS' ? 'PARTNERSHIPS' : 'REWARDS';
+
+      // Partnership tab — we don't run verification (admin-side decision: we
+      // just send the user to the partner link and trust them to come back
+      // and Claim). Skip all type-specific completion logic and expose a
+      // simple "always claimable until claimed" state. The social gate still
+      // applies so multi-account farmers can't abuse it for free CFP.
+      if (tab === 'PARTNERSHIPS' && task.type !== 'DAILY_STREAK') {
+        const claimed = Boolean(claimInfo);
+        const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
+        const isInstantRepeat = task.repeatIntervalHours === 0;
+        const lastClaimAt = claimInfo?.claimedAt;
+        let onCooldown = false;
+        let cooldownEndsAt: Date | null = null;
+        if (isRepeatable && !isInstantRepeat && lastClaimAt) {
+          cooldownEndsAt = new Date(lastClaimAt.getTime() + task.repeatIntervalHours! * 3600_000);
+          onCooldown = cooldownEndsAt > now;
+        }
+        const oneShotDone = !isRepeatable && claimed;
+        return {
+          id: task.id, type: task.type, title: task.title,
+          description: task.description, targetUrl: task.targetUrl,
+          reward: task.reward,
+          category: task.category || 'PARTNERSHIPS',
+          tab,
+          completed: !oneShotDone && !onCooldown,
+          claimed: oneShotDone,
+          locked: socialGateLocked,
+          onCooldown,
+          cooldownEndsAt,
+          activeUntil: task.activeUntil,
+        };
+      }
 
       if (task.type === 'DAILY_STREAK') {
         // Streak status — needs the full last claim record (metadata.streakDay
@@ -497,6 +530,7 @@ export const listRewardTasks = async (
           description: task.description,
           reward: state.nextDay,
           category: task.category || 'DAILY',
+          tab,
           completed: !state.claimedToday,
           claimed: state.claimedToday,
           locked: socialGateLocked,
@@ -532,6 +566,7 @@ export const listRewardTasks = async (
             id: task.id, type: task.type, title: task.title,
             description: task.description, reward: task.reward,
             category: task.category,
+            tab,
             targetCount: target,
             targetAmount: task.targetAmount,
             unit,
@@ -562,6 +597,7 @@ export const listRewardTasks = async (
           id: task.id, type: task.type, title: task.title,
           description: task.description, reward: task.reward,
           category: task.category,
+          tab,
           targetCount: target,
           targetAmount: task.targetAmount,
           unit,
@@ -592,6 +628,7 @@ export const listRewardTasks = async (
         description: task.description, targetUrl: task.targetUrl,
         reward: task.reward, isDefault: task.isDefault,
         category: task.category || 'SOCIAL',
+        tab,
         completed, claimed, locked,
       };
     }));
@@ -652,12 +689,54 @@ export const claimReward = async (
 
     const isCaseFun = CASEFUN_TYPES.has(task.type);
     const lastClaim = existingClaims[0] || null;
+    const taskTab = (task as any).tab === 'PARTNERSHIPS' ? 'PARTNERSHIPS' : 'REWARDS';
 
     // Global anti-multiaccount gate — both Twitter and Telegram must be
     // linked to claim anything other than the two LINK_* tasks themselves.
     const exemptFromSocialGate = task.type === 'LINK_TWITTER' || task.type === 'LINK_TELEGRAM';
     if (!exemptFromSocialGate && (!user.twitterId || !user.telegramId)) {
       return next(new AppError('Link both Twitter and Telegram first to unlock this task', 403));
+    }
+
+    // Partnership tab — no verification: the user clicked Go, opened the
+    // partner link, came back, and clicked Claim. We just check one-shot vs
+    // repeatable cooldown semantics (mirrors CASEFUN-style repeat support so
+    // admins can let partner tasks repeat daily/weekly if desired).
+    if (taskTab === 'PARTNERSHIPS' && task.type !== 'DAILY_STREAK') {
+      const isRepeatable = task.repeatIntervalHours != null && task.repeatIntervalHours >= 0;
+      const isInstantRepeat = task.repeatIntervalHours === 0;
+      if (!isRepeatable && lastClaim) {
+        return next(new AppError('Reward already claimed', 409));
+      }
+      if (isRepeatable && !isInstantRepeat && lastClaim) {
+        const cooldownEnd = new Date(lastClaim.claimedAt.getTime() + task.repeatIntervalHours! * 3600_000);
+        if (cooldownEnd > now) {
+          return next(new AppError('Task is on cooldown', 400));
+        }
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const claim = await tx.rewardClaim.create({
+          data: { userId, taskId, reward: task.reward },
+        });
+        const updatedUser = await tx.user.update({
+          where: { id: userId },
+          data: { rewardPoints: { increment: task.reward } },
+          select: { rewardPoints: true },
+        });
+        return { claim, totalPoints: updatedUser.rewardPoints };
+      });
+
+      void awardReferralKickback(prisma, userId, task.reward, task.title).catch(() => {});
+
+      return res.json({
+        status: 'success',
+        data: {
+          claimId: result.claim.id,
+          reward: result.claim.reward,
+          totalPoints: result.totalPoints,
+        },
+      });
     }
 
     if (task.type === 'DAILY_STREAK') {
@@ -900,7 +979,12 @@ export const adminCreateRewardTask = async (
   try {
     const adminId = (req as any).userId;
     const { type, title, description, targetUrl, reward, sortOrder,
-            targetCount, targetAmount, targetCaseId, repeatIntervalHours, activeUntil } = req.body || {};
+            targetCount, targetAmount, targetCaseId, repeatIntervalHours, activeUntil,
+            tab: rawTab } = req.body || {};
+
+    const tab = String(rawTab || 'REWARDS').toUpperCase() === 'PARTNERSHIPS'
+      ? 'PARTNERSHIPS'
+      : 'REWARDS';
 
     const targetCountNum = Number(targetCount) || 0;
     const targetAmountNum = Number(targetAmount) || 0;
@@ -923,6 +1007,7 @@ export const adminCreateRewardTask = async (
       LIKE_TWEET: { title: 'Like this post', description: 'Like the post on X' },
       REPOST_TWEET: { title: 'Repost this post', description: 'Repost on X' },
       COMMENT_TWEET: { title: 'Comment on this post', description: 'Leave a comment on the post' },
+      VISIT_LINK: { title: 'Visit partner site', description: 'Open the link to claim your reward' },
     };
 
     const CASEFUN_PRESETS: Record<string, { title: string; description: string }> = {
@@ -975,6 +1060,19 @@ export const adminCreateRewardTask = async (
         ));
       }
     }
+    // VISIT_LINK is the generic "send the user to <url>, trust them, let them
+    // Claim" type. Required for the Partnerships tab — and the URL must be a
+    // real external https link so admins can't accidentally publish empty
+    // tasks that no-op when clicked.
+    if (type === 'VISIT_LINK' || tab === 'PARTNERSHIPS') {
+      const url = String(targetUrl || '').trim();
+      if (!url) {
+        return next(new AppError('External URL is required for this task', 400));
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        return next(new AppError('External URL must start with http:// or https://', 400));
+      }
+    }
     if (isCountTask && (!targetCountNum || targetCountNum < 1)) {
       return next(new AppError('Target count is required for this task type', 400));
     }
@@ -997,7 +1095,8 @@ export const adminCreateRewardTask = async (
         isActive: true,
         sortOrder: Number(sortOrder) || 100,
         createdById: adminId,
-        category: isCaseFun ? 'CASEFUN' : 'SOCIAL',
+        category: isCaseFun ? 'CASEFUN' : (type === 'VISIT_LINK' ? 'PARTNERSHIPS' : 'SOCIAL'),
+        tab,
         targetCount: isCountTask ? Math.max(1, targetCountNum) : null,
         targetAmount: isAmountTask ? targetAmountNum : null,
         targetCaseId: type === 'OPEN_SPECIFIC_CASE' && targetCaseId ? String(targetCaseId) : null,
@@ -1051,6 +1150,9 @@ export const adminUpdateRewardTask = async (
     }
     if (req.body.activeUntil !== undefined)
       data.activeUntil = req.body.activeUntil ? new Date(req.body.activeUntil) : null;
+    if (req.body.tab !== undefined) {
+      data.tab = String(req.body.tab).toUpperCase() === 'PARTNERSHIPS' ? 'PARTNERSHIPS' : 'REWARDS';
+    }
 
     const task = await prisma.rewardTask.update({
       where: { id },

@@ -51,6 +51,7 @@ enum RewardTaskType {
   DEPOSIT_COUNT_ANY
   DEPOSIT_COUNT_EVM
   DEPOSIT_COUNT_TON
+  VISIT_LINK
 }
 
 enum BattleLobbyStatus {
@@ -498,6 +499,7 @@ model RewardTask {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   category            String         @default("SOCIAL")
+  tab                 String         @default("REWARDS") // REWARDS | PARTNERSHIPS — which UI tab the task shows in
   targetCount         Int?
   targetAmount        Float?
   targetCaseId        String?
