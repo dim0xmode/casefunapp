@@ -257,7 +257,19 @@ const verifyTelegramSubscription = async (
   chatRefOverride?: string | null
 ): Promise<TelegramSubscriptionResult> => {
   if (!config.telegramBotToken) return { verified: false, unverifiable: true };
-  const chatRef = extractTelegramChatRef(chatRefOverride) || OFFICIAL_TELEGRAM_CHANNEL;
+  // If the admin pasted a Telegram URL we cannot introspect (private invite
+  // link `t.me/+…`, or anything we can't parse into a @handle), treat the
+  // task as unverifiable and let the caller fall back to trust-based claim.
+  // Falling back to OFFICIAL_TELEGRAM_CHANNEL here would incorrectly verify
+  // membership of the official channel for an unrelated invite-only task.
+  let chatRef: string;
+  if (chatRefOverride && String(chatRefOverride).trim()) {
+    const parsed = extractTelegramChatRef(chatRefOverride);
+    if (!parsed) return { verified: false, unverifiable: true };
+    chatRef = parsed;
+  } else {
+    chatRef = OFFICIAL_TELEGRAM_CHANNEL;
+  }
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${config.telegramBotToken}/getChatMember?chat_id=${encodeURIComponent(chatRef)}&user_id=${telegramId}`
@@ -528,6 +540,9 @@ export const listRewardTasks = async (
         return {
           id: task.id, type: task.type, title: task.title,
           description: task.description,
+          // Surface targetUrl so Partnership daily streaks can gate the Claim
+          // button behind a "Go to partner" visit on the client.
+          targetUrl: task.targetUrl,
           reward: state.nextDay,
           category: task.category || 'DAILY',
           tab,
@@ -1063,10 +1078,17 @@ export const adminCreateRewardTask = async (
       return next(new AppError('Target URL is required for tweet tasks', 400));
     }
     if (type === 'SUBSCRIBE_TELEGRAM') {
-      const parsed = extractTelegramChatRef(targetUrl);
-      if (!parsed) {
+      // Accept any t.me / telegram.me URL — including private invite links
+      // (`t.me/+abc…`). Invite links can't be introspected via Bot API, so at
+      // claim time the verifier returns `unverifiable: true` and the task is
+      // claimed on trust. Admins are warned about this in the UI hint.
+      const raw = String(targetUrl || '').trim();
+      if (!raw) {
+        return next(new AppError('Telegram URL is required for this task', 400));
+      }
+      if (!/^(?:https?:\/\/)?(?:t|telegram)\.me\/.+/i.test(raw) && !raw.startsWith('@')) {
         return next(new AppError(
-          'Paste a public Telegram channel/chat URL (e.g. https://t.me/your_channel). Private invite links (t.me/+...) are not supported.',
+          'Paste a Telegram URL (e.g. https://t.me/your_channel or https://t.me/+invite). Other domains are not supported.',
           400,
         ));
       }
@@ -1074,15 +1096,16 @@ export const adminCreateRewardTask = async (
     // VISIT_LINK is the generic "send the user to <url>, trust them, let them
     // Claim" type. Required URL. For the Partnerships tab we also require the
     // URL for any link-based social type (follow / tweet action / TG channel)
-    // — DAILY_STREAK and CaseFun action quests skip this check because they
-    // don't need a destination URL.
+    // and for DAILY_STREAK — a partner daily streak without a destination is
+    // free CFP without partner action, which defeats the purpose.
     const linkBasedSocialType = type === 'VISIT_LINK'
       || type === 'FOLLOW_TWITTER'
       || type === 'LIKE_TWEET'
       || type === 'REPOST_TWEET'
       || type === 'COMMENT_TWEET'
       || type === 'SUBSCRIBE_TELEGRAM';
-    const urlRequired = type === 'VISIT_LINK' || (tab === 'PARTNERSHIPS' && linkBasedSocialType);
+    const urlRequired = type === 'VISIT_LINK'
+      || (tab === 'PARTNERSHIPS' && (linkBasedSocialType || type === 'DAILY_STREAK'));
     if (urlRequired) {
       const url = String(targetUrl || '').trim();
       if (!url) {

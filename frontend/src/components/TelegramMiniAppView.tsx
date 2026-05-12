@@ -87,6 +87,7 @@ interface TelegramMiniAppViewProps {
   onChargeBattle: (caseIds: string[], battleProof?: string | null) => Promise<boolean>;
   onOpenTopUp: (prefillUsdt?: number) => void;
   onBalanceUpdate?: (balance: number) => void;
+  onRewardPointsUpdate?: (totalPoints: number) => void;
   onOpenWalletConnect: () => void;
   onClaimToken: (caseId: string) => Promise<void>;
   onSelectUser?: (username: string) => void;
@@ -175,6 +176,29 @@ const syncTelegramViewport = () => {
   } catch { /* ignore */ }
 };
 
+/**
+ * Force the mini app back to its fully-expanded state and re-sync viewport
+ * heights. Telegram occasionally leaves the WebApp half-collapsed after the
+ * user swipes it down and then back up — `viewportChanged` may fire with a
+ * collapsed height and not fire again, so the content sits inside a tiny
+ * fixed-height shell while the rest of the screen shows the background.
+ * Re-invoking `expand()` is a no-op when already expanded and fixes the
+ * stuck-collapsed state otherwise.
+ */
+const reexpandTelegramApp = () => {
+  try {
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (!tg) { syncTelegramViewport(); return; }
+    if (typeof tg.expand === 'function') tg.expand();
+    syncTelegramViewport();
+    // TG sometimes reports stale viewport heights for one tick after resume,
+    // so re-sync on the next frame (and a few ms later for slow devices) to
+    // catch the final size once the WebView has settled.
+    requestAnimationFrame(syncTelegramViewport);
+    setTimeout(syncTelegramViewport, 120);
+  } catch { /* ignore */ }
+};
+
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
@@ -188,7 +212,15 @@ const initTelegramApp = () => {
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
     syncTelegramViewport();
     if (typeof tg.onEvent === 'function') {
-      tg.onEvent('viewportChanged', syncTelegramViewport);
+      tg.onEvent('viewportChanged', () => {
+        syncTelegramViewport();
+        // If TG left us collapsed after the user dragged the app down and
+        // back up, force-expand. `isExpanded` is the v6.1+ flag; older
+        // clients ignore the extra expand() call.
+        if (tg.isExpanded === false && typeof tg.expand === 'function') {
+          tg.expand();
+        }
+      });
     }
   } catch { /* ignore */ }
 };
@@ -206,10 +238,14 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     style={{
       background: '#0B0C10',
       // On Telegram Mini App this comes from TG.WebApp.viewportStableHeight
-      // (kept in sync via syncTelegramViewport). In a regular browser or on
-      // SSR it falls back to 100dvh (plain web) / 100vh (older browsers).
-      height: 'var(--tg-viewport-stable-height)',
-      maxHeight: 'var(--tg-viewport-stable-height)',
+      // (kept in sync via syncTelegramViewport). The 100dvh fallback covers:
+      //  • plain web / SSR where TG isn't injected
+      //  • the brief window before initTelegramApp runs on first paint
+      //  • TG resume edge-cases where the CSS var is briefly stale or 0,
+      //    which previously left the Shell with `height: auto` and a blank
+      //    body while only the top of the app was visible.
+      height: 'var(--tg-viewport-stable-height, 100dvh)',
+      maxHeight: 'var(--tg-viewport-stable-height, 100dvh)',
       // Horizontal safe-area for landscape mode on notched phones.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
@@ -281,6 +317,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   onChargeBattle,
   onOpenTopUp,
   onBalanceUpdate,
+  onRewardPointsUpdate,
   onOpenWalletConnect,
   onClaimToken,
   onSelectUser,
@@ -352,11 +389,28 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     // Also sync viewport on plain-web orientation / resize so the Shell reacts
     // to DevTools-toolbar flips and Android keyboard show/hide.
     const onResize = () => syncTelegramViewport();
+    // Returning from a minimized state: the user dragged the mini app down
+    // and tapped to bring it back. Telegram doesn't always fire
+    // viewportChanged in that path and can leave the WebApp half-collapsed
+    // — the symptom is the gradient background showing through while the
+    // body content sits squished. Force-expanding on every resume fixes it.
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reexpandTelegramApp();
+      }
+    };
+    const onPageShow = () => reexpandTelegramApp();
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onPageShow);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
@@ -441,9 +495,12 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     try {
       const res = await api.getRewardTasks();
       setRewardTasks(Array.isArray(res.data?.tasks) ? res.data.tasks : []);
-      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+      if (typeof res.data?.totalPoints === 'number') {
+        setRewardPoints(res.data.totalPoints);
+        onRewardPointsUpdate?.(res.data.totalPoints);
+      }
     } catch {} finally { setRewardsLoading(false); }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, onRewardPointsUpdate]);
 
   const loadRewardHistory = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;
@@ -469,7 +526,22 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     setRewardError(null);
     try {
       const res = await api.claimReward(taskId);
-      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+      if (typeof res.data?.totalPoints === 'number') {
+        setRewardPoints(res.data.totalPoints);
+        // Bubble up so App-level user.rewardPoints (and the level shown on
+        // every other view) stays in sync, otherwise a later profile refresh
+        // overwrites local state with stale CFP and the LVL badge rolls back.
+        onRewardPointsUpdate?.(res.data.totalPoints);
+      }
+      // Drop the activation flag so daily-streak / repeatable tasks force
+      // the user back through the Go button on the next cycle.
+      setActivatedTasks((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.delete(taskId);
+        try { sessionStorage.setItem('cf_activated_tasks', JSON.stringify([...next])); } catch {}
+        return next;
+      });
       await loadRewardTasks();
     } catch (err: any) {
       setRewardError(err?.message || 'Failed to claim reward');
@@ -483,6 +555,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     if (task.type === 'FOLLOW_TWITTER') return task.targetUrl || 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
     if (task.type === 'VISIT_LINK') return task.targetUrl || null;
+    if (task.type === 'DAILY_STREAK') return task.targetUrl || null;
     return task.targetUrl || null;
   };
 
@@ -1089,17 +1162,40 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
           {/* ── Partnerships: trust-based external link tasks ── */}
           {rewardsSubTab === 'partnerships' && (() => {
-            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && !t.claimed);
+            // Daily streaks stay visible after the daily claim so users still
+            // see the schedule + countdown. One-shot/cooldown partner tasks
+            // disappear once claimed for the cycle, as before.
+            const partnerDailyTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && t.type === 'DAILY_STREAK');
+            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && t.type !== 'DAILY_STREAK' && !t.claimed);
+            const totalCount = partnerDailyTasks.length + partnershipTasks.length;
             return (
               <div className="space-y-1.5">
                 {rewardsLoading && <div className="text-xs text-gray-600">Loading…</div>}
-                {!rewardsLoading && partnershipTasks.length === 0 && (
+                {!rewardsLoading && totalCount === 0 && (
                   <div className="text-center py-8">
                     <ExternalLink size={22} className="mx-auto text-gray-600 mb-2" />
                     <div className="text-[11px] text-gray-500">No partner offers right now</div>
                     <div className="text-[10px] text-gray-600 mt-1">Check back soon — we add new deals regularly</div>
                   </div>
                 )}
+                {partnerDailyTasks.map((task: any) => {
+                  const actionUrl = getTaskActionUrl(task);
+                  const isActivated = activatedTasks.has(task.id);
+                  return (
+                    <DailyStreakCard
+                      key={task.id}
+                      task={task}
+                      isEditable={true}
+                      isClaiming={claimingTaskId === task.id}
+                      onClaim={handleClaimReward}
+                      onConnectSocials={() => setRewardsSubTab('social')}
+                      requireVisit={Boolean(actionUrl)}
+                      actionUrl={actionUrl}
+                      isActivated={isActivated}
+                      onGo={openExternalUrl}
+                    />
+                  );
+                })}
                 {partnershipTasks.map((task: any) => {
                   const actionUrl = getTaskActionUrl(task);
                   const isActivated = activatedTasks.has(task.id);

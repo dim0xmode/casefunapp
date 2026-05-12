@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Flame, Lock, Check } from 'lucide-react';
+import { Flame, Lock, Check, ExternalLink } from 'lucide-react';
 import { RewardTask } from '../types';
 
 interface DailyStreakCardProps {
@@ -8,6 +8,12 @@ interface DailyStreakCardProps {
   isClaiming: boolean;
   onClaim: (taskId: string) => void;
   onConnectSocials?: () => void;
+  // When set, the user must click "Go" (and open the partner URL) before the
+  // Claim button is enabled for the day. Used by Partnership daily streaks.
+  requireVisit?: boolean;
+  actionUrl?: string | null;
+  isActivated?: boolean;
+  onGo?: (url: string, taskId: string) => void;
 }
 
 const formatCountdown = (ms: number): string => {
@@ -24,6 +30,10 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({
   isClaiming,
   onClaim,
   onConnectSocials,
+  requireVisit = false,
+  actionUrl = null,
+  isActivated = false,
+  onGo,
 }) => {
   const streak = task.streak;
   const [now, setNow] = useState<number>(() => Date.now());
@@ -137,7 +147,16 @@ export const DailyStreakCard: React.FC<DailyStreakCardProps> = ({
             <span>Day 1 of {length}</span>
           )}
         </div>
-        {!claimedToday && isEditable && !isLocked && (
+        {!claimedToday && isEditable && !isLocked && requireVisit && actionUrl && !isActivated && (
+          <button
+            type="button"
+            onClick={() => onGo?.(actionUrl, task.id)}
+            className="text-[10px] font-bold px-3 py-1 rounded-lg border border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/10 active:scale-[0.97] transition flex items-center gap-1"
+          >
+            Go <ExternalLink size={10} />
+          </button>
+        )}
+        {!claimedToday && isEditable && !isLocked && (!requireVisit || !actionUrl || isActivated) && (
           <button
             type="button"
             disabled={isClaiming}

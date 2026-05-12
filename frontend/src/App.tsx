@@ -2176,6 +2176,7 @@ const App = () => {
                   onChargeBattle: handleChargeBattle,
                   onOpenTopUp: handleOpenTopUp,
                   onBalanceUpdate: setBalance,
+                  onRewardPointsUpdate: (totalPoints: number) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints })),
                   onOpenWalletConnect: () => { setConnectModalMode('login'); setIsWalletConnectOpen(true); },
                   onClaimToken: handleClaimToken,
                   onSelectUser: handleSelectUser,
@@ -2322,6 +2323,7 @@ const App = () => {
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                   onBalanceUpdate={setBalance}
+                  onRewardPointsUpdate={(totalPoints) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints }))}
                   onLinkEvmWallet={handleLinkEvmWallet}
                   onLinkTonWallet={handleLinkTonWallet}
                 />

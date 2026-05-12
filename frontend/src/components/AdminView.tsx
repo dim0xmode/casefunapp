@@ -1798,13 +1798,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 // but required for Partnerships so admins can target any handle.
                 const needsFollowUrl = isFollowTwitter && isPartnerships;
                 const showFollowUrlField = isFollowTwitter; // always show, optional unless partnerships
-                const needsExternalUrl = isVisitLink || (isPartnerships && (needsTweetUrl || needsTelegramUrl || isFollowTwitter));
+                // Partner daily streak needs a URL — without it the streak is
+                // a free CFP machine with no partner action.
+                const needsPartnerStreakUrl = isDailyStreak && isPartnerships;
+                const needsExternalUrl = isVisitLink
+                  || (isPartnerships && (needsTweetUrl || needsTelegramUrl || isFollowTwitter))
+                  || needsPartnerStreakUrl;
                 const needsUrl = needsTweetUrl || needsTelegramUrl || needsExternalUrl || needsFollowUrl;
                 const showUrlField = needsUrl || showFollowUrlField;
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
                 const urlValue = newRewardTask.targetUrl.trim();
+                const isTelegramUrlOk = /^(?:https?:\/\/)?(?:t|telegram)\.me\/.+/i.test(urlValue) || urlValue.startsWith('@');
                 const urlOk = !needsUrl
-                  || (needsExternalUrl || needsFollowUrl ? /^https?:\/\//i.test(urlValue) : Boolean(urlValue));
+                  || (needsTelegramUrl
+                    ? isTelegramUrlOk
+                    : (needsExternalUrl || needsFollowUrl ? /^https?:\/\//i.test(urlValue) : Boolean(urlValue)));
                 const canCreate = saving === null
                   && urlOk
                   && (!isCountTask || Number(newRewardTask.targetCount) > 0)
@@ -1879,14 +1887,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     <label className="text-[11px] text-gray-400 font-medium">
                       {isFollowTwitter
                         ? `X account URL${needsFollowUrl ? '' : ' (optional)'}`
-                        : needsTelegramUrl ? 'Telegram channel or chat URL'
+                        : needsTelegramUrl ? 'Telegram channel, chat or invite URL'
+                        : needsPartnerStreakUrl ? 'Partner URL (required for streak claim)'
                         : needsExternalUrl ? 'External URL (partner link)'
                         : 'Post URL'}
                     </label>
                     <input
                       value={newRewardTask.targetUrl}
                       onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
-                      placeholder={isFollowTwitter ? 'https://x.com/their_handle' : needsTelegramUrl ? 'https://t.me/your_channel' : needsExternalUrl ? 'https://partner.example.com/...' : 'https://x.com/.../status/...'}
+                      placeholder={isFollowTwitter ? 'https://x.com/their_handle' : needsTelegramUrl ? 'https://t.me/your_channel or https://t.me/+invite' : needsExternalUrl ? 'https://partner.example.com/...' : 'https://x.com/.../status/...'}
                       className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
                     />
                     {isFollowTwitter && (
@@ -1896,11 +1905,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     )}
                     {needsTelegramUrl && (
                       <div className="text-[10px] text-gray-600">
-                        Public channel/chat only — private invite links (<span className="font-mono">t.me/+…</span>) can't be verified.
-                        If the bot isn't an admin of the chat, the task auto-falls back to trust verification.
+                        Any <span className="font-mono">t.me/…</span> link is fine, including private invites (<span className="font-mono">t.me/+…</span>).
+                        Public <span className="font-mono">@channel</span> URLs are verified via Bot API; invite links and chats where the bot isn't an admin auto-fall back to trust-based claim (we can't introspect membership).
                       </div>
                     )}
-                    {needsExternalUrl && !isFollowTwitter && (
+                    {needsPartnerStreakUrl && (
+                      <div className="text-[10px] text-gray-600">
+                        Users must open this link each day before claiming the streak reward. The link opens externally; we don't verify what they do there.
+                      </div>
+                    )}
+                    {needsExternalUrl && !isFollowTwitter && !needsPartnerStreakUrl && (
                       <div className="text-[10px] text-gray-600">
                         Must start with <span className="font-mono">http://</span> or <span className="font-mono">https://</span>. The user is sent here and can Claim on return — no verification.
                       </div>
@@ -1911,6 +1925,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 {isDailyStreak && (
                   <div className="text-[10px] text-gray-500 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2">
                     Daily check-in: users earn 1 CFP on day 1, 2 CFP on day 2, … up to 7 CFP on day 7. The streak resets if a day is missed. The reward you set below is ignored — the per-day amount is automatic.
+                    {isPartnerships && (
+                      <div className="mt-1.5 text-amber-300/80">
+                        Partner streak: each day the user must visit the partner URL above before they can claim.
+                      </div>
+                    )}
                   </div>
                 )}
 

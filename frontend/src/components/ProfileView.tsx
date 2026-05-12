@@ -85,6 +85,7 @@ interface ProfileViewProps {
   isTelegramMiniApp?: boolean;
   telegramBotUsername?: string;
   onBalanceUpdate?: (balance: number) => void;
+  onRewardPointsUpdate?: (totalPoints: number) => void;
   onLinkEvmWallet?: () => void;
   onLinkTonWallet?: () => void;
 }
@@ -118,6 +119,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isTelegramMiniApp = false,
   telegramBotUsername = 'casefun_bot',
   onBalanceUpdate,
+  onRewardPointsUpdate,
   onLinkEvmWallet,
   onLinkTonWallet,
 }) => {
@@ -257,10 +259,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     try {
       const res = await api.getRewardTasks();
       setRewardTasks(Array.isArray(res.data?.tasks) ? res.data.tasks : []);
-      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+      if (typeof res.data?.totalPoints === 'number') {
+        setRewardPoints(res.data.totalPoints);
+        onRewardPointsUpdate?.(res.data.totalPoints);
+      }
     } catch { /* ignore */ }
     finally { setRewardsLoading(false); }
-  }, [isEditable, user?.id]);
+  }, [isEditable, user?.id, onRewardPointsUpdate]);
 
   const loadRewardHistory = useCallback(async () => {
     if (!isEditable || !user?.id) return;
@@ -286,7 +291,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setRewardError(null);
     try {
       const res = await api.claimReward(taskId);
-      if (typeof res.data?.totalPoints === 'number') setRewardPoints(res.data.totalPoints);
+      if (typeof res.data?.totalPoints === 'number') {
+        setRewardPoints(res.data.totalPoints);
+        // Bubble the new total up to App so the global user.rewardPoints stays
+        // in sync. Without this, a subsequent profile refresh would push the
+        // stale rewardPoints back down through the useEffect on line ~252 and
+        // the level badge would "revert" until a full page reload.
+        onRewardPointsUpdate?.(res.data.totalPoints);
+      }
+      // Clear the "visited link" flag so repeatable / daily-streak tasks force
+      // the user through the Go → Claim flow again next cycle.
+      setActivatedTasks((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.delete(taskId);
+        try { sessionStorage.setItem('cf_activated_tasks', JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+      });
       await loadRewardTasks();
     } catch (err: any) {
       setRewardError(err?.message || 'Failed to claim reward');
@@ -303,6 +324,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (task.type === 'FOLLOW_TWITTER') return task.targetUrl || 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
     if (task.type === 'VISIT_LINK') return task.targetUrl || null;
+    if (task.type === 'DAILY_STREAK') return task.targetUrl || null;
     return task.targetUrl || null;
   };
 
@@ -1521,7 +1543,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           )}
 
           {socialRewardsTab === 'partnerships' && (() => {
-            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && !t.claimed);
+            // Daily streaks stay visible even after claiming for the day (so users
+            // can see the schedule and countdown). Other partner tasks hide once
+            // claimed (one-shot) or are gated by their own cooldown.
+            const partnerDailyTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && t.type === 'DAILY_STREAK');
+            const partnershipTasks = rewardTasks.filter((t: any) => t.tab === 'PARTNERSHIPS' && t.type !== 'DAILY_STREAK' && !t.claimed);
+            const totalCount = partnerDailyTasks.length + partnershipTasks.length;
             return (
               <div className="flex flex-col gap-2 overflow-y-auto flex-1 min-h-0 custom-scrollbar pr-1">
                 <div className="flex items-center justify-between mb-1">
@@ -1531,7 +1558,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className="text-[10px] text-gray-600 uppercase tracking-widest">Partner perks</div>
                 </div>
                 {rewardsLoading && <div className="text-xs text-gray-600">Loading…</div>}
-                {!rewardsLoading && partnershipTasks.length === 0 && (
+                {!rewardsLoading && totalCount === 0 && (
                   <div className="text-center py-6">
                     <ExternalLink size={18} className="mx-auto text-gray-600 mb-2" />
                     <div className="text-[11px] text-gray-500">No partner offers right now</div>
@@ -1539,6 +1566,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 )}
                 <div className="space-y-1.5">
+                  {partnerDailyTasks.map((task: any) => {
+                    const actionUrl = getTaskActionUrl(task);
+                    const isActivated = activatedTasks.has(task.id);
+                    return (
+                      <DailyStreakCard
+                        key={task.id}
+                        task={task}
+                        isEditable={isEditable}
+                        isClaiming={claimingTaskId === task.id}
+                        onClaim={handleClaimReward}
+                        onConnectSocials={() => setSocialRewardsTab('social')}
+                        requireVisit={Boolean(actionUrl)}
+                        actionUrl={actionUrl}
+                        isActivated={isActivated}
+                        onGo={openExternalUrl}
+                      />
+                    );
+                  })}
                   {partnershipTasks.map((task: any) => {
                     const actionUrl = getTaskActionUrl(task);
                     const isActivated = activatedTasks.has(task.id);
