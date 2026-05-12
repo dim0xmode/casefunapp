@@ -214,6 +214,15 @@ const App = () => {
     }
   };
 
+  // Stable identity — critical because this is wired into ProfileView /
+  // TelegramMiniAppView's loadRewardTasks deps. An inline arrow would change
+  // every App render, invalidate loadRewardTasks' useCallback, refire its
+  // effect → re-fetch → setUser → re-render → infinite loop with the
+  // "Loading tasks…" UI stuck and constant network spam.
+  const handleRewardPointsUpdate = useCallback((totalPoints: number) => {
+    setUser((prev) => ({ ...prev, rewardPoints: totalPoints }));
+  }, []);
+
   const resetUserState = () => {
     setUser(INITIAL_USER);
     setInventory([]);
@@ -2176,7 +2185,7 @@ const App = () => {
                   onChargeBattle: handleChargeBattle,
                   onOpenTopUp: handleOpenTopUp,
                   onBalanceUpdate: setBalance,
-                  onRewardPointsUpdate: (totalPoints: number) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints })),
+                  onRewardPointsUpdate: handleRewardPointsUpdate,
                   onOpenWalletConnect: () => { setConnectModalMode('login'); setIsWalletConnectOpen(true); },
                   onClaimToken: handleClaimToken,
                   onSelectUser: handleSelectUser,
@@ -2323,7 +2332,7 @@ const App = () => {
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                   onBalanceUpdate={setBalance}
-                  onRewardPointsUpdate={(totalPoints) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints }))}
+                  onRewardPointsUpdate={handleRewardPointsUpdate}
                   onLinkEvmWallet={handleLinkEvmWallet}
                   onLinkTonWallet={handleLinkTonWallet}
                 />
