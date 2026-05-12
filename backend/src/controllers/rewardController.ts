@@ -994,10 +994,20 @@ export const adminCreateRewardTask = async (
     // specific @handle admins paste so the task list reads naturally even
     // without a custom title.
     const tgHandle = type === 'SUBSCRIBE_TELEGRAM' ? extractTelegramChatRef(targetUrl) : null;
+    const xHandleFromUrl = (url?: string | null): string | null => {
+      if (!url) return null;
+      const m = String(url).match(/(?:x\.com|twitter\.com)\/(?!intent\/)(?!i\/)([A-Za-z0-9_]{1,15})/i);
+      return m ? `@${m[1]}` : null;
+    };
+    const followHandle = type === 'FOLLOW_TWITTER' ? xHandleFromUrl(targetUrl) : null;
+
     const SOCIAL_PRESETS: Record<string, { title: string; description: string }> = {
       LINK_TWITTER: { title: 'Link Twitter', description: 'Connect your X account' },
       LINK_TELEGRAM: { title: 'Link Telegram', description: 'Connect your Telegram account' },
-      FOLLOW_TWITTER: { title: 'Follow @casefunnet', description: 'Follow our official X account' },
+      FOLLOW_TWITTER: {
+        title: followHandle ? `Follow ${followHandle}` : 'Follow @casefunnet',
+        description: followHandle ? `Follow ${followHandle} on X` : 'Follow our official X account',
+      },
       SUBSCRIBE_TELEGRAM: {
         title: tgHandle ? `Join ${tgHandle}` : 'Join Telegram channel',
         description: tgHandle
@@ -1008,6 +1018,7 @@ export const adminCreateRewardTask = async (
       REPOST_TWEET: { title: 'Repost this post', description: 'Repost on X' },
       COMMENT_TWEET: { title: 'Comment on this post', description: 'Leave a comment on the post' },
       VISIT_LINK: { title: 'Visit partner site', description: 'Open the link to claim your reward' },
+      DAILY_STREAK: { title: 'Daily Login Streak', description: 'Come back every day to grow your reward' },
     };
 
     const CASEFUN_PRESETS: Record<string, { title: string; description: string }> = {
@@ -1061,10 +1072,18 @@ export const adminCreateRewardTask = async (
       }
     }
     // VISIT_LINK is the generic "send the user to <url>, trust them, let them
-    // Claim" type. Required for the Partnerships tab — and the URL must be a
-    // real external https link so admins can't accidentally publish empty
-    // tasks that no-op when clicked.
-    if (type === 'VISIT_LINK' || tab === 'PARTNERSHIPS') {
+    // Claim" type. Required URL. For the Partnerships tab we also require the
+    // URL for any link-based social type (follow / tweet action / TG channel)
+    // — DAILY_STREAK and CaseFun action quests skip this check because they
+    // don't need a destination URL.
+    const linkBasedSocialType = type === 'VISIT_LINK'
+      || type === 'FOLLOW_TWITTER'
+      || type === 'LIKE_TWEET'
+      || type === 'REPOST_TWEET'
+      || type === 'COMMENT_TWEET'
+      || type === 'SUBSCRIBE_TELEGRAM';
+    const urlRequired = type === 'VISIT_LINK' || (tab === 'PARTNERSHIPS' && linkBasedSocialType);
+    if (urlRequired) {
       const url = String(targetUrl || '').trim();
       if (!url) {
         return next(new AppError('External URL is required for this task', 400));
@@ -1095,7 +1114,7 @@ export const adminCreateRewardTask = async (
         isActive: true,
         sortOrder: Number(sortOrder) || 100,
         createdById: adminId,
-        category: isCaseFun ? 'CASEFUN' : (type === 'VISIT_LINK' ? 'PARTNERSHIPS' : 'SOCIAL'),
+        category: type === 'DAILY_STREAK' ? 'DAILY' : isCaseFun ? 'CASEFUN' : (type === 'VISIT_LINK' ? 'PARTNERSHIPS' : 'SOCIAL'),
         tab,
         targetCount: isCountTask ? Math.max(1, targetCountNum) : null,
         targetAmount: isAmountTask ? targetAmountNum : null,

@@ -1790,14 +1790,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 const isCountTask = COUNT_TYPES_FE.includes(newRewardTask.type);
                 const needsTweetUrl = ['LIKE_TWEET','REPOST_TWEET','COMMENT_TWEET'].includes(newRewardTask.type);
                 const needsTelegramUrl = newRewardTask.type === 'SUBSCRIBE_TELEGRAM';
+                const isFollowTwitter = newRewardTask.type === 'FOLLOW_TWITTER';
                 const isVisitLink = newRewardTask.type === 'VISIT_LINK';
+                const isDailyStreak = newRewardTask.type === 'DAILY_STREAK';
                 const isPartnerships = newRewardTask.tab === 'PARTNERSHIPS';
-                const needsExternalUrl = isVisitLink || isPartnerships;
-                const needsUrl = needsTweetUrl || needsTelegramUrl || needsExternalUrl;
+                // Follow-X URL is optional for Rewards (falls back to @casefunnet)
+                // but required for Partnerships so admins can target any handle.
+                const needsFollowUrl = isFollowTwitter && isPartnerships;
+                const showFollowUrlField = isFollowTwitter; // always show, optional unless partnerships
+                const needsExternalUrl = isVisitLink || (isPartnerships && (needsTweetUrl || needsTelegramUrl || isFollowTwitter));
+                const needsUrl = needsTweetUrl || needsTelegramUrl || needsExternalUrl || needsFollowUrl;
+                const showUrlField = needsUrl || showFollowUrlField;
                 const needsCaseId = newRewardTask.type === 'OPEN_SPECIFIC_CASE';
                 const urlValue = newRewardTask.targetUrl.trim();
                 const urlOk = !needsUrl
-                  || (needsExternalUrl ? /^https?:\/\//i.test(urlValue) : Boolean(urlValue));
+                  || (needsExternalUrl || needsFollowUrl ? /^https?:\/\//i.test(urlValue) : Boolean(urlValue));
                 const canCreate = saving === null
                   && urlOk
                   && (!isCountTask || Number(newRewardTask.targetCount) > 0)
@@ -1833,13 +1840,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                     >
                       <optgroup label="Partner / Generic">
                         <option value="VISIT_LINK">Visit link (trust-based)</option>
+                        <option value="DAILY_STREAK">Daily check-in streak</option>
                       </optgroup>
                       <optgroup label="Social">
                         <option value="LIKE_TWEET">Like post on X</option>
                         <option value="REPOST_TWEET">Repost on X</option>
                         <option value="COMMENT_TWEET">Comment on post</option>
-                        <option value="FOLLOW_TWITTER">Follow @casefunnet</option>
-                        <option value="SUBSCRIBE_TELEGRAM">Join Telegram</option>
+                        <option value="FOLLOW_TWITTER">Follow X account</option>
+                        <option value="SUBSCRIBE_TELEGRAM">Join Telegram channel</option>
                       </optgroup>
                       <optgroup label="CaseFun">
                         <option value="OPEN_CASES">Open cases</option>
@@ -1866,28 +1874,43 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 </div>
 
-                {needsUrl && (
+                {showUrlField && (
                   <div className="space-y-1.5">
                     <label className="text-[11px] text-gray-400 font-medium">
-                      {needsTelegramUrl ? 'Telegram channel or chat URL' : needsExternalUrl ? 'External URL (partner link)' : 'Post URL'}
+                      {isFollowTwitter
+                        ? `X account URL${needsFollowUrl ? '' : ' (optional)'}`
+                        : needsTelegramUrl ? 'Telegram channel or chat URL'
+                        : needsExternalUrl ? 'External URL (partner link)'
+                        : 'Post URL'}
                     </label>
                     <input
                       value={newRewardTask.targetUrl}
                       onChange={(e) => setNewRewardTask((p) => ({ ...p, targetUrl: e.target.value }))}
-                      placeholder={needsTelegramUrl ? 'https://t.me/your_channel' : needsExternalUrl ? 'https://partner.example.com/...' : 'https://x.com/.../status/...'}
+                      placeholder={isFollowTwitter ? 'https://x.com/their_handle' : needsTelegramUrl ? 'https://t.me/your_channel' : needsExternalUrl ? 'https://partner.example.com/...' : 'https://x.com/.../status/...'}
                       className="w-full px-3 py-2.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-gray-300 placeholder-gray-600"
                     />
+                    {isFollowTwitter && (
+                      <div className="text-[10px] text-gray-600">
+                        Leave empty for the default <span className="font-mono">@casefunnet</span>. Provide a partner's X URL to point the task at their account.
+                      </div>
+                    )}
                     {needsTelegramUrl && (
                       <div className="text-[10px] text-gray-600">
                         Public channel/chat only — private invite links (<span className="font-mono">t.me/+…</span>) can't be verified.
                         If the bot isn't an admin of the chat, the task auto-falls back to trust verification.
                       </div>
                     )}
-                    {needsExternalUrl && (
+                    {needsExternalUrl && !isFollowTwitter && (
                       <div className="text-[10px] text-gray-600">
                         Must start with <span className="font-mono">http://</span> or <span className="font-mono">https://</span>. The user is sent here and can Claim on return — no verification.
                       </div>
                     )}
+                  </div>
+                )}
+
+                {isDailyStreak && (
+                  <div className="text-[10px] text-gray-500 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2">
+                    Daily check-in: users earn 1 CFP on day 1, 2 CFP on day 2, … up to 7 CFP on day 7. The streak resets if a day is missed. The reward you set below is ignored — the per-day amount is automatic.
                   </div>
                 )}
 
@@ -1915,7 +1938,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                   </div>
                 )}
 
-                {(isCaseFun || isPartnerships || isVisitLink) && (
+                {(isCaseFun || isPartnerships || isVisitLink) && !isDailyStreak && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[11px] text-gray-400 font-medium">Repeat Interval</label>

@@ -37,6 +37,12 @@ const tgHandleFromUrl = (url?: string | null): string | null => {
   return handle ? `@${handle}` : null;
 };
 
+const xHandleFromUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const m = String(url).trim().match(/^(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/(?!intent\/)(?!i\/)([A-Za-z0-9_]{1,15})/i);
+  return m ? `@${m[1]}` : null;
+};
+
 interface BattleRecord {
   id: string;
   opponent: string;
@@ -474,7 +480,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   const getTaskActionUrl = (task: RewardTask): string | null => {
     if (['LIKE_TWEET', 'REPOST_TWEET', 'COMMENT_TWEET'].includes(task.type)) return task.targetUrl || null;
-    if (task.type === 'FOLLOW_TWITTER') return 'https://x.com/casefunnet';
+    if (task.type === 'FOLLOW_TWITTER') return task.targetUrl || 'https://x.com/casefunnet';
     if (task.type === 'SUBSCRIBE_TELEGRAM') return task.targetUrl || 'https://t.me/CaseFun_Chat';
     if (task.type === 'VISIT_LINK') return task.targetUrl || null;
     return task.targetUrl || null;
@@ -500,7 +506,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       const verb = task.type === 'LIKE_TWEET' ? 'Like' : task.type === 'REPOST_TWEET' ? 'Repost' : 'Comment on';
       return <>{verb} <span onClick={() => openExternalUrl(task.targetUrl!, task.id)} className={linkClass}>this post</span></>;
     }
-    if (task.type === 'FOLLOW_TWITTER') return <>Follow <span onClick={() => openExternalUrl('https://x.com/casefunnet', task.id)} className={linkClass}>@casefunnet</span></>;
+    if (task.type === 'FOLLOW_TWITTER') {
+      const url = task.targetUrl || 'https://x.com/casefunnet';
+      const label = xHandleFromUrl(url) || '@casefunnet';
+      return <>Follow <span onClick={() => openExternalUrl(url, task.id)} className={linkClass}>{label}</span></>;
+    }
     if (task.type === 'SUBSCRIBE_TELEGRAM') {
       const url = task.targetUrl || 'https://t.me/CaseFun_Chat';
       const label = tgHandleFromUrl(url) || 'Telegram channel';
