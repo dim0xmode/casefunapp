@@ -1672,7 +1672,18 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        <div className="px-3 pt-2 pb-4">
+        {/* Inner content wrapper pinned to the STABLE viewport height
+            minus rough header (~64px) + nav (~64px) chrome. This is the
+            critical anti-reflow guarantee: when TG shrinks the WebView
+            mid-animation, the scroll area shrinks with it but THIS box
+            stays the same height, so flex-1 children inside (upgrade
+            slots, charts, etc.) don't recalculate. Content just gets
+            partially clipped by the smaller scroll area during the
+            animation, then re-revealed when the WebView grows back. */}
+        <div
+          className="px-3 pt-2 pb-4"
+          style={{ minHeight: 'calc(var(--cf-stable-h, 100dvh) - 128px)' }}
+        >
           {renderTabContent()}
         </div>
       </div>
