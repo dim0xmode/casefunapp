@@ -2066,7 +2066,7 @@ const App = () => {
       topUpBridgeMode === 'done');
 
   return (
-    <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
+    <div className="flex flex-col h-[100lvh] bg-[#0B0C10] text-white overflow-hidden font-sans relative">
       {/* Global Parallax Background - Fixed positioning.
           Skipped in TG Mini App mode: the Shell there sits at z:10 and
           if its viewport-driven size ever has a 1-2px gap on resize,

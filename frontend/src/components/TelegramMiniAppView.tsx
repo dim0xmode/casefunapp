@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-1';
+const BUILD_MARKER = 'v-root-2';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -1653,10 +1653,13 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         </button>
       )}
 
-      {/* ── Bottom tab bar ── */}
+      {/* ── Bottom tab bar ──
+          No backdrop-filter: was causing repaint storm in Android TG
+          WebView (sticky position + blur = recomposite every frame).
+          Solid bg color, slightly more opaque to mask scrolling content. */}
       <div
         className="shrink-0 border-t border-white/[0.04]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.97)' } as React.CSSProperties}
       >
         <div className="flex items-end px-1 pt-1 pb-1">
           {BASE_TABS.map((tab) => {
