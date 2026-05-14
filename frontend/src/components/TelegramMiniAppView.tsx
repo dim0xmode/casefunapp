@@ -202,7 +202,7 @@ const reexpandTelegramApp = () => {
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) { syncTelegramViewport(); return; }
+    if (!tg) return;
     // Mark <html> so global CSS can disable `backdrop-filter`. Android
     // TG WebView creates a separate compositor layer per blur, and
     // those layers flicker / lose contents during scroll & swipe.
@@ -213,21 +213,11 @@ const initTelegramApp = () => {
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
     if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#0B0C10');
-    // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
-    // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    syncTelegramViewport();
-    if (typeof tg.onEvent === 'function') {
-      tg.onEvent('viewportChanged', () => {
-        syncTelegramViewport();
-        // If TG left us collapsed after the user dragged the app down and
-        // back up, force-expand. `isExpanded` is the v6.1+ flag; older
-        // clients ignore the extra expand() call.
-        if (tg.isExpanded === false && typeof tg.expand === 'function') {
-          tg.expand();
-        }
-      });
-    }
+    // NO viewportChanged listener anymore. Previously we re-called
+    // tg.expand() from inside it, which fought the user's swipe in
+    // real time and produced visible jump/flicker. Shell is `inset:0`
+    // so it follows the WebView natively — no JS sizing needed.
   } catch { /* ignore */ }
 };
 
@@ -238,7 +228,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-stable-4';
+const BUILD_MARKER = 'v-stable-5';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div

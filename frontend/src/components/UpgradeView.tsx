@@ -691,23 +691,35 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                     <div className={`relative flex flex-col items-center ${isTelegramMiniApp ? 'gap-1' : 'gap-2'}`}>
                       {upgradeResult === 'success' ? (
                         <>
-                          <div className={`${isTelegramMiniApp ? '-top-5 -left-5' : '-top-6 -left-6'} absolute text-web3-accent animate-ping`}>
-                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
-                          </div>
-                          <div className={`${isTelegramMiniApp ? '-top-5 -right-5' : '-top-6 -right-6'} absolute text-web3-success animate-ping`} style={{ animationDelay: '0.3s' }}>
-                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
-                          </div>
-                          <div className={`${isTelegramMiniApp ? '-bottom-5 -left-5' : '-bottom-6 -left-6'} absolute text-web3-purple animate-ping`} style={{ animationDelay: '0.6s' }}>
-                            <Sparkles size={isTelegramMiniApp ? 13 : 16} />
-                          </div>
+                          {/* Sparkles + animated gradient text — desktop
+                              only. On TG WebView animate-ping & animate-
+                              gradient flicker continuously, so we render
+                              a static green CONGRATS! instead. */}
+                          {!isTelegramMiniApp && (
+                            <>
+                              <div className="-top-6 -left-6 absolute text-web3-accent animate-ping">
+                                <Sparkles size={16} />
+                              </div>
+                              <div className="-top-6 -right-6 absolute text-web3-success animate-ping" style={{ animationDelay: '0.3s' }}>
+                                <Sparkles size={16} />
+                              </div>
+                              <div className="-bottom-6 -left-6 absolute text-web3-purple animate-ping" style={{ animationDelay: '0.6s' }}>
+                                <Sparkles size={16} />
+                              </div>
+                            </>
+                          )}
                           <div
-                            className={`font-black uppercase text-white ${
-                              isTelegramMiniApp ? 'text-[15px] tracking-[0.06em]' : 'text-2xl tracking-[0.12em]'
+                            className={`font-black uppercase ${
+                              isTelegramMiniApp ? 'text-[15px] tracking-[0.06em] text-web3-success' : 'text-2xl tracking-[0.12em] text-white'
                             }`}
                           >
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                              CONGRATS!
-                            </span>
+                            {isTelegramMiniApp ? (
+                              'CONGRATS!'
+                            ) : (
+                              <span className="text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
+                                CONGRATS!
+                              </span>
+                            )}
                           </div>
                           <div className={`${isTelegramMiniApp ? 'text-[9px] tracking-[0.12em]' : 'text-xs tracking-[0.25em]'} uppercase text-gray-300`}>
                             Upgrade success
@@ -716,19 +728,23 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                       ) : (
                         <>
                           <div className={`relative flex flex-col items-center justify-center ${isTelegramMiniApp ? 'w-36 h-20' : 'w-44 h-24'}`}>
-                            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
-                              {Array.from({ length: 8 }).map((_, idx) => (
-                                <span
-                                  key={`rain-${idx}`}
-                                  className="upgrade-rain"
-                                  style={{
-                                    left: `${8 + idx * 11}%`,
-                                    animationDelay: `${idx * 0.12}s`,
-                                    animationDuration: `${1.2 + (idx % 3) * 0.2}s`,
-                                  }}
-                                />
-                              ))}
-                            </div>
+                            {/* Rain animation desktop-only — looping
+                                animation flickers on TG WebView. */}
+                            {!isTelegramMiniApp && (
+                              <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl">
+                                {Array.from({ length: 8 }).map((_, idx) => (
+                                  <span
+                                    key={`rain-${idx}`}
+                                    className="upgrade-rain"
+                                    style={{
+                                      left: `${8 + idx * 11}%`,
+                                      animationDelay: `${idx * 0.12}s`,
+                                      animationDuration: `${1.2 + (idx % 3) * 0.2}s`,
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
                             <div
                               className={`font-black uppercase text-web3-danger drop-shadow-[0_0_6px_rgba(239,68,68,0.35)] ${
                                 isTelegramMiniApp ? 'text-[15px] tracking-[0.07em]' : 'text-2xl tracking-[0.15em]'
