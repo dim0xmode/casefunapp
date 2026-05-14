@@ -203,6 +203,12 @@ const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg) { syncTelegramViewport(); return; }
+    // Mark <html> so global CSS can disable `backdrop-filter`. Android
+    // TG WebView creates a separate compositor layer per blur, and
+    // those layers flicker / lose contents during scroll & swipe.
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.setAttribute('data-tg-app', '1');
+    }
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
@@ -232,7 +238,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-stable-3';
+const BUILD_MARKER = 'v-stable-4';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div

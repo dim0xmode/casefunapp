@@ -21,6 +21,33 @@
   }
 }
 
+/* TELEGRAM MINI APP: globally disable `backdrop-filter`.
+ *
+ * Android Telegram WebView creates a separate compositor layer for
+ * every element using `backdrop-filter: blur()`. During scroll,
+ * minimize/expand swipes, and any viewportChanged event, those
+ * layers re-composite incorrectly:
+ *   - whole page flickers during scroll
+ *   - content inside the blurred panel disappears after a swipe
+ *   - inline-style blurs on dial/result-overlay drop animations
+ *
+ * The `data-tg-app="1"` flag is set on <html> from initTelegramApp
+ * in TelegramMiniAppView.tsx. Plain web users still see the full
+ * frosted-glass effect. The semitone background tints stay; we just
+ * drop the live blur underneath.
+ *
+ * IMPORTANT: only disable backdrop-filter here. Earlier attempts
+ * also forced `transform: translateZ(0)` on <body> to force a
+ * single GPU layer — that backfired hard, the whole page flickered.
+ * Plain rule, no compositor tricks.
+ */
+html[data-tg-app="1"] *,
+html[data-tg-app="1"] *::before,
+html[data-tg-app="1"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
