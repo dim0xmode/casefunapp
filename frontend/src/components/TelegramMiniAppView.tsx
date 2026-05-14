@@ -164,71 +164,23 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  * Falls back to `window.innerHeight` on plain web.
  */
 // ARCHITECTURE NOTE — VIEWPORT SIZING
-// Many approaches tried (see git log). What actually works on Android
-// Telegram during a swipe-down/swipe-up animation:
 //
-// 1) Shell uses `position: fixed; inset: 0`. The Shell itself follows
-//    the viewport, which means its CHILDREN (header at top, nav at
-//    bottom) stay glued to the visible viewport edges — the user
-//    NEVER loses the bottom nav, even mid-animation.
+// Minimal one-shot init. Shell uses `position: fixed; inset: 0` so
+// header stays at the top and nav at the bottom of the visible
+// WebView regardless of TG's minimize/expand animation. We do NOT
+// try to stop mid-animation reflow with JS-managed CSS variables —
+// previous attempts caused more bugs than they fixed. TG's WebView
+// genuinely resizes the viewport during the swipe; any CSS that
+// depends on viewport size (vh/dvh/flex-1) will reflow with it.
+// That's a platform behaviour, identical for every mini app — we
+// just minimise the visible impact by avoiding viewport-reactive
+// layouts where possible.
 //
-// 2) Stretchy mid-content is the only thing that needs protection
-//    against the mid-animation reflow. We expose `--cf-stable-h`
-//    (committed only on TG events where `isStateStable === true`) and
-//    individual content components (UpgradeView, the chart in
-//    ProfileView, …) pin their stretchy boxes to that, instead of
-//    using `flex-1` against the live viewport.
-//
-// 3) `setHeaderColor` / `setBackgroundColor` blend TG chrome into our
-//    page bg so the seam between TG chrome and our header is invisible.
-
-const seedStableHeightVar = () => {
-  try {
-    if (typeof document === 'undefined' || typeof window === 'undefined') return;
-    // `screen.height` is the physical device screen height — it is NOT a
-    // viewport property and does NOT change when TG resizes the WebView
-    // during a minimize/expand animation. Some Android WebView builds
-    // incorrectly implement `100lvh` as `100dvh` (live viewport), so we
-    // can't rely on the CSS keyword alone. screen.height gives us a
-    // bulletproof upper bound for content height — slightly larger than
-    // the actual usable area (it includes Android nav/status bars) but
-    // that just means content always uses the inner scroll, which is
-    // exactly the behaviour we want during a swipe-down.
-    const scr = typeof screen !== 'undefined' ? Number(screen.height) || 0 : 0;
-    const win = window.innerHeight || 0;
-    const initial = Math.max(scr, win);
-    if (initial > 100) {
-      document.documentElement.style.setProperty('--cf-stable-h', `${initial}px`);
-    }
-  } catch { /* ignore */ }
-};
-
-// Ratcheting commit — --cf-stable-h NEVER shrinks. Reason: TG fires
-// `viewportChanged` with `isStateStable === true` at BOTH ends of the
-// minimize/expand cycle (the collapsed/handle state is also "stable" by
-// TG's bookkeeping), but the collapsed value is the ~100px handle
-// height, not the real app size. If we wrote that, our content box
-// would snap to 100px and then slowly stretch back to full as the user
-// re-expanded — exactly the "slow stretch 3-5 sec and back" symptom.
-// We only ever expand the variable, so it always reflects the largest
-// stable WebView the user has seen.
-const commitStableHeight = (height: number) => {
-  try {
-    if (typeof document === 'undefined') return;
-    if (!(height > 100)) return;
-    const rounded = Math.round(height);
-    const current = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--cf-stable-h') || '0'
-    ) || 0;
-    if (rounded <= current) return;
-    document.documentElement.style.setProperty('--cf-stable-h', `${rounded}px`);
-  } catch { /* ignore */ }
-};
-
+// `setHeaderColor` / `setBackgroundColor` blend TG chrome into our
+// page bg so the seam between TG chrome and our header is invisible.
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    seedStableHeightVar();
     if (!tg) return;
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
@@ -237,30 +189,6 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    // On a cold Telegram restart the WebView opens BEFORE TG chrome has
-    // finished laying out, so the first read of viewportStableHeight is
-    // smaller than the real app area. Re-read on a few staggered timers
-    // until things stabilise. The ratchet in commitStableHeight ensures
-    // we only ever grow, so re-reading transient/wrong small values is
-    // safe.
-    const commitFromTg = () => {
-      const next = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
-      if (next > 100) commitStableHeight(next);
-    };
-    commitFromTg();
-    setTimeout(commitFromTg, 80);
-    setTimeout(commitFromTg, 250);
-    setTimeout(commitFromTg, 600);
-    setTimeout(commitFromTg, 1500);
-    if (typeof tg.onEvent === 'function') {
-      // No isStateStable gate — the ratchet rejects shrinks, so it's
-      // safe to listen on every event. This way we catch the full-size
-      // value as soon as TG reports it, even if it arrives mid-animation
-      // (the first viewportChanged after a cold start often comes
-      // *before* TG marks the state stable, which is why we missed it
-      // on Telegram-restart cold opens previously).
-      tg.onEvent('viewportChanged', commitFromTg);
-    }
   } catch { /* ignore */ }
 };
 
@@ -297,40 +225,8 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="relative z-[1] flex flex-col flex-1 min-h-0 overflow-hidden">
       {children}
     </div>
-    <ViewportDebugOverlay />
   </div>
 );
-
-const ViewportDebugOverlay: React.FC = () => {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!new URLSearchParams(window.location.search).has('vpdebug')) return;
-    let raf = 0;
-    const loop = () => { setTick((t) => t + 1); raf = requestAnimationFrame(loop); };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  if (typeof window === 'undefined') return null;
-  if (!new URLSearchParams(window.location.search).has('vpdebug')) return null;
-  const tg = (window as any)?.Telegram?.WebApp;
-  const sh = getComputedStyle(document.documentElement).getPropertyValue('--cf-stable-h') || '?';
-  return (
-    <div
-      style={{
-        position: 'fixed', top: 8, left: 8, right: 8, zIndex: 99,
-        background: 'rgba(255,0,0,0.85)', color: '#fff',
-        fontSize: 10, fontFamily: 'monospace', padding: '4px 6px', borderRadius: 4,
-        pointerEvents: 'none', lineHeight: 1.3,
-      }}
-      data-tick={tick}
-    >
-      <div>win={window.innerWidth}×{window.innerHeight} scr={screen.width}×{screen.height}</div>
-      <div>tg.vh={tg?.viewportHeight ?? '?'} tg.svh={tg?.viewportStableHeight ?? '?'} exp={String(tg?.isExpanded)}</div>
-      <div>--cf-stable-h={sh.trim()} t={tick}</div>
-    </div>
-  );
-};
 
 const CenteredShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Shell>
@@ -453,27 +349,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [fbStatus, setFbStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    // TG init (one-shot) + register the viewportChanged listener that
-    // commits stable heights to --cf-shell-h. Also handle plain-web
-    // orientation/resize so non-TG users (and TG users rotating their
-    // phone) get the correct Shell size.
     initTelegramApp();
-    const onOrient = () => {
-      // Only commit on plain web — in TG the viewportChanged event is
-      // authoritative and already fires on rotation.
-      const tg = (window as any)?.Telegram?.WebApp;
-      if (tg) return;
-      const h = window.innerHeight;
-      if (h > 100) {
-        document.documentElement.style.setProperty('--cf-shell-h', `${h}px`);
-      }
-    };
-    window.addEventListener('orientationchange', onOrient);
-    window.addEventListener('resize', onOrient);
-    return () => {
-      window.removeEventListener('orientationchange', onOrient);
-      window.removeEventListener('resize', onOrient);
-    };
   }, []);
 
   useEffect(() => {
@@ -1741,24 +1617,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        {/* Inner content wrapper pinned to the LARGEST viewport (100lvh)
-            minus rough header (~64px) + nav (~64px) chrome. `lvh` is
-            the browser-native stable height — it represents the viewport
-            when browser UI is fully retracted and does NOT change during
-            the TG minimize/expand animation. This is the critical
-            anti-reflow guarantee: when TG shrinks the WebView mid-
-            animation, the scroll area shrinks with it but THIS box stays
-            the same height, so flex-1 children inside (upgrade slots,
-            charts, etc.) don't recalculate. Content just gets partially
-            clipped by the smaller scroll area during the animation,
-            then re-revealed when the WebView grows back.
-            --cf-stable-h is the JS-managed fallback that ratchets to the
-            largest observed window.innerHeight, used by browsers that
-            don't understand lvh. */}
-        <div
-          className="px-3 pt-2 pb-4"
-          style={{ minHeight: 'calc(var(--cf-stable-h, 100lvh) - 128px)' }}
-        >
+        <div className="px-3 pt-2 pb-4">
           {renderTabContent()}
         </div>
       </div>
