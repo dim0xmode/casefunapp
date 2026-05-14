@@ -48,21 +48,25 @@ html[data-tg-app="1"] *::after {
   -webkit-backdrop-filter: none !important;
 }
 
-/* TG mode: previously we blanket-killed all looping animations to
- * stop a repaint storm on the sticky bottom nav (gradient label
- * pulse, glow-pulse on the rewards icon, etc.). That over-corrected
- * — it also killed the case-roulette result Sparkles ping, hid the
- * upgrade-button pulse-fast, and confused users into thinking
- * elements "didn't load".
+/* TG mode: kill infinite CSS animations.
  *
- * Now the BottomNav is extracted as a memoised React component with
- * `transform: translateZ(0); contain: layout paint;` wrapper and the
- * looping animation classes manually stripped from its markup. So we
- * no longer need the global kill — animations are allowed everywhere
- * else.
- *
- * Backdrop-filter override above stays — that was a real WebView bug,
- * not just compositor churn. */
+ * Continuous-loop CSS animations (animate-pulse, animate-ping,
+ * animate-spin, animate-bounce, animate-gradient, animate-glow-pulse)
+ * each force a repaint every frame. Multiplied across the bottom nav
+ * (sticky), notification dots, and gradient text labels, the WebView
+ * never gets to a steady state — user reports "page keeps updating,
+ * can't settle". One-shot animations (modal pop, fade-in, scale-in)
+ * stay; only the looping ones are disabled.
+ */
+html[data-tg-app="1"] .animate-pulse,
+html[data-tg-app="1"] .animate-ping,
+html[data-tg-app="1"] .animate-spin,
+html[data-tg-app="1"] .animate-bounce,
+html[data-tg-app="1"] .animate-gradient,
+html[data-tg-app="1"] .animate-glow-pulse,
+html[data-tg-app="1"] .animate-pulse-slow {
+  animation: none !important;
+}
 
 @layer base {
   * {
