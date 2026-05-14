@@ -2076,7 +2076,13 @@ const App = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
-      {/* Global Parallax Background - Fixed positioning */}
+      {/* Global Parallax Background - Fixed positioning.
+          Skipped entirely in TG Mini App mode: the Shell there has its own
+          gradient + the App-root bg color, so we don't want these colored
+          blobs leaking through any tiny gap between Shell and viewport
+          (which produced the "global site background appearing over the
+          mini app" symptom users reported on certain TG clients). */}
+      {activeTab !== 'tg' && (
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
             <div 
               className={`absolute w-[600px] h-[600px] bg-web3-accent/30 rounded-full blur-[140px] ${backgroundPulseClass}`}
@@ -2123,6 +2129,7 @@ const App = () => {
               }}
             ></div>
       </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden relative">
         {activeTab !== 'tg' && (

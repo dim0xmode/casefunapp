@@ -163,78 +163,56 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  *
  * Falls back to `window.innerHeight` on plain web.
  */
-// Minimum viewport height we'll write to the CSS variable. Telegram
-// occasionally reports tiny / zero values during the swipe-down → swipe-up
-// resume animation; writing those into --tg-viewport-stable-height would
-// squash the Shell down to a few pixels and produce the "header visible,
-// body empty with gradient" symptom users reported. Anything smaller than
-// this threshold is treated as a transient bad reading and ignored.
+// Sanity floor for "live" viewport readings (keyboard / orientation /
+// drag). Anything below is treated as transient noise and rejected — we
+// fall back to window.innerHeight instead.
 const MIN_USABLE_VIEWPORT_HEIGHT = 320;
 
-// Module-scope memoised state. The Shell's height is pinned to a CSS pixel
-// variable, written from the largest of (tg.viewportStableHeight,
-// window.innerHeight, lastStableHeight). The "ratchet" behaviour — never
-// shrinking unless we get an explicit signal that the real viewport actually
-// got smaller (orientationchange) — is what kills resume-time flicker:
-// mid-animation TG/WebKit can momentarily report partial heights, but as
-// long as something in the trio still reports the full height we hold the
-// Shell at that size and the user sees no jitter.
-let lastStableHeight = 0;
+// Module-scope memoised state. Shell now spans the entire WebView
+// (`position: fixed; inset: 0`) so the gap-leaking bug is gone by
+// construction. The remaining JS work is just to push the inner content
+// area down by however many pixels TG chrome eats at the top, so the
+// app header isn't hidden behind it. That's --tg-chrome-top.
+let lastChromeTop = -1;
 let lastCurrentHeight = 0;
 
 const readWindowHeight = () => (typeof window !== 'undefined' ? window.innerHeight : 0);
 
 const writeViewportVar = (key: string, value: number) => {
   if (typeof document === 'undefined') return;
-  if (!Number.isFinite(value) || value <= 0) return;
+  if (!Number.isFinite(value) || value < 0) return;
   document.documentElement.style.setProperty(key, `${value}px`);
 };
 
-// Pick the best Shell-sizing height we can justify right now. Rules:
-//  1. We prefer tg.viewportStableHeight when TG is present and reports a
-//     plausible value — it's the authoritative number that already excludes
-//     the TG chrome at top. Using window.innerHeight here would over-size
-//     the Shell and stretch flex-1 children behind the chrome.
-//  2. We accept a smaller honest reading from TG only if it's within 30%
-//     of the last good value. A sharp drop (mid-resume noise) is held.
-//  3. If TG isn't ready / unavailable, fall back to window.innerHeight.
-//  4. If everything is unusable (init pre-paint), return 0 → skip write
-//     and keep whatever CSS fallback we have.
-//  5. orientationchange explicitly resets the ratchet — see below.
-const TRANSIENT_DROP_TOLERANCE = 0.7;
-
-const resolveStableHeight = () => {
+// How many pixels of the WebView's top edge are covered by TG's native
+// header bar (the strip with the bot name + close button). On clients
+// where the WebView's window.innerHeight already excludes the chrome,
+// the result is 0 and Shell needs no extra top padding. Capped
+// defensively in case TG reports nonsense.
+const MAX_PLAUSIBLE_CHROME = 200;
+const resolveChromeTop = () => {
   const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
   const tgStable = Number(tg?.viewportStableHeight) || 0;
   const winH = readWindowHeight();
-
-  if (tgStable >= MIN_USABLE_VIEWPORT_HEIGHT) {
-    if (lastStableHeight > 0 && tgStable < lastStableHeight * TRANSIENT_DROP_TOLERANCE) {
-      // Sharp drop relative to last good height — treat as mid-animation
-      // noise and hold. Real viewport changes (orientation flip, keyboard)
-      // are either much smaller deltas or come through orientationchange
-      // which resets the ratchet explicitly.
-      return lastStableHeight;
-    }
-    return tgStable;
-  }
-  if (winH >= MIN_USABLE_VIEWPORT_HEIGHT) return winH;
-  if (lastStableHeight > 0) return lastStableHeight;
-  return 0;
+  if (tgStable <= 0 || winH <= 0) return 0;
+  const diff = winH - tgStable;
+  if (!Number.isFinite(diff) || diff <= 0) return 0;
+  return Math.min(diff, MAX_PLAUSIBLE_CHROME);
 };
 
 const syncTelegramViewport = () => {
   try {
-    const stable = resolveStableHeight();
-    if (stable > 0 && stable !== lastStableHeight) {
-      lastStableHeight = stable;
-      writeViewportVar('--tg-viewport-stable-height', stable);
+    const chromeTop = resolveChromeTop();
+    if (chromeTop !== lastChromeTop) {
+      lastChromeTop = chromeTop;
+      writeViewportVar('--tg-chrome-top', chromeTop);
     }
     // Live "current" tracking — anything that wants to follow the live
-    // viewport (keyboard, drag) can read this. Nothing critical pins to it.
+    // viewport (keyboard, drag) can read this. Nothing critical pins to it
+    // anymore; kept for downstream consumers.
     const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
     const tgCurrent = Number(tg?.viewportHeight) || 0;
-    const current = tgCurrent >= MIN_USABLE_VIEWPORT_HEIGHT ? tgCurrent : (stable || lastStableHeight);
+    const current = tgCurrent >= MIN_USABLE_VIEWPORT_HEIGHT ? tgCurrent : readWindowHeight();
     if (current > 0 && current !== lastCurrentHeight) {
       lastCurrentHeight = current;
       writeViewportVar('--tg-viewport-height', current);
@@ -242,12 +220,11 @@ const syncTelegramViewport = () => {
   } catch { /* ignore */ }
 };
 
-// Drop the ratchet — the only signal that the viewport has legitimately
-// gotten smaller (orientation flip, system UI grew permanently). Lets the
-// next sync pick the new honest value instead of holding the previous big
-// number.
+// orientationchange is the only signal that the chrome offset may have
+// legitimately changed (e.g., portrait→landscape). Reset cache so the next
+// sync writes the new value even if it happens to equal a stale read.
 const resetViewportRatchet = () => {
-  lastStableHeight = 0;
+  lastChromeTop = -1;
   lastCurrentHeight = 0;
   syncTelegramViewport();
 };
@@ -291,21 +268,23 @@ const initTelegramApp = () => {
  */
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
-    className="fixed left-0 right-0 top-0 flex flex-col z-[10] overflow-hidden"
+    className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
     style={{
       background: '#0B0C10',
-      // On Telegram Mini App this comes from TG.WebApp.viewportStableHeight
-      // (kept in sync via syncTelegramViewport). The 100dvh fallback covers:
-      //  • plain web / SSR where TG isn't injected
-      //  • the brief window before initTelegramApp runs on first paint
-      //  • TG resume edge-cases where the CSS var is briefly stale or 0,
-      //    which previously left the Shell with `height: auto` and a blank
-      //    body while only the top of the app was visible.
-      height: 'var(--tg-viewport-stable-height, 100dvh)',
-      maxHeight: 'var(--tg-viewport-stable-height, 100dvh)',
-      // Horizontal safe-area for landscape mode on notched phones.
+      // ARCHITECTURE NOTE: we used to pin the Shell to
+      // tg.viewportStableHeight via a JS-set CSS var, but that approach
+      // had a permanent failure mode — any moment the var was 0/empty/
+      // stale (mid-resume, post-pageshow, slow client) the Shell collapsed
+      // to a sliver, exposing the App-level gradient bg behind it. Now we
+      // simply cover the full WebView (`inset: 0`) and let TG chrome paint
+      // over the top — its color is matched to our bg via setHeaderColor,
+      // so it's visually seamless. Content gets pushed down by the chrome
+      // offset (computed in syncTelegramViewport) via --tg-chrome-top, so
+      // the app header is never hidden behind chrome.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
+      paddingTop: 'var(--tg-chrome-top, 0px)',
+      paddingBottom: 'var(--sa-bottom)',
     }}
   >
     <div className="absolute inset-0 pointer-events-none" style={{

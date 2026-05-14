@@ -3,9 +3,12 @@
 @tailwind utilities;
 
 :root {
-  /* Telegram WebApp viewport height in px — set at runtime via JS.
-     Falls back to 100dvh / 100vh so desktop & SSR remain consistent. */
-  --tg-viewport-stable-height: 100dvh;
+  /* Telegram WebApp helper CSS vars. Shell now covers the whole WebView
+     via inset:0, so --tg-viewport-stable-height is no longer used; we
+     only need:
+       --tg-chrome-top      — px eaten by TG's native header bar at top.
+       --tg-viewport-height — informational, live viewport height. */
+  --tg-chrome-top: 0px;
   --tg-viewport-height: 100dvh;
   /* Safe-area insets (iOS notch / Android gesture nav). */
   --sa-top: env(safe-area-inset-top, 0px);
@@ -16,7 +19,6 @@
 
 @supports not (height: 100dvh) {
   :root {
-    --tg-viewport-stable-height: 100vh;
     --tg-viewport-height: 100vh;
   }
 }
