@@ -49,20 +49,6 @@ html[data-tg-app="1"] *::before,
 html[data-tg-app="1"] *::after {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  /* Also kill `filter: blur(...)` on regular elements (not images /
-   * SVGs which use it intentionally for glows). Same compositor-layer
-   * pitfall — Android TG WebView loses contents of any element using
-   * `filter` after the swipe animation. We allow the named glow
-   * filters only on .animate-glow-pulse which is short-lived. */
-}
-
-/* Force every painted element into a single, predictable layer
- * so the Android WebView compositor can't drop a stale cached
- * texture for it after TG's swipe animation. `transform: none`
- * also defeats any leftover transforms from animations that
- * might have ended mid-frame. */
-html[data-tg-app="1"] body {
-  transform: translateZ(0);
 }
 
 @layer base {
