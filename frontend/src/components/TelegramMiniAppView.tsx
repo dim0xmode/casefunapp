@@ -192,11 +192,25 @@ const seedStableHeightVar = () => {
   } catch { /* ignore */ }
 };
 
+// Ratcheting commit — --cf-stable-h NEVER shrinks. Reason: TG fires
+// `viewportChanged` with `isStateStable === true` at BOTH ends of the
+// minimize/expand cycle (the collapsed/handle state is also "stable" by
+// TG's bookkeeping), but the collapsed value is the ~100px handle
+// height, not the real app size. If we wrote that, our content box
+// would snap to 100px and then slowly stretch back to full as the user
+// re-expanded — exactly the "slow stretch 3-5 sec and back" symptom.
+// We only ever expand the variable, so it always reflects the largest
+// stable WebView the user has seen.
 const commitStableHeight = (height: number) => {
   try {
     if (typeof document === 'undefined') return;
     if (!(height > 100)) return;
-    document.documentElement.style.setProperty('--cf-stable-h', `${Math.round(height)}px`);
+    const rounded = Math.round(height);
+    const current = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--cf-stable-h') || '0'
+    ) || 0;
+    if (rounded <= current) return;
+    document.documentElement.style.setProperty('--cf-stable-h', `${rounded}px`);
   } catch { /* ignore */ }
 };
 
