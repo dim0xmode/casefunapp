@@ -506,13 +506,22 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
+  // NOTE: we used to refetch reward tasks on every `visibilitychange` /
+  // `focus` event. That cascade of `setRewardsLoading(true)` → API →
+  // `setRewardTasks(...)` → `setRewardsLoading(false)` happens at the
+  // exact moment TG fires several `viewportChanged` events on resume —
+  // the combined re-render storm is what was making the app flicker /
+  // black-out after minimize+expand. Reward task state is small and
+  // stale-OK; we refresh when the user explicitly opens the rewards
+  // tab or claims something. If polling is ever needed, do it with a
+  // soft setInterval, not on a hard visibility flip.
   useEffect(() => {
-    const onFocus = () => { loadRewardTasks(); };
-    window.addEventListener('focus', onFocus);
-    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
-  }, [loadRewardTasks]);
+    if (rewardsSubTab === 'earn' || rewardsSubTab === 'partnerships') {
+      // Opening the relevant subtab is the explicit "I want fresh data"
+      // signal — much better than tying it to OS-level visibility.
+      loadRewardTasks();
+    }
+  }, [rewardsSubTab, loadRewardTasks]);
 
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);

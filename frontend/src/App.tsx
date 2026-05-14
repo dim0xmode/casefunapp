@@ -892,22 +892,27 @@ const App = () => {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    // Resume handler scoped to *recovery only*: if the TG Mini App was
+    // suspended without an authenticated session (rare bridge / cold-resume
+    // case), try re-authenticating on resume. We deliberately do NOT call
+    // `loadProfile()` on every visibility flip — that turned every
+    // minimize+expand into a full profile + inventory + balance refetch,
+    // and the cascade of state updates landing simultaneously with TG's
+    // `viewportChanged` storm was the root cause of the flicker / stretched
+    // / black-rewards bug. Profile data is fine to be a few seconds stale
+    // between minimize and expand; user-triggered actions still refresh it.
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
       if (activeTab !== 'tg') return;
-      if (isTelegramWebViewContext() && (!lastAuthAddress || !user.hasLinkedWallet)) {
-        const initData = getTelegramWebAppInitData();
-        if (initData) {
-          void handleTelegramLogin();
-          return;
-        }
-      }
-      if (!lastAuthAddress && !user.id) return;
-      void loadProfile().catch(() => {});
+      if (lastAuthAddress || user.id) return;
+      if (!isTelegramWebViewContext()) return;
+      const initData = getTelegramWebAppInitData();
+      if (!initData) return;
+      void handleTelegramLogin();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activeTab, lastAuthAddress, user.hasLinkedWallet, user.id]);
+  }, [activeTab, lastAuthAddress, user.id]);
 
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);
