@@ -454,17 +454,29 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
     : 'Very low chance';
 
   return (
-    <div className={`flex flex-col text-white relative ${isTelegramMiniApp ? 'min-h-0' : 'min-h-screen'}`}>
-      {/* Top Section: The Upgrade Machine */}
-      <div className={`flex-1 flex flex-col items-center justify-center relative bg-black/20 backdrop-blur-2xl border-b border-white/[0.12] ${
-        isTelegramMiniApp ? 'min-h-[420px] py-5' : 'min-h-[500px] py-12'
+    <div className={`flex flex-col text-white relative ${isTelegramMiniApp ? '' : 'min-h-screen'}`}>
+      {/*  Top Section: The Upgrade Machine.
+       *
+       *  TG mode: NO flex-1, NO items-center / justify-center, NO min-h.
+       *  The TG WebView resizes the parent viewport during minimize /
+       *  expand, and any of those flex-stretch / vertical-center rules
+       *  would cause the panel to re-flow on every frame of the swipe,
+       *  leaving children either offset, hidden, or "ghost-textless"
+       *  after the animation settled. Plain content-flow + a fixed-px
+       *  vertical padding is bullet-proof here.
+       */}
+      <div className={`flex flex-col relative bg-black/20 border-b border-white/[0.12] ${
+        isTelegramMiniApp ? 'py-5' : 'flex-1 items-center justify-center backdrop-blur-2xl min-h-[500px] py-12'
       }`}>
         <div className={`flex flex-col lg:flex-row items-center lg:items-start justify-center z-10 w-full max-w-6xl ${
-          isTelegramMiniApp ? 'gap-6 lg:gap-8 px-3' : 'gap-10 lg:gap-16 px-8'
+          isTelegramMiniApp ? 'gap-4 lg:gap-8 px-3' : 'gap-10 lg:gap-16 px-8'
         }`}>
           
-          {/* Left: Selected Item */}
-          <div className={`w-full max-w-sm flex-1 ${isTelegramMiniApp ? 'hidden' : 'flex flex-col gap-6'}`}>
+          {/* Left: Selected Item — entirely skipped in TG mode (was just
+              `hidden`, which still rendered the DOM tree and 9 item
+              slots; mid-animation those could leak through). */}
+          {!isTelegramMiniApp && (
+          <div className="w-full max-w-sm flex-1 flex flex-col gap-6">
             <div className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl flex flex-col ${
               isTelegramMiniApp ? 'p-3 h-auto min-h-[280px]' : 'p-6 h-[420px]'
             }`}>
@@ -518,6 +530,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
               </div>
             </div>
           </div>
+          )}
 
           {/* Center: The Circle + Action */}
           <div className="flex flex-col items-center justify-center gap-4 flex-shrink-0">
@@ -820,11 +833,11 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
             </div>
           </div>
 
-          {/* Right: Result */}
-          <div className={`w-full max-w-sm flex-1 ${isTelegramMiniApp ? 'hidden' : 'flex flex-col gap-6'}`}>
-            <div className={`bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl flex flex-col ${
-              isTelegramMiniApp ? 'p-3 min-h-[280px]' : 'p-5 min-h-[420px]'
-            }`}>
+          {/* Right: Result — desktop only, also skipped in TG to avoid
+              hidden-but-DOM-rendered leak during animation. */}
+          {!isTelegramMiniApp && (
+          <div className="w-full max-w-sm flex-1 flex flex-col gap-6">
+            <div className="bg-black/20 border border-white/[0.12] rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-2xl flex flex-col p-5 min-h-[420px]">
               <div className="text-xs text-gray-400 uppercase tracking-widest mb-3">Result</div>
               {lastResult ? (
                 <div className="flex-1 flex flex-col items-center justify-center">
@@ -933,6 +946,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
               )}
             </div>
           </div>
+          )}
         </div>
       </div>
 
