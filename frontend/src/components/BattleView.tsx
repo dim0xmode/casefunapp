@@ -93,7 +93,35 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const [botDrops, setBotDrops] = useState<Item[]>([]);
   const [battleOutcomes, setBattleOutcomes] = useState<{userItem: Item, botItem: Item}[]>([]);
   const [availableBattles, setAvailableBattles] = useState<BattleEntry[]>([]);
-  const [botBattles, setBotBattles] = useState<BattleEntry[]>([]);
+  // Lazy-init bot battles so the very first render of BattleView already has
+  // its full content. Without this, on tab-switch to Battle:
+  //   1) initial render with botBattles = []
+  //   2) useEffect fires synchronously after commit -> setBotBattles(8 items)
+  //   3) second render in the same frame
+  // The two paints back-to-back visibly flicker the nav bar in TG WebView.
+  const [botBattles, setBotBattles] = useState<BattleEntry[]>(() => {
+    const now = Date.now();
+    const pool = cases.filter((c) => {
+      if (!c.openDurationHours || !c.createdAt) return true;
+      return (c.createdAt + c.openDurationHours * 60 * 60 * 1000) > now;
+    });
+    if (!pool.length) return [];
+    return Array.from({ length: 8 }, (_, idx) => {
+      const count = Math.min(5, Math.max(2, Math.floor(Math.random() * 4) + 2));
+      const battleCases = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
+      return {
+        id: `bot-battle-${now + idx}-${Math.random().toString(36).slice(2, 8)}`,
+        host: BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)],
+        cases: battleCases,
+        createdAt: now,
+        source: 'BOT' as const,
+      };
+    });
+  });
+  // Ref to skip the very first useEffect run: lazy init already populated
+  // bot battles; running the effect again would do an immediate setState =>
+  // unwanted second paint right after mount.
+  const didInitBotBattlesRef = useRef(false);
   const [startConfirm, setStartConfirm] = useState(false);
   const [battleStarted, setBattleStarted] = useState(false);
   const [createBattleOpen, setCreateBattleOpen] = useState(false);
@@ -324,10 +352,19 @@ export const BattleView: React.FC<BattleViewProps> = ({
   useEffect(() => {
     if (!activeCases.length) {
       setBotBattles([]);
+      didInitBotBattlesRef.current = true;
       return;
     }
-    const next = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx)).filter(Boolean) as BattleEntry[];
-    setBotBattles(next);
+    // Skip the very first run when cases were already non-empty at mount —
+    // the lazy useState initializer already produced 8 battles, so a second
+    // setBotBattles here would just trigger an extra paint that visibly
+    // flickers the nav bar in TG WebView.
+    if (!didInitBotBattlesRef.current) {
+      didInitBotBattlesRef.current = true;
+    } else {
+      const next = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx)).filter(Boolean) as BattleEntry[];
+      setBotBattles(next);
+    }
     const timer = setInterval(() => {
       const refreshed = Array.from({ length: 8 }, (_, idx) => buildMockBattle(Date.now() + idx)).filter(Boolean) as BattleEntry[];
       setBotBattles(refreshed);
@@ -1697,6 +1734,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                         index={0}
                         skipReveal
                         compactContent={isTelegramMiniApp}
+                        isTelegramMiniApp={isTelegramMiniApp}
                       />
                   )}
                   </div>
@@ -1727,6 +1765,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                             index={0}
                             skipReveal
                             compactContent={isTelegramMiniApp}
+                            isTelegramMiniApp={isTelegramMiniApp}
                           />
                         )}
                   </div>

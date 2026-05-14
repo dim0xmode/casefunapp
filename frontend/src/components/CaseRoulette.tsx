@@ -42,9 +42,10 @@ interface CaseRouletteProps {
   resultSoundEnabled?: boolean;
   clickVolume?: number;
   compactContent?: boolean;
+  isTelegramMiniApp?: boolean;
 }
 
-export const CaseRoulette: React.FC<CaseRouletteProps> = ({
+const CaseRouletteImpl: React.FC<CaseRouletteProps> = ({
   caseData,
   winner,
   openMode,
@@ -57,6 +58,7 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
   resultSoundEnabled,
   clickVolume = 0.16,
   compactContent = false,
+  isTelegramMiniApp = false,
 }) => {
   const BASE_STRIP_LENGTH = 80;
   const INITIAL_STRIP_LENGTH = 20;
@@ -258,6 +260,17 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
 
   useEffect(() => {
     if (!canPlayClickSound) return;
+    // TG WebView: skip the per-frame audio-click loop entirely.
+    //
+    // The previous implementation called `getComputedStyle(stripRef).transform`
+    // on every RAF tick (60 fps). `getComputedStyle` on a node mid-transition
+    // forces the WebView to flush pending layout/style work — every frame.
+    // Combined with the composited-layer strip translate + maskImage edges,
+    // this caused the WHOLE roulette to visibly flicker for the entire 7s
+    // spin in Android Telegram WebView. Result audio (`playSoftWin`) is
+    // played separately at spin end and is unaffected.
+    if (isTelegramMiniApp) return;
+
     let frameId = 0;
     let lastSlot = Number.NaN;
     let lastClickAt = 0;
@@ -301,23 +314,39 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
 
     frameId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frameId);
-  }, [canPlayClickSound, clickVolume]);
+  }, [canPlayClickSound, clickVolume, isTelegramMiniApp]);
+
+  // TG WebView fixes:
+  //  - `maskImage` on the strip wrapper forces the WebView's compositor to
+  //    re-rasterize the translating strip layer on every animation frame.
+  //    On Android this is the single biggest source of the "constantly
+  //    flickering during spin" the user reported.
+  //  - `transition-all` on the outer container catches EVERY style change
+  //    (including incidental class re-orderings on re-render) and fires a
+  //    500ms transition. We only want the width to animate when isRevealed
+  //    flips, so target it explicitly in TG mode.
+  const wrapperTransitionClass = isTelegramMiniApp
+    ? 'transition-[width] duration-500 ease-out'
+    : 'transition-all duration-500 ease-out';
+  const maskStyle = isTelegramMiniApp
+    ? undefined
+    : {
+        maskImage: 'linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)',
+        WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)',
+      };
 
   return (
     <div className="relative w-full h-[200px] mb-4 flex justify-center">
-      <div 
-        className="relative h-[200px] bg-gradient-to-br from-web3-card/30 to-web3-card/10 rounded-2xl border border-gray-800/50 overflow-hidden backdrop-blur-sm transition-all duration-500 ease-out"
+      <div
+        className={`relative h-[200px] bg-gradient-to-br from-web3-card/30 to-web3-card/10 rounded-2xl border border-gray-800/50 overflow-hidden backdrop-blur-sm ${wrapperTransitionClass}`}
         style={{
           width: isRevealed ? '100%' : `${CARD_WIDTH + 32}px`,
           maxWidth: '1024px'
         }}
       >
-        <div 
+        <div
           className="absolute inset-0 overflow-hidden"
-          style={{
-            maskImage: 'linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)'
-          }}
+          style={maskStyle}
         >
           <div 
             ref={stripRef}
@@ -387,3 +416,9 @@ export const CaseRoulette: React.FC<CaseRouletteProps> = ({
     </div>
   );
 };
+
+// Memoized: prevents 80-item strip reconciliation when the parent
+// re-renders for unrelated reasons (e.g. polling, balance update). Without
+// this, every parent commit during the 7s spin re-ran the strip's JSX,
+// adding work that visibly stuttered the transform animation in TG WebView.
+export const CaseRoulette = React.memo(CaseRouletteImpl);

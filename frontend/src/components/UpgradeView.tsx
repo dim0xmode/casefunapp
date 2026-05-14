@@ -319,6 +319,15 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
 
   useEffect(() => {
     if (!isSpinning) return;
+    // TG WebView: skip the per-frame audio-click loop during the spin.
+    //
+    // The previous implementation read `getComputedStyle(pointer).transform`
+    // on every animation frame. `getComputedStyle` mid-CSS-transition forces
+    // the WebView to flush style/layout, every frame, for the entire spin.
+    // In Android Telegram WebView this caused the spinning dial to visibly
+    // flicker the whole time. The result audio (`playSoftWin`/`playSoftLose`)
+    // fires from a separate setTimeout in `handleRoll` and is unaffected.
+    if (isTelegramMiniApp) return;
     const node = pointerRef.current;
     if (!node) return;
 

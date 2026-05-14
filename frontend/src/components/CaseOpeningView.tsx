@@ -253,6 +253,7 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
               resultSoundEnabled={true}
               clickVolume={idx === 0 ? 0.15 : 0.08}
               compactContent={isTelegramMiniApp}
+              isTelegramMiniApp={isTelegramMiniApp}
             />
         ))}
       </div>
