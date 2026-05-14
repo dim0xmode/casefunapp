@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-5';
+const BUILD_MARKER = 'v-root-7';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -1704,7 +1704,20 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         className="flex-1 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        <div className="px-3 pt-2 pb-4">
+        {/* CSS Containment: layout/style/paint changes inside the tab
+            content (initial mounts, fetch loading states, item-select
+            re-renders, dial rotations, spin transitions) are isolated
+            from the rest of the shell. Without this, every internal
+            state change in BattleView / ProfileView / UpgradeView /
+            Rewards forced the browser to re-evaluate the whole flex
+            column up to Shell, reflowing and repainting the sibling
+            bottom nav. `contain: layout style paint` keeps both the
+            layout tree and the paint tree below this node from
+            invalidating ancestors. */}
+        <div
+          className="px-3 pt-2 pb-4"
+          style={{ contain: 'layout style paint' } as React.CSSProperties}
+        >
           {renderTabContent()}
         </div>
       </div>
@@ -1732,10 +1745,21 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       {/* ── Bottom tab bar ──
           No backdrop-filter: was causing repaint storm in Android TG
           WebView (sticky position + blur = recomposite every frame).
-          Solid bg color, slightly more opaque to mask scrolling content. */}
+          Solid bg color, slightly more opaque to mask scrolling content.
+          `transform: translateZ(0)` + `contain: layout paint` promote
+          this whole subtree onto its own composite layer so the
+          WebView can recomposite it independently of the scroll area
+          — fights the "nav flashes when a heavy tab mounts" bug.
+          Layout itself stays in the flex column (shrink-0). */}
       <div
         className="shrink-0 border-t border-white/[0.04]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.97)' } as React.CSSProperties}
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          background: 'rgba(11,12,16,0.97)',
+          transform: 'translateZ(0)',
+          willChange: 'transform',
+          contain: 'layout paint',
+        } as React.CSSProperties}
       >
         <div className="flex items-end px-1 pt-1 pb-1">
           {BASE_TABS.map((tab) => {
