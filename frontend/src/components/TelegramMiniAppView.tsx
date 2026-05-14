@@ -182,6 +182,13 @@ const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg) return;
+    // Mark <html> so global CSS can disable `backdrop-filter` (see
+    // index.css). Android WebView loses content inside blurred
+    // panels after TG's swipe animation, so we kill blur globally
+    // in TG mode.
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.setAttribute('data-tg-app', '1');
+    }
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');

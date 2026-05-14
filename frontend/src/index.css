@@ -23,6 +23,34 @@
   }
 }
 
+/* TELEGRAM MINI APP: kill backdrop-filter globally.
+ *
+ * Android Telegram WebView creates a compositor layer for every
+ * element using `backdrop-filter: blur(...)`. During TG's swipe-down
+ * / swipe-up animation the WebView re-orders / re-caches these
+ * compositor layers and frequently fails to repaint the contents
+ * inside a blurred panel — text, buttons and decorative children
+ * vanish even though the surrounding container is still painted.
+ *
+ * We have 70+ `backdrop-blur-*` usages across the app (frosted
+ * panels in UpgradeView, CreateCaseView, ProfileView, BattleView,
+ * Header, ItemCard…). Each one is a potential ghost after a
+ * minimize/expand. Killing them all here is the only reliable fix.
+ *
+ * We compensate visually by leaving the original `bg-*` semitone
+ * colour in place — it just won't have the live blur underneath.
+ *
+ * The `data-tg-app="1"` flag is set on <html> from
+ * `initTelegramApp()` in TelegramMiniAppView.tsx. Plain-web users
+ * still get the full frosted glass effect.
+ */
+html[data-tg-app="1"] *,
+html[data-tg-app="1"] *::before,
+html[data-tg-app="1"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
