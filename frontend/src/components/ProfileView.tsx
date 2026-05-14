@@ -278,11 +278,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
-  // NOTE: deliberately no `visibilitychange` / `focus` listener here.
-  // Refetching reward tasks on every visibility flip caused a re-render
-  // storm whenever the user minimised + re-expanded the TG Mini App.
-  // Tasks refresh on mount, when the rewards subtab is opened, and after
-  // any claim — that's enough.
+  useEffect(() => {
+    const onFocus = () => { loadRewardTasks(); };
+    window.addEventListener('focus', onFocus);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
+  }, [loadRewardTasks]);
 
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);

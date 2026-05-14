@@ -214,15 +214,6 @@ const App = () => {
     }
   };
 
-  // Stable identity — critical because this is wired into ProfileView /
-  // TelegramMiniAppView's loadRewardTasks deps. An inline arrow would change
-  // every App render, invalidate loadRewardTasks' useCallback, refire its
-  // effect → re-fetch → setUser → re-render → infinite loop with the
-  // "Loading tasks…" UI stuck and constant network spam.
-  const handleRewardPointsUpdate = useCallback((totalPoints: number) => {
-    setUser((prev) => ({ ...prev, rewardPoints: totalPoints }));
-  }, []);
-
   const resetUserState = () => {
     setUser(INITIAL_USER);
     setInventory([]);
@@ -892,27 +883,22 @@ const App = () => {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    // Resume handler scoped to *recovery only*: if the TG Mini App was
-    // suspended without an authenticated session (rare bridge / cold-resume
-    // case), try re-authenticating on resume. We deliberately do NOT call
-    // `loadProfile()` on every visibility flip — that turned every
-    // minimize+expand into a full profile + inventory + balance refetch,
-    // and the cascade of state updates landing simultaneously with TG's
-    // `viewportChanged` storm was the root cause of the flicker / stretched
-    // / black-rewards bug. Profile data is fine to be a few seconds stale
-    // between minimize and expand; user-triggered actions still refresh it.
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
       if (activeTab !== 'tg') return;
-      if (lastAuthAddress || user.id) return;
-      if (!isTelegramWebViewContext()) return;
-      const initData = getTelegramWebAppInitData();
-      if (!initData) return;
-      void handleTelegramLogin();
+      if (isTelegramWebViewContext() && (!lastAuthAddress || !user.hasLinkedWallet)) {
+        const initData = getTelegramWebAppInitData();
+        if (initData) {
+          void handleTelegramLogin();
+          return;
+        }
+      }
+      if (!lastAuthAddress && !user.id) return;
+      void loadProfile().catch(() => {});
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activeTab, lastAuthAddress, user.id]);
+  }, [activeTab, lastAuthAddress, user.hasLinkedWallet, user.id]);
 
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);
@@ -2082,11 +2068,10 @@ const App = () => {
   return (
     <div className="flex flex-col h-screen bg-[#0B0C10] text-white overflow-hidden font-sans relative">
       {/* Global Parallax Background - Fixed positioning.
-          Skipped entirely in TG Mini App mode: the Shell there has its own
-          gradient + the App-root bg color, so we don't want these colored
-          blobs leaking through any tiny gap between Shell and viewport
-          (which produced the "global site background appearing over the
-          mini app" symptom users reported on certain TG clients). */}
+          Skipped in TG Mini App mode: the Shell there sits at z:10 and
+          if its viewport-driven size ever has a 1-2px gap on resize,
+          these blobs leak through and look like the global site bg
+          is overlaying the mini app (reported as "опять фон и шапка"). */}
       {activeTab !== 'tg' && (
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
             <div 
@@ -2197,7 +2182,7 @@ const App = () => {
                   onChargeBattle: handleChargeBattle,
                   onOpenTopUp: handleOpenTopUp,
                   onBalanceUpdate: setBalance,
-                  onRewardPointsUpdate: handleRewardPointsUpdate,
+                  onRewardPointsUpdate: (totalPoints: number) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints })),
                   onOpenWalletConnect: () => { setConnectModalMode('login'); setIsWalletConnectOpen(true); },
                   onClaimToken: handleClaimToken,
                   onSelectUser: handleSelectUser,
@@ -2344,7 +2329,7 @@ const App = () => {
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                   onBalanceUpdate={setBalance}
-                  onRewardPointsUpdate={handleRewardPointsUpdate}
+                  onRewardPointsUpdate={(totalPoints) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints }))}
                   onLinkEvmWallet={handleLinkEvmWallet}
                   onLinkTonWallet={handleLinkTonWallet}
                 />

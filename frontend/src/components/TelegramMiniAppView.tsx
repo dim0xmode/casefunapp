@@ -163,32 +163,46 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  *
  * Falls back to `window.innerHeight` on plain web.
  */
-// ARCHITECTURE NOTE — VIEWPORT SIZING
-//
-// Minimal one-shot init. Shell uses `position: fixed; inset: 0` so
-// header stays at the top and nav at the bottom of the visible
-// WebView regardless of TG's minimize/expand animation. We do NOT
-// try to stop mid-animation reflow with JS-managed CSS variables —
-// previous attempts caused more bugs than they fixed. TG's WebView
-// genuinely resizes the viewport during the swipe; any CSS that
-// depends on viewport size (vh/dvh/flex-1) will reflow with it.
-// That's a platform behaviour, identical for every mini app — we
-// just minimise the visible impact by avoiding viewport-reactive
-// layouts where possible.
-//
-// `setHeaderColor` / `setBackgroundColor` blend TG chrome into our
-// page bg so the seam between TG chrome and our header is invisible.
+const syncTelegramViewport = () => {
+  try {
+    if (typeof document === 'undefined') return;
+    const tg = (window as any)?.Telegram?.WebApp;
+    const stable = Number(tg?.viewportStableHeight) || Number(tg?.viewportHeight) || (typeof window !== 'undefined' ? window.innerHeight : 0);
+    const current = Number(tg?.viewportHeight) || stable;
+    if (stable > 0) {
+      document.documentElement.style.setProperty('--tg-viewport-stable-height', `${stable}px`);
+      document.documentElement.style.setProperty('--tg-viewport-height', `${current}px`);
+    }
+  } catch { /* ignore */ }
+};
+
+/**
+ * Force the mini app back to its fully-expanded state and re-sync viewport
+ * heights. Telegram occasionally leaves the WebApp half-collapsed after the
+ * user swipes it down and then back up — `viewportChanged` may fire with a
+ * collapsed height and not fire again, so the content sits inside a tiny
+ * fixed-height shell while the rest of the screen shows the background.
+ * Re-invoking `expand()` is a no-op when already expanded and fixes the
+ * stuck-collapsed state otherwise.
+ */
+const reexpandTelegramApp = () => {
+  try {
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (!tg) { syncTelegramViewport(); return; }
+    if (typeof tg.expand === 'function') tg.expand();
+    syncTelegramViewport();
+    // TG sometimes reports stale viewport heights for one tick after resume,
+    // so re-sync on the next frame (and a few ms later for slow devices) to
+    // catch the final size once the WebView has settled.
+    requestAnimationFrame(syncTelegramViewport);
+    setTimeout(syncTelegramViewport, 120);
+  } catch { /* ignore */ }
+};
+
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) return;
-    // Mark <html> so global CSS can disable `backdrop-filter` (see
-    // index.css). Android WebView loses content inside blurred
-    // panels after TG's swipe animation, so we kill blur globally
-    // in TG mode.
-    if (typeof document !== 'undefined' && document.documentElement) {
-      document.documentElement.setAttribute('data-tg-app', '1');
-    }
+    if (!tg) { syncTelegramViewport(); return; }
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
@@ -196,6 +210,18 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+    syncTelegramViewport();
+    if (typeof tg.onEvent === 'function') {
+      tg.onEvent('viewportChanged', () => {
+        syncTelegramViewport();
+        // If TG left us collapsed after the user dragged the app down and
+        // back up, force-expand. `isExpanded` is the v6.1+ flag; older
+        // clients ignore the extra expand() call.
+        if (tg.isExpanded === false && typeof tg.expand === 'function') {
+          tg.expand();
+        }
+      });
+    }
   } catch { /* ignore */ }
 };
 
@@ -206,22 +232,20 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'bdrp-fix-2';
+const BUILD_MARKER = 'v-stable-1';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
     className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
     style={{
       background: '#0B0C10',
-      // Shell follows the viewport via inset:0 so the bottom nav stays
-      // glued to the visible bottom of the WebView (it disappeared
-      // when we tried to pin the Shell to a JS height > viewport).
-      // Mid-content reflow is handled separately via --cf-stable-h on
-      // the individual stretchy boxes. See ARCHITECTURE NOTE above.
+      // Shell covers the whole WebView via inset:0. No JS-managed height
+      // — previous attempts to size Shell from --tg-viewport-stable-height
+      // would briefly read 0 and collapse, leaking the App-level parallax
+      // background through (the "global site bg appearing over mini app"
+      // bug). With inset:0 the Shell always fills the visible WebView.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
-      paddingTop: 'var(--sa-top)',
-      paddingBottom: 'var(--sa-bottom)',
     }}
   >
     <div className="absolute inset-0 pointer-events-none" style={{
@@ -234,16 +258,16 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="relative z-[1] flex flex-col flex-1 min-h-0 overflow-hidden">
       {children}
     </div>
-    {/* Visible build marker. Only shows in TG (data-tg-app=1).
-        Lets us verify the right bundle is loaded on user's device. */}
+    {/* Visible build marker, bottom-left (right was covered by TG chrome
+        on user's phone). Helps confirm a fresh deploy reached the device. */}
     <div
       style={{
-        position: 'fixed', bottom: 2, right: 4, zIndex: 9999,
-        fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.25)',
+        position: 'fixed', bottom: 2, left: 6, zIndex: 9999,
+        fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.30)',
         pointerEvents: 'none',
       }}
     >
-      v{BUILD_MARKER}
+      {BUILD_MARKER}
     </div>
   </div>
 );
@@ -370,6 +394,32 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   useEffect(() => {
     initTelegramApp();
+    // Also sync viewport on plain-web orientation / resize so the Shell reacts
+    // to DevTools-toolbar flips and Android keyboard show/hide.
+    const onResize = () => syncTelegramViewport();
+    // Returning from a minimized state: the user dragged the mini app down
+    // and tapped to bring it back. Telegram doesn't always fire
+    // viewportChanged in that path and can leave the WebApp half-collapsed
+    // — the symptom is the gradient background showing through while the
+    // body content sits squished. Force-expanding on every resume fixes it.
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reexpandTelegramApp();
+      }
+    };
+    const onPageShow = () => reexpandTelegramApp();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onPageShow);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   useEffect(() => {
@@ -471,22 +521,13 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
-  // NOTE: we used to refetch reward tasks on every `visibilitychange` /
-  // `focus` event. That cascade of `setRewardsLoading(true)` → API →
-  // `setRewardTasks(...)` → `setRewardsLoading(false)` happens at the
-  // exact moment TG fires several `viewportChanged` events on resume —
-  // the combined re-render storm is what was making the app flicker /
-  // black-out after minimize+expand. Reward task state is small and
-  // stale-OK; we refresh when the user explicitly opens the rewards
-  // tab or claims something. If polling is ever needed, do it with a
-  // soft setInterval, not on a hard visibility flip.
   useEffect(() => {
-    if (rewardsSubTab === 'earn' || rewardsSubTab === 'partnerships') {
-      // Opening the relevant subtab is the explicit "I want fresh data"
-      // signal — much better than tying it to OS-level visibility.
-      loadRewardTasks();
-    }
-  }, [rewardsSubTab, loadRewardTasks]);
+    const onFocus = () => { loadRewardTasks(); };
+    window.addEventListener('focus', onFocus);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
+  }, [loadRewardTasks]);
 
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);
@@ -878,14 +919,8 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
 
     if (activeTab === 'rewards') return (
-      // NOTE: we deliberately do NOT use `flex flex-col h-full min-h-0` here
-      // anymore. That pattern relied on every ancestor (Shell → flex-1 scroll
-      // area → px-3 wrapper) propagating a definite height, but during TG's
-      // minimize/expand the chain could briefly resolve to 0, latching the
-      // inner scroll area at height 0 and leaving the whole tab blank/black
-      // until the next remount. Natural flow + outer-scroll is robust.
-      <div>
-        <div className="sticky top-0 z-[2] -mx-3 px-3 pt-1 pb-2 mb-2 bg-[#0B0C10]/95 backdrop-blur-sm flex items-center justify-between">
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex items-center justify-between mb-3">
           <div className="text-[11px] text-gray-400">
             Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
           </div>
@@ -903,7 +938,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           </div>
         </div>
 
-        <div className="pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
           {/* ── Social: account linking, referrals, promo ── */}
           {rewardsSubTab === 'social' && (
             <div className="space-y-2">
@@ -1634,7 +1669,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       )}
 
       <div
-        className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        className="flex-1 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
         <div className="px-3 pt-2 pb-4">
