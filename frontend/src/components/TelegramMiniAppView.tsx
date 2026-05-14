@@ -226,17 +226,29 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    const stable = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
-    if (stable > 100) commitStableHeight(stable);
+    // On a cold Telegram restart the WebView opens BEFORE TG chrome has
+    // finished laying out, so the first read of viewportStableHeight is
+    // smaller than the real app area. Re-read on a few staggered timers
+    // until things stabilise. The ratchet in commitStableHeight ensures
+    // we only ever grow, so re-reading transient/wrong small values is
+    // safe.
+    const commitFromTg = () => {
+      const next = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
+      if (next > 100) commitStableHeight(next);
+    };
+    commitFromTg();
+    setTimeout(commitFromTg, 80);
+    setTimeout(commitFromTg, 250);
+    setTimeout(commitFromTg, 600);
+    setTimeout(commitFromTg, 1500);
     if (typeof tg.onEvent === 'function') {
-      tg.onEvent('viewportChanged', (eventData?: { isStateStable?: boolean }) => {
-        // Only commit on stable transitions. Intermediate animation
-        // frames have isStateStable === false and report shrinking
-        // heights — writing those would flicker downstream content.
-        if (eventData && eventData.isStateStable !== true) return;
-        const next = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
-        if (next > 100) commitStableHeight(next);
-      });
+      // No isStateStable gate — the ratchet rejects shrinks, so it's
+      // safe to listen on every event. This way we catch the full-size
+      // value as soon as TG reports it, even if it arrives mid-animation
+      // (the first viewportChanged after a cold start often comes
+      // *before* TG marks the state stable, which is why we missed it
+      // on Telegram-restart cold opens previously).
+      tg.onEvent('viewportChanged', commitFromTg);
     }
   } catch { /* ignore */ }
 };
