@@ -164,51 +164,46 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  * Falls back to `window.innerHeight` on plain web.
  */
 // ARCHITECTURE NOTE — VIEWPORT SIZING
-// We tried multiple approaches over the past few iterations:
-//  1. Pinning Shell to tg.viewportStableHeight without gating on
-//     `isStateStable`. Broken: TG reported transient sub-300px values
-//     mid-animation that collapsed Shell into a sliver.
-//  2. Ratcheting to the largest plausible value. Broken: picked
-//     window.innerHeight (full WebView) over viewportStableHeight on
-//     Android, over-stretching the Shell behind TG chrome.
-//  3. inset:0 + padding-top = winH − viewportStableHeight. Broken: that
-//     diff is NOT TG chrome height on Android during a swipe-down.
-//  4. inset:0 / 100vh (no JS). Broken: both follow the live viewport
-//     during TG's minimize/expand animation, so flex-1 children
-//     (charts, upgrade slots) reflow every frame and latch onto a
-//     transient size that stays after resume.
+// Many approaches tried (see git log). What actually works on Android
+// Telegram during a swipe-down/swipe-up animation:
 //
-// FINAL APPROACH: pin Shell to a JS-managed CSS pixel variable
-// (`--cf-shell-h`) that is ONLY updated on `viewportChanged` events
-// where `isStateStable === true` (i.e. NOT during the resume
-// animation). On first paint we seed it with window.innerHeight as a
-// safe default. During the swipe-down/up the variable doesn't change,
-// so Shell stays the exact size it had before minimize and no child
-// re-measures. setHeaderColor + setBackgroundColor still blend TG
-// chrome into our bg so the seam is invisible.
+// 1) Shell uses `position: fixed; inset: 0`. The Shell itself follows
+//    the viewport, which means its CHILDREN (header at top, nav at
+//    bottom) stay glued to the visible viewport edges — the user
+//    NEVER loses the bottom nav, even mid-animation.
+//
+// 2) Stretchy mid-content is the only thing that needs protection
+//    against the mid-animation reflow. We expose `--cf-stable-h`
+//    (committed only on TG events where `isStateStable === true`) and
+//    individual content components (UpgradeView, the chart in
+//    ProfileView, …) pin their stretchy boxes to that, instead of
+//    using `flex-1` against the live viewport.
+//
+// 3) `setHeaderColor` / `setBackgroundColor` blend TG chrome into our
+//    page bg so the seam between TG chrome and our header is invisible.
 
-const seedShellHeightVar = () => {
+const seedStableHeightVar = () => {
   try {
     if (typeof document === 'undefined' || typeof window === 'undefined') return;
     const initial = window.innerHeight || 0;
     if (initial > 100) {
-      document.documentElement.style.setProperty('--cf-shell-h', `${initial}px`);
+      document.documentElement.style.setProperty('--cf-stable-h', `${initial}px`);
     }
   } catch { /* ignore */ }
 };
 
-const commitStableShellHeight = (height: number) => {
+const commitStableHeight = (height: number) => {
   try {
     if (typeof document === 'undefined') return;
     if (!(height > 100)) return;
-    document.documentElement.style.setProperty('--cf-shell-h', `${Math.round(height)}px`);
+    document.documentElement.style.setProperty('--cf-stable-h', `${Math.round(height)}px`);
   } catch { /* ignore */ }
 };
 
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    seedShellHeightVar();
+    seedStableHeightVar();
     if (!tg) return;
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
@@ -217,19 +212,16 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    // Commit the stable viewport once TG is ready — first paint may have
-    // used a slightly smaller `window.innerHeight` if TG chrome wasn't
-    // fully laid out yet.
     const stable = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
-    if (stable > 100) commitStableShellHeight(stable);
+    if (stable > 100) commitStableHeight(stable);
     if (typeof tg.onEvent === 'function') {
       tg.onEvent('viewportChanged', (eventData?: { isStateStable?: boolean }) => {
-        // CRITICAL: only commit on stable transitions. Intermediate
-        // animation frames have isStateStable === false and report
-        // shrinking heights — writing those would flicker the Shell.
+        // Only commit on stable transitions. Intermediate animation
+        // frames have isStateStable === false and report shrinking
+        // heights — writing those would flicker downstream content.
         if (eventData && eventData.isStateStable !== true) return;
         const next = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
-        if (next > 100) commitStableShellHeight(next);
+        if (next > 100) commitStableHeight(next);
       });
     }
   } catch { /* ignore */ }
@@ -244,20 +236,14 @@ const initTelegramApp = () => {
  */
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
-    className="fixed left-0 right-0 top-0 flex flex-col z-[10] overflow-hidden"
+    className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
     style={{
       background: '#0B0C10',
-      // Pinned to the JS-managed --cf-shell-h pixel value, which is
-      // updated ONLY on TG's stable viewport events. During minimize /
-      // expand animations the variable doesn't change, so the Shell
-      // stays the exact size it had before — no flex-1 child re-flows,
-      // no chart re-measures, no flicker. 100vh is the safe seed for
-      // first paint / non-TG. See ARCHITECTURE NOTE above
-      // initTelegramApp.
-      height: 'var(--cf-shell-h, 100vh)',
-      maxHeight: 'var(--cf-shell-h, 100vh)',
-      minHeight: 'var(--cf-shell-h, 100vh)',
-      // iOS notch / Android edge safe-area insets.
+      // Shell follows the viewport via inset:0 so the bottom nav stays
+      // glued to the visible bottom of the WebView (it disappeared
+      // when we tried to pin the Shell to a JS height > viewport).
+      // Mid-content reflow is handled separately via --cf-stable-h on
+      // the individual stretchy boxes. See ARCHITECTURE NOTE above.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
       paddingTop: 'var(--sa-top)',
