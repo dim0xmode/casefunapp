@@ -1698,17 +1698,23 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        {/* Inner content wrapper pinned to the STABLE viewport height
-            minus rough header (~64px) + nav (~64px) chrome. This is the
-            critical anti-reflow guarantee: when TG shrinks the WebView
-            mid-animation, the scroll area shrinks with it but THIS box
-            stays the same height, so flex-1 children inside (upgrade
-            slots, charts, etc.) don't recalculate. Content just gets
-            partially clipped by the smaller scroll area during the
-            animation, then re-revealed when the WebView grows back. */}
+        {/* Inner content wrapper pinned to the LARGEST viewport (100lvh)
+            minus rough header (~64px) + nav (~64px) chrome. `lvh` is
+            the browser-native stable height — it represents the viewport
+            when browser UI is fully retracted and does NOT change during
+            the TG minimize/expand animation. This is the critical
+            anti-reflow guarantee: when TG shrinks the WebView mid-
+            animation, the scroll area shrinks with it but THIS box stays
+            the same height, so flex-1 children inside (upgrade slots,
+            charts, etc.) don't recalculate. Content just gets partially
+            clipped by the smaller scroll area during the animation,
+            then re-revealed when the WebView grows back.
+            --cf-stable-h is the JS-managed fallback that ratchets to the
+            largest observed window.innerHeight, used by browsers that
+            don't understand lvh. */}
         <div
           className="px-3 pt-2 pb-4"
-          style={{ minHeight: 'calc(var(--cf-stable-h, 100dvh) - 128px)' }}
+          style={{ minHeight: 'calc(100lvh - 128px)' }}
         >
           {renderTabContent()}
         </div>
