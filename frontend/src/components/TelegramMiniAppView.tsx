@@ -163,76 +163,31 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  *
  * Falls back to `window.innerHeight` on plain web.
  */
-// Sanity floor for "live" viewport readings (keyboard / orientation /
-// drag). Anything below is treated as transient noise and rejected — we
-// fall back to window.innerHeight instead.
-const MIN_USABLE_VIEWPORT_HEIGHT = 320;
-
-// Module-scope memoised state. Shell now spans the entire WebView
-// (`position: fixed; inset: 0`) so the gap-leaking bug is gone by
-// construction. The remaining JS work is just to push the inner content
-// area down by however many pixels TG chrome eats at the top, so the
-// app header isn't hidden behind it. That's --tg-chrome-top.
-let lastChromeTop = -1;
-let lastCurrentHeight = 0;
-
-const readWindowHeight = () => (typeof window !== 'undefined' ? window.innerHeight : 0);
-
-const writeViewportVar = (key: string, value: number) => {
-  if (typeof document === 'undefined') return;
-  if (!Number.isFinite(value) || value < 0) return;
-  document.documentElement.style.setProperty(key, `${value}px`);
-};
-
-// How many pixels of the WebView's top edge are covered by TG's native
-// header bar (the strip with the bot name + close button). On clients
-// where the WebView's window.innerHeight already excludes the chrome,
-// the result is 0 and Shell needs no extra top padding. Capped
-// defensively in case TG reports nonsense.
-const MAX_PLAUSIBLE_CHROME = 200;
-const resolveChromeTop = () => {
-  const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
-  const tgStable = Number(tg?.viewportStableHeight) || 0;
-  const winH = readWindowHeight();
-  if (tgStable <= 0 || winH <= 0) return 0;
-  const diff = winH - tgStable;
-  if (!Number.isFinite(diff) || diff <= 0) return 0;
-  return Math.min(diff, MAX_PLAUSIBLE_CHROME);
-};
-
-const syncTelegramViewport = () => {
-  try {
-    const chromeTop = resolveChromeTop();
-    if (chromeTop !== lastChromeTop) {
-      lastChromeTop = chromeTop;
-      writeViewportVar('--tg-chrome-top', chromeTop);
-    }
-    // Live "current" tracking — anything that wants to follow the live
-    // viewport (keyboard, drag) can read this. Nothing critical pins to it
-    // anymore; kept for downstream consumers.
-    const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
-    const tgCurrent = Number(tg?.viewportHeight) || 0;
-    const current = tgCurrent >= MIN_USABLE_VIEWPORT_HEIGHT ? tgCurrent : readWindowHeight();
-    if (current > 0 && current !== lastCurrentHeight) {
-      lastCurrentHeight = current;
-      writeViewportVar('--tg-viewport-height', current);
-    }
-  } catch { /* ignore */ }
-};
-
-// orientationchange is the only signal that the chrome offset may have
-// legitimately changed (e.g., portrait→landscape). Reset cache so the next
-// sync writes the new value even if it happens to equal a stale read.
-const resetViewportRatchet = () => {
-  lastChromeTop = -1;
-  lastCurrentHeight = 0;
-  syncTelegramViewport();
-};
-
+// ARCHITECTURE NOTE — VIEWPORT SIZING
+// We tried multiple approaches over the past few iterations:
+//  1. Pinning Shell height to tg.viewportStableHeight (a JS-managed CSS
+//     pixel var). Broken: any stale/zero read collapsed Shell into a
+//     sliver, exposing the page bg behind it.
+//  2. Ratcheting to the largest plausible value. Broken: picked
+//     window.innerHeight over viewportStableHeight, over-stretching the
+//     Shell behind TG chrome on Android.
+//  3. inset:0 + padding-top = winH - viewportStableHeight to push content
+//     under TG chrome. Broken: that diff is NOT TG chrome height — on
+//     Android Telegram during a swipe-down, viewportStableHeight shrinks
+//     while window.innerHeight stays the same, so the "chrome offset"
+//     grew to a third of the screen and pushed all content down.
+//
+// Final approach: stop trying to be clever. Shell is `position: fixed;
+// inset: 0` — it always covers the entire WebView. The TG native header
+// bar is rendered OUTSIDE the WebView by Telegram (the WebView itself
+// starts below it on Android, and on iOS the safe-area-inset-top env()
+// value already accounts for it). So no JS sizing is needed at all.
+// setHeaderColor + setBackgroundColor make the TG chrome visually blend
+// with our page bg. Done.
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) { syncTelegramViewport(); return; }
+    if (!tg) return;
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
@@ -240,22 +195,6 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    syncTelegramViewport();
-    // A few clients only have a sane viewportStableHeight a tick or two
-    // after expand(). Re-sync on the next frame and again at 250ms so we
-    // pick up the post-expand value without relying on TG firing
-    // viewportChanged (some clients don't on initial open).
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(syncTelegramViewport);
-    }
-    setTimeout(syncTelegramViewport, 250);
-    if (typeof tg.onEvent === 'function') {
-      // Always sync on viewportChanged regardless of isStateStable. Thanks
-      // to the ratchet in resolveStableHeight(), mid-animation drops to
-      // partial heights are ignored — we only write when the *largest*
-      // plausible reading changes, which is what we actually want.
-      tg.onEvent('viewportChanged', syncTelegramViewport);
-    }
   } catch { /* ignore */ }
 };
 
@@ -271,19 +210,14 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
     style={{
       background: '#0B0C10',
-      // ARCHITECTURE NOTE: we used to pin the Shell to
-      // tg.viewportStableHeight via a JS-set CSS var, but that approach
-      // had a permanent failure mode — any moment the var was 0/empty/
-      // stale (mid-resume, post-pageshow, slow client) the Shell collapsed
-      // to a sliver, exposing the App-level gradient bg behind it. Now we
-      // simply cover the full WebView (`inset: 0`) and let TG chrome paint
-      // over the top — its color is matched to our bg via setHeaderColor,
-      // so it's visually seamless. Content gets pushed down by the chrome
-      // offset (computed in syncTelegramViewport) via --tg-chrome-top, so
-      // the app header is never hidden behind chrome.
+      // Shell covers the full WebView. TG's native header bar lives OUTSIDE
+      // the WebView (the WebView starts below it on Android); on iOS the
+      // notch/status-bar is accounted for via safe-area-inset-top. We don't
+      // add any JS-computed top offset — past attempts to do so all had
+      // failure modes (see ARCHITECTURE NOTE above initTelegramApp).
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
-      paddingTop: 'var(--tg-chrome-top, 0px)',
+      paddingTop: 'var(--sa-top)',
       paddingBottom: 'var(--sa-bottom)',
     }}
   >
@@ -421,42 +355,10 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [fbStatus, setFbStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    // One-shot init: tg.expand(), header/bg color, disable swipe-to-close.
+    // No JS viewport syncing — Shell uses inset:0 and the safe-area env()
+    // values handle everything we used to compute manually.
     initTelegramApp();
-    // Regular resize → just sync (ratchet handles transient sub-readings).
-    const onResize = () => syncTelegramViewport();
-    // Orientation flip is the one case where the viewport may legitimately
-    // shrink (portrait→landscape on phones with cutouts). Drop the ratchet
-    // so the new (potentially smaller) honest value gets written.
-    const onOrientation = () => resetViewportRatchet();
-    // Resume from minimized state. Re-sync immediately and then again on the
-    // next animation frame + at 300/700ms — some TG clients don't fire
-    // viewportChanged on resume at all and we'd otherwise stay on a stale
-    // height. The ratchet means each of these calls is harmless if the
-    // value hasn't actually changed.
-    let resumeTimers: ReturnType<typeof setTimeout>[] = [];
-    const clearResumeTimers = () => {
-      for (const t of resumeTimers) clearTimeout(t);
-      resumeTimers = [];
-    };
-    const onVisibility = () => {
-      if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
-      clearResumeTimers();
-      syncTelegramViewport();
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(syncTelegramViewport);
-      }
-      resumeTimers.push(setTimeout(syncTelegramViewport, 300));
-      resumeTimers.push(setTimeout(syncTelegramViewport, 700));
-    };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onOrientation);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onOrientation);
-      document.removeEventListener('visibilitychange', onVisibility);
-      clearResumeTimers();
-    };
   }, []);
 
   useEffect(() => {
