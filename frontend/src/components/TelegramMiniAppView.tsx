@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-2';
+const BUILD_MARKER = 'v-root-3';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -477,13 +477,15 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
-  useEffect(() => {
-    const onFocus = () => { loadRewardTasks(); };
-    window.addEventListener('focus', onFocus);
-    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
-  }, [loadRewardTasks]);
+  // focus / visibilitychange listeners that re-called loadRewardTasks()
+  // were removed: on Android TG WebView these fire when the user just
+  // switches tabs inside the mini app (button tap shifts focus), so
+  // every tap into Rewards retriggered a fetch with `rewardsLoading =
+  // true`, briefly rendering "Loading tasks…" next to already-visible
+  // tasks and causing the bottom nav to flash during the re-render.
+  // Tasks now load on mount and after an action that earns points
+  // (case-open, upgrade, battle-finish — already wired via the
+  // wrapped callbacks inside renderTabContent).
 
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);
@@ -616,7 +618,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const goToTab = (tab: MiniTab) => {
     if (BASE_TABS.find((t) => t.id === tab)) setLastPrimaryTab(tab);
     setActiveTab(tab);
-    if (tab === 'rewards') loadRewardTasks();
+    // Don't reload reward tasks on every tab click — they're loaded
+    // on mount and re-loaded after actions that earn points. Reloading
+    // here flashed "Loading tasks…" and reflowed the bottom nav.
   };
 
   // ── Top-up logic ────────────────────────────────────────────────────────────
@@ -1023,7 +1027,13 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   <ChevronRight size={16} className="text-amber-300/70 shrink-0" />
                 </button>
               )}
-              {rewardsLoading && <div className="text-xs text-gray-600">Loading tasks…</div>}
+              {/* Only show "Loading tasks…" while genuinely empty.
+                  Suppress it on refetches when tasks are already on
+                  screen — was visible alongside the already-rendered
+                  list, looked like a stuck spinner. */}
+              {rewardsLoading && dailyTasks.length === 0 && allTasks.length === 0 && (
+                <div className="text-xs text-gray-600">Loading tasks…</div>
+              )}
               {!rewardsLoading && dailyTasks.length === 0 && allTasks.length === 0 && (
                 <div className="text-center py-8">
                   <Gift size={24} className="mx-auto text-gray-600 mb-2" />
