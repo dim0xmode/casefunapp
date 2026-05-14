@@ -172,19 +172,15 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
 const MIN_USABLE_VIEWPORT_HEIGHT = 320;
 
 // Module-scope memoised state. The Shell's height is pinned to a CSS pixel
-// variable (NOT to dvh — iOS Safari's dvh resume lag was the original bug).
-// We must guard against TG's mid-animation noise resizing the Shell every
-// frame. State kept across calls:
-//  • lastStableHeight / lastCurrentHeight — what we last wrote; skip no-op
-//    writes so we don't trigger pointless style recalc / reflow downstream.
-//  • pendingRAF — coalesce a burst of viewportChanged events into a single
-//    update per animation frame.
-//  • pendingCommitStable — within a burst, remember whether at least one
-//    event was "stable" so we still commit on rAF flush.
+// variable, written from the largest of (tg.viewportStableHeight,
+// window.innerHeight, lastStableHeight). The "ratchet" behaviour — never
+// shrinking unless we get an explicit signal that the real viewport actually
+// got smaller (orientationchange) — is what kills resume-time flicker:
+// mid-animation TG/WebKit can momentarily report partial heights, but as
+// long as something in the trio still reports the full height we hold the
+// Shell at that size and the user sees no jitter.
 let lastStableHeight = 0;
 let lastCurrentHeight = 0;
-let pendingRAF: number | null = null;
-let pendingCommitStable = false;
 
 const readWindowHeight = () => (typeof window !== 'undefined' ? window.innerHeight : 0);
 
@@ -194,66 +190,61 @@ const writeViewportVar = (key: string, value: number) => {
   document.documentElement.style.setProperty(key, `${value}px`);
 };
 
-// Resolve the best (current, stable) heights we should display right now.
-// Stable falls back through TG → window → previous good value; we never
-// fabricate a smaller value than what we last wrote, which is the root cause
-// of resume-time flicker (mid-animation TG readings can dip momentarily and
-// the old code happily wrote those, shrinking the Shell each frame).
-const resolveViewport = () => {
+// Pick the best Shell-sizing height we can justify right now. The rules:
+//  1. We pick the LARGEST plausible value from {tg.viewportStableHeight,
+//     window.innerHeight, lastStableHeight}. This is the ratchet — once we
+//     have a good full-screen value, transient drops don't shrink us.
+//  2. If everything is sub-threshold (e.g. very early in init before either
+//     source has a sensible number), we keep whatever we last wrote (which
+//     is what the CSS fallback covered already), and return 0 to signal
+//     "don't write".
+//  3. The ratchet is explicitly reset on orientationchange (see below),
+//     where a smaller viewport is a legitimate real change rather than
+//     mid-animation noise.
+const resolveStableHeight = () => {
   const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
-  const winH = readWindowHeight();
   const tgStable = Number(tg?.viewportStableHeight) || 0;
-  const tgCurrent = Number(tg?.viewportHeight) || 0;
-  const stable = tgStable >= MIN_USABLE_VIEWPORT_HEIGHT
-    ? tgStable
-    : winH >= MIN_USABLE_VIEWPORT_HEIGHT
-      ? winH
-      : lastStableHeight;
-  const current = tgCurrent >= MIN_USABLE_VIEWPORT_HEIGHT
-    ? tgCurrent
-    : stable;
-  return { stable, current };
+  const winH = readWindowHeight();
+  const plausible = [tgStable, winH, lastStableHeight].filter(
+    (v) => Number.isFinite(v) && v >= MIN_USABLE_VIEWPORT_HEIGHT
+  );
+  if (plausible.length === 0) return 0;
+  return Math.max(...plausible);
 };
 
-const flushViewportSync = () => {
-  pendingRAF = null;
-  const commitStable = pendingCommitStable;
-  pendingCommitStable = false;
-  const { stable, current } = resolveViewport();
-  // Commit the Shell-sizing var ONLY when the caller has marked this update
-  // as stable (TG.viewportChanged with isStateStable=true, or a plain-web
-  // resize / orientationchange). Mid-animation events update the "live"
-  // current-height var only — that's intentional: nothing pins the Shell to
-  // --tg-viewport-height, but anything that wants the live size can read it.
-  if (commitStable && stable > 0 && stable !== lastStableHeight) {
-    lastStableHeight = stable;
-    writeViewportVar('--tg-viewport-stable-height', stable);
-  }
-  if (current > 0 && current !== lastCurrentHeight) {
-    lastCurrentHeight = current;
-    writeViewportVar('--tg-viewport-height', current);
-  }
+const syncTelegramViewport = () => {
+  try {
+    const stable = resolveStableHeight();
+    if (stable > 0 && stable !== lastStableHeight) {
+      lastStableHeight = stable;
+      writeViewportVar('--tg-viewport-stable-height', stable);
+    }
+    // Live "current" tracking — anything that wants to follow the live
+    // viewport (keyboard, drag) can read this. Nothing critical pins to it.
+    const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
+    const tgCurrent = Number(tg?.viewportHeight) || 0;
+    const current = tgCurrent >= MIN_USABLE_VIEWPORT_HEIGHT ? tgCurrent : (stable || lastStableHeight);
+    if (current > 0 && current !== lastCurrentHeight) {
+      lastCurrentHeight = current;
+      writeViewportVar('--tg-viewport-height', current);
+    }
+  } catch { /* ignore */ }
 };
 
-const scheduleViewportSync = (commitStable: boolean) => {
-  if (commitStable) pendingCommitStable = true;
-  if (pendingRAF != null) return;
-  pendingRAF = (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
-    ? window.requestAnimationFrame(flushViewportSync)
-    : (setTimeout(flushViewportSync, 16) as unknown as number);
-};
-
-const syncTelegramViewport = (opts?: { commitStable?: boolean }) => {
-  // Default: commit. Callers from inside the TG resume animation pass
-  // { commitStable: false } so they update live size but don't touch the
-  // Shell-sizing var until TG signals isStateStable=true.
-  scheduleViewportSync(opts?.commitStable !== false);
+// Drop the ratchet — the only signal that the viewport has legitimately
+// gotten smaller (orientation flip, system UI grew permanently). Lets the
+// next sync pick the new honest value instead of holding the previous big
+// number.
+const resetViewportRatchet = () => {
+  lastStableHeight = 0;
+  lastCurrentHeight = 0;
+  syncTelegramViewport();
 };
 
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) { syncTelegramViewport({ commitStable: true }); return; }
+    if (!tg) { syncTelegramViewport(); return; }
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
     if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#0B0C10');
@@ -261,21 +252,21 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-    syncTelegramViewport({ commitStable: true });
+    syncTelegramViewport();
+    // A few clients only have a sane viewportStableHeight a tick or two
+    // after expand(). Re-sync on the next frame and again at 250ms so we
+    // pick up the post-expand value without relying on TG firing
+    // viewportChanged (some clients don't on initial open).
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(syncTelegramViewport);
+    }
+    setTimeout(syncTelegramViewport, 250);
     if (typeof tg.onEvent === 'function') {
-      tg.onEvent('viewportChanged', (event?: { isStateStable?: boolean }) => {
-        // KEY FIX: TG fires a CASCADE of viewportChanged events while the
-        // app is being swiped up / down. Each one comes with
-        // isStateStable=false while the resize is in flight, and
-        // isStateStable=true once the WebView settles. Previously we wrote
-        // viewportStableHeight to the CSS var on every event, which made the
-        // Shell resize 5–10× per animation → visible flicker, stretching,
-        // child artifacts. Now we only commit the new stable height once TG
-        // reports the animation finished. `undefined` (legacy clients) is
-        // treated as stable so we don't silently freeze on old versions.
-        const isStable = event?.isStateStable !== false;
-        syncTelegramViewport({ commitStable: isStable });
-      });
+      // Always sync on viewportChanged regardless of isStateStable. Thanks
+      // to the ratchet in resolveStableHeight(), mid-animation drops to
+      // partial heights are ignored — we only write when the *largest*
+      // plausible reading changes, which is what we actually want.
+      tg.onEvent('viewportChanged', syncTelegramViewport);
     }
   } catch { /* ignore */ }
 };
@@ -301,6 +292,11 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       //    body while only the top of the app was visible.
       height: 'var(--tg-viewport-stable-height, 100dvh)',
       maxHeight: 'var(--tg-viewport-stable-height, 100dvh)',
+      // Belt-and-suspenders: if the JS-set CSS var ever briefly resolves to
+      // a too-small pixel value (transient TG read on a slow client, race
+      // between init and first paint), the Shell still covers the viewport
+      // and we don't bleed page background through the body area.
+      minHeight: '100dvh',
       // Horizontal safe-area for landscape mode on notched phones.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
@@ -441,40 +437,40 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   useEffect(() => {
     initTelegramApp();
-    // Plain-web orientation / resize is always a "stable" event from our
-    // POV — the browser doesn't deliver intermediate values, it fires once
-    // after the user has finished resizing / rotating.
-    const onResize = () => syncTelegramViewport({ commitStable: true });
-    // Resume from minimized state. We deliberately DO NOT commit a new
-    // stable height here: TG is still mid-resume-animation right after
-    // visibility flips, and reading tg.viewportStableHeight at that instant
-    // routinely returns intermediate values that would jiggle the Shell.
-    // Instead we just refresh the live "current" var, and trust TG's
-    // post-resume `viewportChanged(isStateStable=true)` to commit the new
-    // stable height once the WebView has actually settled.
-    //
-    // Belt-and-suspenders: some TG clients don't fire viewportChanged on
-    // resume at all (older Android). We schedule a deferred commit ~700ms
-    // after the resume, by which point any in-flight animation is done and
-    // a direct read of viewportStableHeight is trustworthy.
-    let resumeCommitTimer: ReturnType<typeof setTimeout> | null = null;
+    // Regular resize → just sync (ratchet handles transient sub-readings).
+    const onResize = () => syncTelegramViewport();
+    // Orientation flip is the one case where the viewport may legitimately
+    // shrink (portrait→landscape on phones with cutouts). Drop the ratchet
+    // so the new (potentially smaller) honest value gets written.
+    const onOrientation = () => resetViewportRatchet();
+    // Resume from minimized state. Re-sync immediately and then again on the
+    // next animation frame + at 300/700ms — some TG clients don't fire
+    // viewportChanged on resume at all and we'd otherwise stay on a stale
+    // height. The ratchet means each of these calls is harmless if the
+    // value hasn't actually changed.
+    let resumeTimers: ReturnType<typeof setTimeout>[] = [];
+    const clearResumeTimers = () => {
+      for (const t of resumeTimers) clearTimeout(t);
+      resumeTimers = [];
+    };
     const onVisibility = () => {
       if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
-      syncTelegramViewport({ commitStable: false });
-      if (resumeCommitTimer) clearTimeout(resumeCommitTimer);
-      resumeCommitTimer = setTimeout(() => {
-        resumeCommitTimer = null;
-        syncTelegramViewport({ commitStable: true });
-      }, 700);
+      clearResumeTimers();
+      syncTelegramViewport();
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(syncTelegramViewport);
+      }
+      resumeTimers.push(setTimeout(syncTelegramViewport, 300));
+      resumeTimers.push(setTimeout(syncTelegramViewport, 700));
     };
     window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
+    window.addEventListener('orientationchange', onOrientation);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
+      window.removeEventListener('orientationchange', onOrientation);
       document.removeEventListener('visibilitychange', onVisibility);
-      if (resumeCommitTimer) clearTimeout(resumeCommitTimer);
+      clearResumeTimers();
     };
   }, []);
 
