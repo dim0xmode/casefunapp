@@ -185,7 +185,18 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
 const seedStableHeightVar = () => {
   try {
     if (typeof document === 'undefined' || typeof window === 'undefined') return;
-    const initial = window.innerHeight || 0;
+    // `screen.height` is the physical device screen height — it is NOT a
+    // viewport property and does NOT change when TG resizes the WebView
+    // during a minimize/expand animation. Some Android WebView builds
+    // incorrectly implement `100lvh` as `100dvh` (live viewport), so we
+    // can't rely on the CSS keyword alone. screen.height gives us a
+    // bulletproof upper bound for content height — slightly larger than
+    // the actual usable area (it includes Android nav/status bars) but
+    // that just means content always uses the inner scroll, which is
+    // exactly the behaviour we want during a swipe-down.
+    const scr = typeof screen !== 'undefined' ? Number(screen.height) || 0 : 0;
+    const win = window.innerHeight || 0;
+    const initial = Math.max(scr, win);
     if (initial > 100) {
       document.documentElement.style.setProperty('--cf-stable-h', `${initial}px`);
     }
@@ -1714,7 +1725,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             don't understand lvh. */}
         <div
           className="px-3 pt-2 pb-4"
-          style={{ minHeight: 'calc(100lvh - 128px)' }}
+          style={{ minHeight: 'calc(var(--cf-stable-h, 100lvh) - 128px)' }}
         >
           {renderTabContent()}
         </div>
