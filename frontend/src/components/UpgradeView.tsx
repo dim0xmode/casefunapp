@@ -984,7 +984,7 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
 
       {/* Bottom Section: Inventory Grid */}
       <div className={`flex flex-col flex-shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.35)] bg-black/20 backdrop-blur-2xl border-t border-white/[0.12] ${
-        isTelegramMiniApp ? 'h-[56dvh]' : 'h-[440px] lg:h-[520px]'
+        isTelegramMiniApp ? 'h-[56lvh]' : 'h-[440px] lg:h-[520px]'
       }`}>
         <div className={`border-b border-white/[0.12] flex justify-between items-center bg-black/20 backdrop-blur-2xl ${
           isTelegramMiniApp ? 'px-3 py-2 flex-col items-stretch gap-2' : 'px-6 py-3'

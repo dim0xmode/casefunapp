@@ -66,7 +66,14 @@ html[data-tg-app="1"] *::after {
     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     background: #0B0C10;
     color: #f8fafc;
-    min-height: 100dvh;
+    /* `lvh` (large viewport) is locked to the maximum viewport with
+     * browser chrome retracted — unlike `dvh`, it does NOT change
+     * during browser-toolbar-show/hide transitions or Telegram's
+     * minimize/expand WebView resize. Using `dvh` here meant body
+     * height changed every frame of the TG swipe → full-page reflow
+     * for any element with viewport-relative sizing (icons sized in
+     * em from body font, table cells, etc.). */
+    min-height: 100lvh;
     line-height: 1.6;
     overflow-x: hidden;
   }

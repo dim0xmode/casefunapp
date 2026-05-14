@@ -163,41 +163,11 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  *
  * Falls back to `window.innerHeight` on plain web.
  */
-const syncTelegramViewport = () => {
-  try {
-    if (typeof document === 'undefined') return;
-    const tg = (window as any)?.Telegram?.WebApp;
-    const stable = Number(tg?.viewportStableHeight) || Number(tg?.viewportHeight) || (typeof window !== 'undefined' ? window.innerHeight : 0);
-    const current = Number(tg?.viewportHeight) || stable;
-    if (stable > 0) {
-      document.documentElement.style.setProperty('--tg-viewport-stable-height', `${stable}px`);
-      document.documentElement.style.setProperty('--tg-viewport-height', `${current}px`);
-    }
-  } catch { /* ignore */ }
-};
-
-/**
- * Force the mini app back to its fully-expanded state and re-sync viewport
- * heights. Telegram occasionally leaves the WebApp half-collapsed after the
- * user swipes it down and then back up — `viewportChanged` may fire with a
- * collapsed height and not fire again, so the content sits inside a tiny
- * fixed-height shell while the rest of the screen shows the background.
- * Re-invoking `expand()` is a no-op when already expanded and fixes the
- * stuck-collapsed state otherwise.
- */
-const reexpandTelegramApp = () => {
-  try {
-    const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg) { syncTelegramViewport(); return; }
-    if (typeof tg.expand === 'function') tg.expand();
-    syncTelegramViewport();
-    // TG sometimes reports stale viewport heights for one tick after resume,
-    // so re-sync on the next frame (and a few ms later for slow devices) to
-    // catch the final size once the WebView has settled.
-    requestAnimationFrame(syncTelegramViewport);
-    setTimeout(syncTelegramViewport, 120);
-  } catch { /* ignore */ }
-};
+// syncTelegramViewport / reexpandTelegramApp were removed — they
+// wrote CSS custom properties on every resize event and re-called
+// tg.expand() on visibility/focus changes, both of which fought
+// the user's swipe and produced the persistent flicker. Shell is
+// `inset: 0` so the WebView resize is followed natively.
 
 const initTelegramApp = () => {
   try {
@@ -228,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-stable-5';
+const BUILD_MARKER = 'v-root-1';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -389,33 +359,23 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [fbStatus, setFbStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    // One-shot TG init: ready/expand/colors/disableVerticalSwipes,
+    // plus the <html data-tg-app="1"> flag.
+    //
+    // EVERY listener that used to be here (`resize`,
+    // `orientationchange`, `pageshow`, `focus`, `visibilitychange`)
+    // was a flicker source:
+    //   - resize fires every frame of TG's minimize/expand swipe;
+    //     calling syncTelegramViewport() on each was writing to
+    //     documentElement.style 30-60 times/sec → constant style
+    //     recalculation, the "page feels bad" symptom;
+    //   - pageshow/focus/visibilitychange triggered tg.expand() +
+    //     a chain of setTimeout re-syncs, fighting the user's
+    //     swipe in real time.
+    //
+    // Shell is `position: fixed; inset: 0` so the WebView resize
+    // is followed natively; we don't need any of this in JS.
     initTelegramApp();
-    // Also sync viewport on plain-web orientation / resize so the Shell reacts
-    // to DevTools-toolbar flips and Android keyboard show/hide.
-    const onResize = () => syncTelegramViewport();
-    // Returning from a minimized state: the user dragged the mini app down
-    // and tapped to bring it back. Telegram doesn't always fire
-    // viewportChanged in that path and can leave the WebApp half-collapsed
-    // — the symptom is the gradient background showing through while the
-    // body content sits squished. Force-expanding on every resume fixes it.
-    const onVisibility = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        reexpandTelegramApp();
-      }
-    };
-    const onPageShow = () => reexpandTelegramApp();
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    window.addEventListener('pageshow', onPageShow);
-    window.addEventListener('focus', onPageShow);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-      window.removeEventListener('pageshow', onPageShow);
-      window.removeEventListener('focus', onPageShow);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
   }, []);
 
   useEffect(() => {

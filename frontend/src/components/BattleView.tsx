@@ -1158,7 +1158,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
         {createBattleOpen && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 animate-fade-in">
             <div className={`relative bg-black/70 border border-white/[0.12] rounded-2xl w-[94%] max-w-6xl shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm flex flex-col ${
-              isTelegramMiniApp ? 'p-4 h-[calc(100dvh-2.5rem)]' : 'p-8 h-[720px]'
+              isTelegramMiniApp ? 'p-4 h-[calc(100lvh-2.5rem)]' : 'p-8 h-[720px]'
             }`}>
               <div className="flex items-center justify-between mb-4">
                 <div className="text-sm uppercase tracking-widest text-gray-400">Create Battle</div>
