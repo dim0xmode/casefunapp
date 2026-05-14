@@ -214,6 +214,18 @@ const App = () => {
     }
   };
 
+  // RESTORED FROM baa2a76 — was silently reverted in a later
+  // viewport-experiment rollback. Stable identity is critical because
+  // this is wired into ProfileView / TelegramMiniAppView's
+  // `loadRewardTasks` useCallback deps. An inline arrow function (the
+  // reverted form) gets a new identity on every App render, which
+  // invalidates loadRewardTasks' memo, refires its effect, triggers a
+  // fetch, sets state, and we re-render again — feedback loop with
+  // "Loading tasks…" stuck and constant network traffic.
+  const handleRewardPointsUpdate = useCallback((totalPoints: number) => {
+    setUser((prev) => ({ ...prev, rewardPoints: totalPoints }));
+  }, []);
+
   const resetUserState = () => {
     setUser(INITIAL_USER);
     setInventory([]);
@@ -883,22 +895,38 @@ const App = () => {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    // RESTORED FROM baa2a76 — was silently reverted in a later
+    // viewport-experiment rollback. This is THE root cause of "app
+    // freaks out on minimize / expand":
+    //
+    // Resume handler is scoped to *recovery only*. We deliberately do
+    // NOT call `loadProfile()` on every visibility flip — that turned
+    // every minimize+expand into a full profile + inventory + balance
+    // refetch. Each of those setters builds fresh arrays via .map(),
+    // so even when nothing actually changed on the backend, React
+    // saw new references everywhere → whole-tree re-render landing
+    // exactly when TG's WebView was resizing → the flicker / stretch
+    // / "everything updates" symptoms.
+    //
+    // Profile data is fine being a few seconds stale between minimize
+    // and expand. User-triggered actions (claim, open case, upgrade,
+    // battle finish) still refresh state via their own callbacks.
+    //
+    // Only the cold-resume re-auth path remains: if the TG Mini App
+    // was suspended without an authenticated session (rare bridge /
+    // cold-resume case), retry auth on resume.
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
       if (activeTab !== 'tg') return;
-      if (isTelegramWebViewContext() && (!lastAuthAddress || !user.hasLinkedWallet)) {
-        const initData = getTelegramWebAppInitData();
-        if (initData) {
-          void handleTelegramLogin();
-          return;
-        }
-      }
-      if (!lastAuthAddress && !user.id) return;
-      void loadProfile().catch(() => {});
+      if (lastAuthAddress || user.id) return;
+      if (!isTelegramWebViewContext()) return;
+      const initData = getTelegramWebAppInitData();
+      if (!initData) return;
+      void handleTelegramLogin();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activeTab, lastAuthAddress, user.hasLinkedWallet, user.id]);
+  }, [activeTab, lastAuthAddress, user.id]);
 
   const handleClaimToken = async (caseId: string) => {
     const response = await api.claimToken(caseId);
@@ -2182,7 +2210,7 @@ const App = () => {
                   onChargeBattle: handleChargeBattle,
                   onOpenTopUp: handleOpenTopUp,
                   onBalanceUpdate: setBalance,
-                  onRewardPointsUpdate: (totalPoints: number) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints })),
+                  onRewardPointsUpdate: handleRewardPointsUpdate,
                   onOpenWalletConnect: () => { setConnectModalMode('login'); setIsWalletConnectOpen(true); },
                   onClaimToken: handleClaimToken,
                   onSelectUser: handleSelectUser,
@@ -2329,7 +2357,7 @@ const App = () => {
                   isBackgroundAnimated={isBackgroundAnimated}
                   onToggleBackgroundAnimation={() => setIsBackgroundAnimated((prev) => !prev)}
                   onBalanceUpdate={setBalance}
-                  onRewardPointsUpdate={(totalPoints) => setUser((prev) => ({ ...prev, rewardPoints: totalPoints }))}
+                  onRewardPointsUpdate={handleRewardPointsUpdate}
                   onLinkEvmWallet={handleLinkEvmWallet}
                   onLinkTonWallet={handleLinkTonWallet}
                 />
