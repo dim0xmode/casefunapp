@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-3';
+const BUILD_MARKER = 'v-root-4';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -378,6 +378,12 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     initTelegramApp();
   }, []);
 
+  // Keep `activeTab` out of this effect's deps — otherwise every tab
+  // switch tore down the interval, immediately re-polled, and the new
+  // closure churned. We use a ref so the `activeTab === 'battle'`
+  // check still works without re-subscribing.
+  const activeTabRef = useRef<MiniTab>('cases');
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
@@ -389,7 +395,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         const fresh = lobbies.find((l: any) => {
           if (l?.status !== 'IN_PROGRESS' || !l?.startedAt) return false;
           if (l.hostUserId !== user.id) return false;
-          if (activeTab === 'battle') return false;
+          if (activeTabRef.current === 'battle') return false;
           const key = `${l.id}:${l.startedAt}`;
           return !battleAlertSeenRef.current.has(key);
         });
@@ -407,7 +413,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     poll();
     const timer = setInterval(poll, 8000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [isAuthenticated, user.id, activeTab]);
+  }, [isAuthenticated, user.id]);
 
   useEffect(() => {
     if (!battleAlert) return;
@@ -453,17 +459,44 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   useEffect(() => { setRewardPoints(user?.rewardPoints ?? 0); }, [user?.rewardPoints]);
 
+  // Ref-tracked first-load flag: only the very first fetch toggles
+  // `rewardsLoading`. Subsequent refreshes (after open-case / upgrade /
+  // battle-finish, or initial mount when tasks were preserved) run
+  // silently in the background — they no longer rerender the whole
+  // mini-app shell, which was flashing nav / upgrade visuals.
+  const rewardsHadInitialLoad = useRef(false);
   const loadRewardTasks = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;
-    setRewardsLoading(true);
+    const isFirstLoad = !rewardsHadInitialLoad.current;
+    if (isFirstLoad) setRewardsLoading(true);
     try {
       const res = await api.getRewardTasks();
-      setRewardTasks(Array.isArray(res.data?.tasks) ? res.data.tasks : []);
-      if (typeof res.data?.totalPoints === 'number') {
-        setRewardPoints(res.data.totalPoints);
-        onRewardPointsUpdate?.(res.data.totalPoints);
+      setRewardTasks((prev) => {
+        const next = Array.isArray(res.data?.tasks) ? res.data.tasks : [];
+        if (prev.length === next.length) {
+          let identical = true;
+          for (let i = 0; i < prev.length; i += 1) {
+            const a = prev[i] as any;
+            const b = next[i] as any;
+            if (!a || !b || a.id !== b.id || a.claimed !== b.claimed || a.onCooldown !== b.onCooldown || a.locked !== b.locked) {
+              identical = false; break;
+            }
+          }
+          if (identical) return prev; // keep referential equality
+        }
+        return next;
+      });
+      const totalPoints = res.data?.totalPoints;
+      if (typeof totalPoints === 'number') {
+        setRewardPoints((prev) => (prev === totalPoints ? prev : totalPoints));
+        onRewardPointsUpdate?.(totalPoints);
       }
-    } catch {} finally { setRewardsLoading(false); }
+    } catch {} finally {
+      if (isFirstLoad) {
+        setRewardsLoading(false);
+        rewardsHadInitialLoad.current = true;
+      }
+    }
   }, [isAuthenticated, user?.id, onRewardPointsUpdate]);
 
   const loadRewardHistory = useCallback(async () => {
@@ -847,11 +880,35 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     onLinkTonWallet?.();
   };
 
+  // Stable wrappers that fire-and-forget the reward refresh after an
+  // action so we don't recreate the prop identity on every render.
+  // Recreating these inline (`async (...) => { ... }`) made CaseView /
+  // UpgradeView / BattleView see a fresh onOpenCase / onUpgrade /
+  // onBattleFinish each render, busting their internal memoisation and
+  // adding to the repaint storm on activity.
+  const handleOpenCaseWithReward = useCallback(async (caseId: string, count: number) => {
+    const items = await onOpenCase(caseId, count);
+    loadRewardTasks();
+    return items;
+  }, [onOpenCase, loadRewardTasks]);
+
+  const handleUpgradeWithReward = useCallback(async (items: any, mult: any) => {
+    const res = await onUpgrade(items, mult);
+    loadRewardTasks();
+    return res;
+  }, [onUpgrade, loadRewardTasks]);
+
+  const handleBattleFinishWithReward = useCallback((...args: any[]) => {
+    const res = (onBattleFinish as any)(...args);
+    loadRewardTasks();
+    return res;
+  }, [onBattleFinish, loadRewardTasks]);
+
   // ── Tab content ──────────────────────────────────────────────────────────────
   const renderTabContent = () => {
     if (activeTab === 'cases') return (
         <CaseView
-        cases={cases} onOpenCase={async (caseId, count) => { const items = await onOpenCase(caseId, count); loadRewardTasks(); return items; }} balance={balance}
+        cases={cases} onOpenCase={handleOpenCaseWithReward} balance={balance}
         onOpenTopUp={onOpenTopUp} userName={user.username}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
@@ -872,7 +929,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
     if (activeTab === 'upgrade') return (
         <UpgradeView
-        inventory={activeInventory} onUpgrade={async (items, mult) => { const res = await onUpgrade(items, mult); loadRewardTasks(); return res; }}
+        inventory={activeInventory} onUpgrade={handleUpgradeWithReward}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
       />
@@ -1246,7 +1303,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       <BattleView
         cases={activeCases} userName={user.username}
         userAvatar={user.avatar} userAvatarMeta={user.avatarMeta}
-        onBattleFinish={(...args) => { const res = onBattleFinish(...args); loadRewardTasks(); return res; }} balance={balance}
+        onBattleFinish={handleBattleFinishWithReward} balance={balance}
         onChargeBattle={onChargeBattle} onOpenTopUp={onOpenTopUp}
         isAuthenticated={isAuthenticated} onOpenWalletConnect={onOpenWalletConnect}
         isAdmin isTelegramMiniApp
