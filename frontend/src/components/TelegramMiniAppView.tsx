@@ -165,28 +165,50 @@ const toProfileItem = (item: Item): Item => ({ ...item, rarity: normalizeRarity(
  */
 // ARCHITECTURE NOTE — VIEWPORT SIZING
 // We tried multiple approaches over the past few iterations:
-//  1. Pinning Shell height to tg.viewportStableHeight (a JS-managed CSS
-//     pixel var). Broken: any stale/zero read collapsed Shell into a
-//     sliver, exposing the page bg behind it.
+//  1. Pinning Shell to tg.viewportStableHeight without gating on
+//     `isStateStable`. Broken: TG reported transient sub-300px values
+//     mid-animation that collapsed Shell into a sliver.
 //  2. Ratcheting to the largest plausible value. Broken: picked
-//     window.innerHeight over viewportStableHeight, over-stretching the
-//     Shell behind TG chrome on Android.
-//  3. inset:0 + padding-top = winH - viewportStableHeight to push content
-//     under TG chrome. Broken: that diff is NOT TG chrome height — on
-//     Android Telegram during a swipe-down, viewportStableHeight shrinks
-//     while window.innerHeight stays the same, so the "chrome offset"
-//     grew to a third of the screen and pushed all content down.
+//     window.innerHeight (full WebView) over viewportStableHeight on
+//     Android, over-stretching the Shell behind TG chrome.
+//  3. inset:0 + padding-top = winH − viewportStableHeight. Broken: that
+//     diff is NOT TG chrome height on Android during a swipe-down.
+//  4. inset:0 / 100vh (no JS). Broken: both follow the live viewport
+//     during TG's minimize/expand animation, so flex-1 children
+//     (charts, upgrade slots) reflow every frame and latch onto a
+//     transient size that stays after resume.
 //
-// Final approach: stop trying to be clever. Shell is `position: fixed;
-// inset: 0` — it always covers the entire WebView. The TG native header
-// bar is rendered OUTSIDE the WebView by Telegram (the WebView itself
-// starts below it on Android, and on iOS the safe-area-inset-top env()
-// value already accounts for it). So no JS sizing is needed at all.
-// setHeaderColor + setBackgroundColor make the TG chrome visually blend
-// with our page bg. Done.
+// FINAL APPROACH: pin Shell to a JS-managed CSS pixel variable
+// (`--cf-shell-h`) that is ONLY updated on `viewportChanged` events
+// where `isStateStable === true` (i.e. NOT during the resume
+// animation). On first paint we seed it with window.innerHeight as a
+// safe default. During the swipe-down/up the variable doesn't change,
+// so Shell stays the exact size it had before minimize and no child
+// re-measures. setHeaderColor + setBackgroundColor still blend TG
+// chrome into our bg so the seam is invisible.
+
+const seedShellHeightVar = () => {
+  try {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const initial = window.innerHeight || 0;
+    if (initial > 100) {
+      document.documentElement.style.setProperty('--cf-shell-h', `${initial}px`);
+    }
+  } catch { /* ignore */ }
+};
+
+const commitStableShellHeight = (height: number) => {
+  try {
+    if (typeof document === 'undefined') return;
+    if (!(height > 100)) return;
+    document.documentElement.style.setProperty('--cf-shell-h', `${Math.round(height)}px`);
+  } catch { /* ignore */ }
+};
+
 const initTelegramApp = () => {
   try {
     const tg = (window as any)?.Telegram?.WebApp;
+    seedShellHeightVar();
     if (!tg) return;
     if (typeof tg.ready === 'function') tg.ready();
     if (typeof tg.expand === 'function') tg.expand();
@@ -195,6 +217,21 @@ const initTelegramApp = () => {
     // Disable vertical swipe-to-close (Telegram ≥7.7) so full-height lists
     // don't accidentally dismiss the app when the user scrolls.
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+    // Commit the stable viewport once TG is ready — first paint may have
+    // used a slightly smaller `window.innerHeight` if TG chrome wasn't
+    // fully laid out yet.
+    const stable = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
+    if (stable > 100) commitStableShellHeight(stable);
+    if (typeof tg.onEvent === 'function') {
+      tg.onEvent('viewportChanged', (eventData?: { isStateStable?: boolean }) => {
+        // CRITICAL: only commit on stable transitions. Intermediate
+        // animation frames have isStateStable === false and report
+        // shrinking heights — writing those would flicker the Shell.
+        if (eventData && eventData.isStateStable !== true) return;
+        const next = Number(tg.viewportStableHeight) || Number(tg.viewportHeight) || 0;
+        if (next > 100) commitStableShellHeight(next);
+      });
+    }
   } catch { /* ignore */ }
 };
 
@@ -207,14 +244,20 @@ const initTelegramApp = () => {
  */
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
-    className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
+    className="fixed left-0 right-0 top-0 flex flex-col z-[10] overflow-hidden"
     style={{
       background: '#0B0C10',
-      // Shell covers the full WebView. TG's native header bar lives OUTSIDE
-      // the WebView (the WebView starts below it on Android); on iOS the
-      // notch/status-bar is accounted for via safe-area-inset-top. We don't
-      // add any JS-computed top offset — past attempts to do so all had
-      // failure modes (see ARCHITECTURE NOTE above initTelegramApp).
+      // Pinned to the JS-managed --cf-shell-h pixel value, which is
+      // updated ONLY on TG's stable viewport events. During minimize /
+      // expand animations the variable doesn't change, so the Shell
+      // stays the exact size it had before — no flex-1 child re-flows,
+      // no chart re-measures, no flicker. 100vh is the safe seed for
+      // first paint / non-TG. See ARCHITECTURE NOTE above
+      // initTelegramApp.
+      height: 'var(--cf-shell-h, 100vh)',
+      maxHeight: 'var(--cf-shell-h, 100vh)',
+      minHeight: 'var(--cf-shell-h, 100vh)',
+      // iOS notch / Android edge safe-area insets.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
       paddingTop: 'var(--sa-top)',
@@ -355,10 +398,27 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const [fbStatus, setFbStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    // One-shot init: tg.expand(), header/bg color, disable swipe-to-close.
-    // No JS viewport syncing — Shell uses inset:0 and the safe-area env()
-    // values handle everything we used to compute manually.
+    // TG init (one-shot) + register the viewportChanged listener that
+    // commits stable heights to --cf-shell-h. Also handle plain-web
+    // orientation/resize so non-TG users (and TG users rotating their
+    // phone) get the correct Shell size.
     initTelegramApp();
+    const onOrient = () => {
+      // Only commit on plain web — in TG the viewportChanged event is
+      // authoritative and already fires on rotation.
+      const tg = (window as any)?.Telegram?.WebApp;
+      if (tg) return;
+      const h = window.innerHeight;
+      if (h > 100) {
+        document.documentElement.style.setProperty('--cf-shell-h', `${h}px`);
+      }
+    };
+    window.addEventListener('orientationchange', onOrient);
+    window.addEventListener('resize', onOrient);
+    return () => {
+      window.removeEventListener('orientationchange', onOrient);
+      window.removeEventListener('resize', onOrient);
+    };
   }, []);
 
   useEffect(() => {
@@ -858,8 +918,14 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     );
 
     if (activeTab === 'rewards') return (
-      <div className="flex flex-col h-full min-h-0">
-        <div className="flex items-center justify-between mb-3">
+      // NOTE: we deliberately do NOT use `flex flex-col h-full min-h-0` here
+      // anymore. That pattern relied on every ancestor (Shell → flex-1 scroll
+      // area → px-3 wrapper) propagating a definite height, but during TG's
+      // minimize/expand the chain could briefly resolve to 0, latching the
+      // inner scroll area at height 0 and leaving the whole tab blank/black
+      // until the next remount. Natural flow + outer-scroll is robust.
+      <div>
+        <div className="sticky top-0 z-[2] -mx-3 px-3 pt-1 pb-2 mb-2 bg-[#0B0C10]/95 backdrop-blur-sm flex items-center justify-between">
           <div className="text-[11px] text-gray-400">
             Points: <span className="text-web3-accent font-mono font-bold">{formatCfp(rewardPoints)} CFP</span>
           </div>
@@ -877,7 +943,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
+        <div className="pr-1">
           {/* ── Social: account linking, referrals, promo ── */}
           {rewardsSubTab === 'social' && (
             <div className="space-y-2">
@@ -1608,7 +1674,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       )}
 
       <div
-        className="flex-1 overflow-y-auto overscroll-contain"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
         <div className="px-3 pt-2 pb-4">
