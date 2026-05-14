@@ -232,7 +232,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-stable-2';
+const BUILD_MARKER = 'v-stable-3';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div

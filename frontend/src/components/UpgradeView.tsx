@@ -645,14 +645,27 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                 </div>
               </div>
 
-              {/* Central Content */}
+              {/* Central Content.
+               *
+               * TG mode uses a solid dark background. The desktop
+               * version had `backdrop-filter: blur(28px) saturate(180%)
+               * brightness(120%)` here, which on Android TG WebView:
+               *   1) flickers every TG viewportChanged event;
+               *   2) drops the win/lose Result Overlay layer rendered
+               *      inside it (the "no upgrade animation" symptom).
+               * Solid rgba(11,12,16,0.85) looks ~the same and renders
+               * predictably. */}
               <div
                 className="absolute inset-8 rounded-full border border-white/[0.08] flex flex-col items-center justify-center z-10 overflow-hidden"
-                style={{
-                  backgroundColor: 'rgba(11, 12, 16, 0.28)',
-                  WebkitBackdropFilter: 'blur(28px) saturate(180%) brightness(120%)',
-                  backdropFilter: 'blur(28px) saturate(180%) brightness(120%)',
-                }}
+                style={
+                  isTelegramMiniApp
+                    ? { backgroundColor: 'rgba(11, 12, 16, 0.85)' }
+                    : {
+                        backgroundColor: 'rgba(11, 12, 16, 0.28)',
+                        WebkitBackdropFilter: 'blur(28px) saturate(180%) brightness(120%)',
+                        backdropFilter: 'blur(28px) saturate(180%) brightness(120%)',
+                      }
+                }
               >
                 {displayItem && upgradeResult === 'idle' ? (
                   <div className="flex flex-col items-center transition-all duration-300">
@@ -669,9 +682,12 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
                   </div>
                 ) : null}
                 
-                {/* Result Overlay */}
+                {/* Result Overlay — kept simple in TG: solid bg, no
+                    backdrop-blur (WebView would lose the layer). */}
                 {upgradeResult !== 'idle' && (
-                  <div className={`absolute inset-0 flex items-center justify-center backdrop-blur-sm bg-black/40 z-30 animate-fade-in`}>
+                  <div className={`absolute inset-0 flex items-center justify-center z-30 animate-fade-in ${
+                    isTelegramMiniApp ? 'bg-black/80' : 'backdrop-blur-sm bg-black/40'
+                  }`}>
                     <div className={`relative flex flex-col items-center ${isTelegramMiniApp ? 'gap-1' : 'gap-2'}`}>
                       {upgradeResult === 'success' ? (
                         <>
