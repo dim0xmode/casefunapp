@@ -206,6 +206,8 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
+const BUILD_MARKER = 'bdrp-fix-1';
+
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
     className="fixed inset-0 flex flex-col z-[10] overflow-hidden"
@@ -231,6 +233,17 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     }} />
     <div className="relative z-[1] flex flex-col flex-1 min-h-0 overflow-hidden">
       {children}
+    </div>
+    {/* Visible build marker. Only shows in TG (data-tg-app=1).
+        Lets us verify the right bundle is loaded on user's device. */}
+    <div
+      style={{
+        position: 'fixed', bottom: 2, right: 4, zIndex: 9999,
+        fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.25)',
+        pointerEvents: 'none',
+      }}
+    >
+      v{BUILD_MARKER}
     </div>
   </div>
 );
