@@ -297,8 +297,40 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="relative z-[1] flex flex-col flex-1 min-h-0 overflow-hidden">
       {children}
     </div>
+    <ViewportDebugOverlay />
   </div>
 );
+
+const ViewportDebugOverlay: React.FC = () => {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('vpdebug')) return;
+    let raf = 0;
+    const loop = () => { setTick((t) => t + 1); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  if (typeof window === 'undefined') return null;
+  if (!new URLSearchParams(window.location.search).has('vpdebug')) return null;
+  const tg = (window as any)?.Telegram?.WebApp;
+  const sh = getComputedStyle(document.documentElement).getPropertyValue('--cf-stable-h') || '?';
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 8, left: 8, right: 8, zIndex: 99,
+        background: 'rgba(255,0,0,0.85)', color: '#fff',
+        fontSize: 10, fontFamily: 'monospace', padding: '4px 6px', borderRadius: 4,
+        pointerEvents: 'none', lineHeight: 1.3,
+      }}
+      data-tick={tick}
+    >
+      <div>win={window.innerWidth}×{window.innerHeight} scr={screen.width}×{screen.height}</div>
+      <div>tg.vh={tg?.viewportHeight ?? '?'} tg.svh={tg?.viewportStableHeight ?? '?'} exp={String(tg?.isExpanded)}</div>
+      <div>--cf-stable-h={sh.trim()} t={tick}</div>
+    </div>
+  );
+};
 
 const CenteredShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Shell>

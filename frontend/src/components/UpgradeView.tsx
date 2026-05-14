@@ -455,9 +455,12 @@ export const UpgradeView: React.FC<UpgradeViewProps> = ({
 
   return (
     <div className={`flex flex-col text-white relative ${isTelegramMiniApp ? 'min-h-0' : 'min-h-screen'}`}>
-      {/* Top Section: The Upgrade Machine */}
-      <div className={`flex-1 flex flex-col items-center justify-center relative bg-black/20 backdrop-blur-2xl border-b border-white/[0.12] ${
-        isTelegramMiniApp ? 'min-h-[420px] py-5' : 'min-h-[500px] py-12'
+      {/* Top Section: The Upgrade Machine — in TG mini app mode we drop
+          `flex-1` so the widget can NOT stretch with the live viewport
+          during TG's minimize/expand animation. min-h-[420px] gives a
+          stable lower bound; height grows only with content. */}
+      <div className={`flex flex-col items-center justify-center relative bg-black/20 backdrop-blur-2xl border-b border-white/[0.12] ${
+        isTelegramMiniApp ? 'min-h-[420px] py-5' : 'flex-1 min-h-[500px] py-12'
       }`}>
         <div className={`flex flex-col lg:flex-row items-center lg:items-start justify-center z-10 w-full max-w-6xl ${
           isTelegramMiniApp ? 'gap-6 lg:gap-8 px-3' : 'gap-10 lg:gap-16 px-8'
