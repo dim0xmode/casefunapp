@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-5';
+const BUILD_MARKER = 'v-root-6';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -237,6 +237,67 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </div>
   </div>
 );
+
+// ── Bottom nav as a memoised, isolated component ────────────────────────────
+// Why: TelegramMiniAppView has many local state shards (toasts, alerts,
+// inputs, refs, etc.) and re-renders many times per second under load
+// (battle poll, balance updates from parent). Inlined, the bottom nav
+// repainted on every one of those renders. Memoised here, it only
+// repaints when activeTab or hasActiveRewards actually changes — the
+// thing the user can perceive. Combined with `contain: layout paint`
+// + `transform: translateZ(0)` on the wrapper, this isolates the nav
+// to its own composite layer so the WebView never has to redraw it
+// alongside scroll-area paints.
+type BottomNavProps = {
+  activeTab: MiniTab;
+  goToTab: (tab: MiniTab) => void;
+  hasActiveRewards: boolean;
+};
+const BottomNav: React.FC<BottomNavProps> = React.memo(({ activeTab, goToTab, hasActiveRewards }) => (
+  <div className="flex items-end px-1 pt-1 pb-1">
+    {BASE_TABS.map((tab) => {
+      const Icon = tab.icon;
+      const active = activeTab === tab.id;
+      const isRewardsTab = tab.id === 'rewards';
+      const showDot = isRewardsTab && !active && hasActiveRewards;
+      return (
+        <button
+          key={tab.id} type="button"
+          onClick={() => goToTab(tab.id)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-colors duration-150 select-none"
+          style={
+            isRewardsTab && active
+              ? { background: 'linear-gradient(135deg, rgba(102,252,241,0.12), rgba(139,92,246,0.08))' }
+              : active ? { background: 'rgba(102,252,241,0.08)' } : undefined
+          }
+        >
+          {isRewardsTab ? (
+            <>
+              <svg width={0} height={0} className="absolute"><defs><linearGradient id="rwdGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#66FCF1" /><stop offset="50%" stopColor="#10B981" /><stop offset="100%" stopColor="#8B5CF6" /></linearGradient></defs></svg>
+              <span className="relative flex" style={{ filter: active ? 'drop-shadow(0 0 6px rgba(102,252,241,0.5))' : undefined }}>
+                <Icon size={22} strokeWidth={active ? 2.2 : 1.8} style={{ stroke: 'url(#rwdGrad)' }} />
+                {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500" />}
+              </span>
+              <span className="text-[10px] font-bold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple bg-size-200">
+                {tab.label}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+              </span>
+              <span className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
+                {tab.label}
+              </span>
+            </>
+          )}
+        </button>
+      );
+    })}
+  </div>
+));
+BottomNav.displayName = 'BottomNav';
 
 const CenteredShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Shell>
@@ -657,13 +718,15 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
   const isSecondaryTab = activeTab === 'topup';
 
-  const goToTab = (tab: MiniTab) => {
+  // Stable goToTab — wrapped in useCallback so the BottomNav memo
+  // below doesn't churn on every TelegramMiniAppView render.
+  const goToTab = useCallback((tab: MiniTab) => {
     if (BASE_TABS.find((t) => t.id === tab)) setLastPrimaryTab(tab);
     setActiveTab(tab);
     // Don't reload reward tasks on every tab click — they're loaded
     // on mount and re-loaded after actions that earn points. Reloading
     // here flashed "Loading tasks…" and reflowed the bottom nav.
-  };
+  }, []);
 
   // ── Top-up logic ────────────────────────────────────────────────────────────
   const chainId = Number(import.meta.env.VITE_CHAIN_ID || 11155111);
@@ -1704,12 +1767,15 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         className="flex-1 overflow-y-auto overscroll-contain"
         style={{ WebkitOverflowScrolling: 'touch' } as unknown as React.CSSProperties}
       >
-        <div className="px-3 pt-2 pb-4">
+        {/* pb reserves room for the absolutely-positioned bottom nav
+            (~64px) plus iOS home-indicator safe area. Without this the
+            last item in any tab would sit under the nav. */}
+        <div className="px-3 pt-2" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}>
           {renderTabContent()}
         </div>
       </div>
 
-      {/* Battle alert toast */}
+      {/* Battle alert toast — kept above the (now-absolute) nav. */}
       {battleAlert && (
         <button
           type="button"
@@ -1718,10 +1784,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
             goToTab('battle');
             setBattleAlert(null);
           }}
-          className="shrink-0 mx-3 mb-2 px-4 py-3 rounded-xl border border-web3-accent/50 bg-black/90 backdrop-blur-md text-left shadow-[0_0_20px_rgba(102,252,241,0.25)] active:scale-[0.98] transition animate-fade-in"
+          className="mx-3 mb-2 px-4 py-3 rounded-xl border border-web3-accent/50 bg-black/90 text-left shadow-[0_0_20px_rgba(102,252,241,0.25)] active:scale-[0.98] transition animate-fade-in"
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', zIndex: 9 }}
         >
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]" />
             <span className="text-[10px] uppercase tracking-widest text-web3-accent font-bold">Battle started</span>
           </div>
           <div className="text-sm font-black text-white">{battleAlert.hostName} vs {battleAlert.joinerName}</div>
@@ -1730,56 +1797,34 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       )}
 
       {/* ── Bottom tab bar ──
-          No backdrop-filter: was causing repaint storm in Android TG
-          WebView (sticky position + blur = recomposite every frame).
-          Solid bg color, slightly more opaque to mask scrolling content. */}
+          Pulled OUT of the flex column into absolute positioning so
+          tab-content mounts (heavy components like Battle/Profile
+          fetching on mount) can't reflow it. The scroll area above
+          has padding-bottom reserving space, so content never goes
+          under the nav.
+          Plus `transform: translateZ(0)` + `will-change: transform`
+          forces this subtree onto its own compositor layer — Android
+          TG WebView previously repainted the nav alongside every
+          scroll-area paint, even though React itself didn't change
+          this DOM.
+          Solid bg, no backdrop-filter (compositor cost). */}
       <div
-        className="shrink-0 border-t border-white/[0.04]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', background: 'rgba(11,12,16,0.97)' } as React.CSSProperties}
+        className="border-t border-white/[0.04]"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 10,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          background: 'rgba(11,12,16,0.97)',
+          transform: 'translateZ(0)',
+          willChange: 'transform',
+          contain: 'layout paint',
+        } as React.CSSProperties}
       >
-        <div className="flex items-end px-1 pt-1 pb-1">
-          {BASE_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            const isRewardsTab = tab.id === 'rewards';
-            const showDot = isRewardsTab && !active && hasActiveRewards;
-            return (
-              <button
-                key={tab.id} type="button"
-                onClick={() => goToTab(tab.id)}
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl active:scale-95 transition-all duration-150 select-none"
-                style={
-                  isRewardsTab && active
-                    ? { background: 'linear-gradient(135deg, rgba(102,252,241,0.12), rgba(139,92,246,0.08))' }
-                    : active ? { background: 'rgba(102,252,241,0.08)' } : undefined
-                }
-              >
-                {isRewardsTab ? (
-                  <>
-                    <svg width={0} height={0} className="absolute"><defs><linearGradient id="rwdGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#66FCF1" /><stop offset="50%" stopColor="#10B981" /><stop offset="100%" stopColor="#8B5CF6" /></linearGradient></defs></svg>
-                    <span className={`relative flex ${!active ? 'animate-glow-pulse' : ''}`} style={{ filter: active ? 'drop-shadow(0 0 6px rgba(102,252,241,0.5))' : undefined }}>
-                      <Icon size={22} strokeWidth={active ? 2.2 : 1.8} style={{ stroke: 'url(#rwdGrad)' }} />
-                      {showDot && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
-                    </span>
-                    <span className="text-[10px] font-bold leading-none mt-0.5 text-transparent bg-clip-text bg-gradient-to-r from-web3-accent via-web3-success to-web3-purple animate-gradient bg-size-200">
-                {tab.label}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="relative flex transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
-                      <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
-                    </span>
-                    <span className="text-[10px] font-semibold leading-none mt-0.5 transition-colors duration-150" style={{ color: active ? '#66FCF1' : '#4b5563' }}>
-                      {tab.label}
-                    </span>
-                  </>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        </div>
+        <BottomNav activeTab={activeTab} goToTab={goToTab} hasActiveRewards={hasActiveRewards} />
+      </div>
     </Shell>
 
     {feedbackOpen && (
