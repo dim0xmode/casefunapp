@@ -190,26 +190,37 @@ const writeViewportVar = (key: string, value: number) => {
   document.documentElement.style.setProperty(key, `${value}px`);
 };
 
-// Pick the best Shell-sizing height we can justify right now. The rules:
-//  1. We pick the LARGEST plausible value from {tg.viewportStableHeight,
-//     window.innerHeight, lastStableHeight}. This is the ratchet — once we
-//     have a good full-screen value, transient drops don't shrink us.
-//  2. If everything is sub-threshold (e.g. very early in init before either
-//     source has a sensible number), we keep whatever we last wrote (which
-//     is what the CSS fallback covered already), and return 0 to signal
-//     "don't write".
-//  3. The ratchet is explicitly reset on orientationchange (see below),
-//     where a smaller viewport is a legitimate real change rather than
-//     mid-animation noise.
+// Pick the best Shell-sizing height we can justify right now. Rules:
+//  1. We prefer tg.viewportStableHeight when TG is present and reports a
+//     plausible value — it's the authoritative number that already excludes
+//     the TG chrome at top. Using window.innerHeight here would over-size
+//     the Shell and stretch flex-1 children behind the chrome.
+//  2. We accept a smaller honest reading from TG only if it's within 30%
+//     of the last good value. A sharp drop (mid-resume noise) is held.
+//  3. If TG isn't ready / unavailable, fall back to window.innerHeight.
+//  4. If everything is unusable (init pre-paint), return 0 → skip write
+//     and keep whatever CSS fallback we have.
+//  5. orientationchange explicitly resets the ratchet — see below.
+const TRANSIENT_DROP_TOLERANCE = 0.7;
+
 const resolveStableHeight = () => {
   const tg = (typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null) || null;
   const tgStable = Number(tg?.viewportStableHeight) || 0;
   const winH = readWindowHeight();
-  const plausible = [tgStable, winH, lastStableHeight].filter(
-    (v) => Number.isFinite(v) && v >= MIN_USABLE_VIEWPORT_HEIGHT
-  );
-  if (plausible.length === 0) return 0;
-  return Math.max(...plausible);
+
+  if (tgStable >= MIN_USABLE_VIEWPORT_HEIGHT) {
+    if (lastStableHeight > 0 && tgStable < lastStableHeight * TRANSIENT_DROP_TOLERANCE) {
+      // Sharp drop relative to last good height — treat as mid-animation
+      // noise and hold. Real viewport changes (orientation flip, keyboard)
+      // are either much smaller deltas or come through orientationchange
+      // which resets the ratchet explicitly.
+      return lastStableHeight;
+    }
+    return tgStable;
+  }
+  if (winH >= MIN_USABLE_VIEWPORT_HEIGHT) return winH;
+  if (lastStableHeight > 0) return lastStableHeight;
+  return 0;
 };
 
 const syncTelegramViewport = () => {
@@ -292,11 +303,6 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       //    body while only the top of the app was visible.
       height: 'var(--tg-viewport-stable-height, 100dvh)',
       maxHeight: 'var(--tg-viewport-stable-height, 100dvh)',
-      // Belt-and-suspenders: if the JS-set CSS var ever briefly resolves to
-      // a too-small pixel value (transient TG read on a slow client, race
-      // between init and first paint), the Shell still covers the viewport
-      // and we don't bleed page background through the body area.
-      minHeight: '100dvh',
       // Horizontal safe-area for landscape mode on notched phones.
       paddingLeft: 'var(--sa-left)',
       paddingRight: 'var(--sa-right)',
