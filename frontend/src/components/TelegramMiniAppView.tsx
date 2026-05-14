@@ -198,7 +198,7 @@ const initTelegramApp = () => {
  * a fallback on regular browsers). The Shell respects the iOS notch / Android
  * gesture-nav safe-area insets so nothing hides behind them.
  */
-const BUILD_MARKER = 'v-root-4';
+const BUILD_MARKER = 'v-root-5';
 
 const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
@@ -465,6 +465,15 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   // silently in the background — they no longer rerender the whole
   // mini-app shell, which was flashing nav / upgrade visuals.
   const rewardsHadInitialLoad = useRef(false);
+  // `onRewardPointsUpdate` arrives as an inline closure from App.tsx
+  // and gets a new identity every parent render. Keeping it in
+  // loadRewardTasks' useCallback deps meant the effect at
+  // `useEffect(() => loadRewardTasks(), [loadRewardTasks])` re-ran on
+  // every parent render, triggering a fresh fetch + state update +
+  // shell rerender (= bottom-nav flash + upgrade flash). Holding the
+  // latest reference in a ref keeps `loadRewardTasks` identity stable.
+  const onRewardPointsUpdateRef = useRef(onRewardPointsUpdate);
+  useEffect(() => { onRewardPointsUpdateRef.current = onRewardPointsUpdate; }, [onRewardPointsUpdate]);
   const loadRewardTasks = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;
     const isFirstLoad = !rewardsHadInitialLoad.current;
@@ -489,7 +498,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
       const totalPoints = res.data?.totalPoints;
       if (typeof totalPoints === 'number') {
         setRewardPoints((prev) => (prev === totalPoints ? prev : totalPoints));
-        onRewardPointsUpdate?.(totalPoints);
+        onRewardPointsUpdateRef.current?.(totalPoints);
       }
     } catch {} finally {
       if (isFirstLoad) {
@@ -497,7 +506,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
         rewardsHadInitialLoad.current = true;
       }
     }
-  }, [isAuthenticated, user?.id, onRewardPointsUpdate]);
+  }, [isAuthenticated, user?.id]);
 
   const loadRewardHistory = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;

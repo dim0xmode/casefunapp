@@ -253,19 +253,48 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   useEffect(() => { setRewardPoints(user?.rewardPoints ?? 0); }, [user?.rewardPoints]);
 
+  // Refs keep loadRewardTasks identity stable even though the parent
+  // passes new inline closures every render (onRewardPointsUpdate)
+  // and rewardsLoading should only flash on first load — see the
+  // identical fix in TelegramMiniAppView.tsx for the full context.
+  const rewardsHadInitialLoad = useRef(false);
+  const onRewardPointsUpdateRef = useRef(onRewardPointsUpdate);
+  useEffect(() => { onRewardPointsUpdateRef.current = onRewardPointsUpdate; }, [onRewardPointsUpdate]);
+
   const loadRewardTasks = useCallback(async () => {
     if (!isEditable || !user?.id) return;
-    setRewardsLoading(true);
+    const isFirstLoad = !rewardsHadInitialLoad.current;
+    if (isFirstLoad) setRewardsLoading(true);
     try {
       const res = await api.getRewardTasks();
-      setRewardTasks(Array.isArray(res.data?.tasks) ? res.data.tasks : []);
-      if (typeof res.data?.totalPoints === 'number') {
-        setRewardPoints(res.data.totalPoints);
-        onRewardPointsUpdate?.(res.data.totalPoints);
+      setRewardTasks((prev) => {
+        const next = Array.isArray(res.data?.tasks) ? res.data.tasks : [];
+        if (prev.length === next.length) {
+          let identical = true;
+          for (let i = 0; i < prev.length; i += 1) {
+            const a = prev[i] as any;
+            const b = next[i] as any;
+            if (!a || !b || a.id !== b.id || a.claimed !== b.claimed || a.onCooldown !== b.onCooldown || a.locked !== b.locked) {
+              identical = false; break;
+            }
+          }
+          if (identical) return prev;
+        }
+        return next;
+      });
+      const totalPoints = res.data?.totalPoints;
+      if (typeof totalPoints === 'number') {
+        setRewardPoints((prev) => (prev === totalPoints ? prev : totalPoints));
+        onRewardPointsUpdateRef.current?.(totalPoints);
       }
     } catch { /* ignore */ }
-    finally { setRewardsLoading(false); }
-  }, [isEditable, user?.id, onRewardPointsUpdate]);
+    finally {
+      if (isFirstLoad) {
+        setRewardsLoading(false);
+        rewardsHadInitialLoad.current = true;
+      }
+    }
+  }, [isEditable, user?.id]);
 
   const loadRewardHistory = useCallback(async () => {
     if (!isEditable || !user?.id) return;
@@ -278,13 +307,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   useEffect(() => { loadRewardTasks(); }, [loadRewardTasks]);
   useEffect(() => { if (rewardsSubTab === 'history') loadRewardHistory(); }, [rewardsSubTab, loadRewardHistory]);
 
-  useEffect(() => {
-    const onFocus = () => { loadRewardTasks(); };
-    window.addEventListener('focus', onFocus);
-    const onVisible = () => { if (document.visibilityState === 'visible') loadRewardTasks(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onVisible); };
-  }, [loadRewardTasks]);
+  // focus / visibilitychange listeners removed: same reason as in
+  // TelegramMiniAppView — tapping tab buttons inside the TG WebView
+  // shifts focus and these fired a refetch + rewardsLoading flash on
+  // every Profile-tab visit, repainting the bottom nav.
 
   const handleClaimReward = async (taskId: string) => {
     setClaimingTaskId(taskId);
