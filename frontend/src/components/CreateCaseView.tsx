@@ -19,9 +19,39 @@ const RARITY_COLORS: Record<Rarity, string> = {
 interface DropDraft {
   id: string;
   value: string;
+  /** Display-only weight split; must sum to 100% (not sent to API). */
+  percent: string;
 }
 
+const evenPercentsForCount = (count: number): string[] => {
+  if (count <= 0) return [];
+  const base = Math.floor((10000 / count)) / 100;
+  let remaining = 100;
+  return Array.from({ length: count }, (_, i) => {
+    const pct = i === count - 1 ? remaining : base;
+    if (i !== count - 1) remaining -= base;
+    return pct.toFixed(2).replace(/\.?0+$/, '') || '0';
+  });
+};
+
+const parsePercent = (raw: string) => {
+  const n = Number(String(raw ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+};
+
+const sanitizePercentInput = (raw: string) => {
+  const next = sanitizeDecimalInput(raw, 2);
+  if (!next) return '';
+  const n = Number(next);
+  if (!Number.isFinite(n)) return next;
+  if (n > 100) return '100';
+  if (n < 0) return '0';
+  return next;
+};
+
 const CREATE_CASE_FEE = 1.5;
+/** User-facing label for the `rtu` field sent to the API (legacy name). */
+const LIQUIDITY_PERCENT_LABEL = 'Liquidity percentage';
 
 interface CreateCaseViewProps {
   onCreate: (caseData: Case) => void;
@@ -150,12 +180,25 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
       .replace(/[^A-Z0-9\s]/g, '')
       .replace(/^\s+/, '');
   const sanitizeToken = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const initialDropPercents = evenPercentsForCount(4);
   const [drops, setDrops] = useState<DropDraft[]>([
-    { id: 'drop-1', value: '' },
-    { id: 'drop-2', value: '' },
-    { id: 'drop-3', value: '' },
-    { id: 'drop-4', value: '' },
+    { id: 'drop-1', value: '', percent: initialDropPercents[0] ?? '25' },
+    { id: 'drop-2', value: '', percent: initialDropPercents[1] ?? '25' },
+    { id: 'drop-3', value: '', percent: initialDropPercents[2] ?? '25' },
+    { id: 'drop-4', value: '', percent: initialDropPercents[3] ?? '25' },
   ]);
+
+  const applyEvenPercents = (items: DropDraft[]): DropDraft[] => {
+    const percents = evenPercentsForCount(items.length);
+    return items.map((drop, i) => ({ ...drop, percent: percents[i] ?? drop.percent }));
+  };
+
+  const percentTotal = useMemo(
+    () => drops.reduce((sum, drop) => sum + parsePercent(drop.percent), 0),
+    [drops]
+  );
+  const percentTotalRounded = Math.round(percentTotal * 100) / 100;
+  const percentSumIs100 = Math.abs(percentTotalRounded - 100) < 0.05;
 
   const getRarityByValue = (value: number): Rarity => {
     if (value < 5) return Rarity.COMMON;
@@ -221,12 +264,12 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     return null;
   };
 
-  const validateRtu = (value: string) => {
+  const validateLiquidityPercent = (value: string) => {
     if (!value) return null;
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 'RTU must be a number.';
-    if (numeric <= 0) return 'RTU must be greater than 0.';
-    if (numeric > 98) return 'RTU must be 98% or lower.';
+    if (!Number.isFinite(numeric)) return `${LIQUIDITY_PERCENT_LABEL} must be a number.`;
+    if (numeric <= 0) return `${LIQUIDITY_PERCENT_LABEL} must be greater than 0.`;
+    if (numeric > 98) return `${LIQUIDITY_PERCENT_LABEL} must be 98% or lower.`;
     return null;
   };
 
@@ -235,18 +278,20 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const addDrop = () => {
     setDrops((prev) => {
       if (prev.length >= 10) return prev;
-      return [
+      const next = [
         ...prev,
         {
           id: `drop-${Date.now()}`,
           value: '',
+          percent: '',
         },
       ];
+      return applyEvenPercents(next);
     });
   };
 
   const removeDrop = (id: string) => {
-    setDrops((prev) => prev.filter((drop) => drop.id !== id));
+    setDrops((prev) => applyEvenPercents(prev.filter((drop) => drop.id !== id)));
   };
 
   const updateDrop = (id: string, patch: Partial<DropDraft>) => {
@@ -343,13 +388,17 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     };
   }, [priceValueNumber, rtuValueNumber, tokenPriceValueNumber, normalizedDrops]);
 
+  const percentError = !percentSumIs100
+    ? `Drop shares must total 100% (currently ${formatDecimal(percentTotalRounded)}%).`
+    : null;
+
   const dropsError = drops.length === 0
     ? 'Add at least one drop.'
     : drops.some((drop) => !drop.value || Number(drop.value) <= 0)
       ? (dropRangeHint ? null : 'Each drop must have a positive value.')
       : new Set(drops.map((drop) => Number(drop.value))).size !== drops.length
         ? 'Drop values must be unique.'
-        : null;
+        : percentError;
   const imageValidationError = !imageTrimmed
     ? 'Upload a case logo or choose an emoji.'
     : !imageIsValid
@@ -357,14 +406,15 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
       : null;
   const liveNameError = validateCaseName(normalizedName, normalizedTicker);
   const liveTickerError = validateTicker(normalizedTicker, normalizedName);
-  const liveRtuError = validateRtu(rtu);
+  const liveLiquidityError = validateLiquidityPercent(rtu);
   const validationMessages = [
     normalizedName ? liveNameError : 'Case name is required.',
     normalizedTicker ? liveTickerError : 'Token ticker is required.',
-    liveRtuError || (!rtu ? 'RTU is required.' : null),
+    liveLiquidityError || (!rtu ? `${LIQUIDITY_PERCENT_LABEL} is required.` : null),
     priceError,
     tokenPriceError,
     imageValidationError,
+    percentError,
     isImageUploading ? 'Wait for image upload to finish.' : null,
   ].filter((message): message is string => Boolean(message));
   const isCreateDisabled =
@@ -375,8 +425,9 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
     !tokenPrice ||
     Boolean(liveNameError) ||
     Boolean(liveTickerError) ||
-    Boolean(liveRtuError) ||
+    Boolean(liveLiquidityError) ||
     !dropsAreValid ||
+    !percentSumIs100 ||
     !imageIsValid ||
     isImageUploading ||
     isCreating ||
@@ -427,13 +478,19 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
       return;
     }
     if (!Number.isFinite(priceValue) || priceValue <= 0) return setSubmitError('Enter a valid open price.');
-    const rtuValidation = validateRtu(rtu);
-    if (rtuValidation) {
-      setSubmitError(rtuValidation);
-      setRtuError(rtuValidation);
+    if (!percentSumIs100) {
+      setSubmitError(`Drop shares must total exactly 100% (currently ${formatDecimal(percentTotalRounded)}%).`);
       return;
     }
-    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) return setSubmitError('Enter a valid RTU (>0 and <=98).');
+    const liquidityValidation = validateLiquidityPercent(rtu);
+    if (liquidityValidation) {
+      setSubmitError(liquidityValidation);
+      setRtuError(liquidityValidation);
+      return;
+    }
+    if (!Number.isFinite(rtuValue) || rtuValue <= 0 || rtuValue > 98) {
+      return setSubmitError(`Enter a valid ${LIQUIDITY_PERCENT_LABEL.toLowerCase()} (>0 and <=98).`);
+    }
     if (!Number.isFinite(tokenPriceValue) || tokenPriceValue <= 0) return setSubmitError('Enter a valid token price.');
     if (drops.length === 0) return setSubmitError('Add at least one drop.');
     if (drops.some((drop) => !drop.value || Number(drop.value) <= 0)) {
@@ -648,13 +705,13 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                 )}
               </label>
               <label className="space-y-2">
-                <div className="text-xs uppercase tracking-widest text-gray-500">RTU %</div>
+                <div className="text-xs uppercase tracking-widest text-gray-500">{LIQUIDITY_PERCENT_LABEL}</div>
                 <input
                   type="number"
                   value={rtu}
                   onChange={(e) => {
                     setRtu(e.target.value);
-                    setRtuError(validateRtu(e.target.value));
+                    setRtuError(validateLiquidityPercent(e.target.value));
                   }}
                   min={1}
                   step={0.01}
@@ -816,7 +873,7 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               </div>
               <div className="px-4 py-2 rounded-xl text-xs bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm">
                 <span className="font-bold text-gray-200">{price || '—'} ₮</span>
-                <span className="text-gray-500"> • RTU {rtu || '—'}%</span>
+                <span className="text-gray-500"> • Liquidity {rtu || '—'}%</span>
               </div>
               <div className="text-xs text-gray-500">Duration {formatDuration(openDurationHours)} • 1 ${tokenTicker || 'TOKEN'} = {tokenPrice || '—'}</div>
             </div>
@@ -854,6 +911,24 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
             </button>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div
+              className={`text-[11px] uppercase tracking-widest ${
+                percentSumIs100 ? 'text-web3-success' : 'text-red-400'
+              }`}
+            >
+              Drop share total: {formatDecimal(percentTotalRounded)}%
+              {!percentSumIs100 && ' — must be 100% to create'}
+            </div>
+            <button
+              type="button"
+              onClick={() => setDrops((prev) => applyEvenPercents(prev))}
+              className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-white px-2 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03]"
+            >
+              Split evenly
+            </button>
+          </div>
+
           {isTelegramMiniApp ? (
             <div className="space-y-2">
               {drops.map((drop, index) => (
@@ -879,6 +954,19 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  <div className="mt-2 flex items-center gap-2 pl-10">
+                    <span className="text-[10px] uppercase tracking-widest text-gray-500 shrink-0">Share</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drop.percent}
+                      onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
+                      className="flex-1 max-w-[88px] px-3 py-1.5 rounded-lg bg-black/35 border border-white/[0.12] text-sm text-center"
+                      placeholder="0"
+                      aria-label={`Drop ${index + 1} percent`}
+                    />
+                    <span className="text-sm text-gray-400">%</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -901,6 +989,19 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                       className="px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl"
                       placeholder="e.g. 100"
                     />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-widest text-gray-500 shrink-0">Share</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drop.percent}
+                        onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
+                        className="flex-1 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl text-center"
+                        placeholder="0"
+                        aria-label="Drop percent share"
+                      />
+                      <span className="text-sm text-gray-400">%</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -932,9 +1033,26 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
             <div className="mt-6">
               <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Drops Preview</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {normalizedDrops.map((drop) => (
-                  <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
-                ))}
+                {normalizedDrops.map((drop) => {
+                  const draft = drops.find((entry) => entry.id === drop.id);
+                  return (
+                    <div key={drop.id} className="flex flex-col items-center gap-2">
+                      <ItemCard item={drop} size="md" currencyPrefix="$" />
+                      <div className="flex items-center gap-1.5 w-full max-w-[140px]">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={draft?.percent ?? ''}
+                          onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
+                          className="flex-1 px-2 py-1.5 rounded-lg bg-black/30 border border-white/[0.12] text-sm text-center"
+                          placeholder="0"
+                          aria-label="Drop percent share"
+                        />
+                        <span className="text-xs text-gray-400">%</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               {rtuHelper && (
                 <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${

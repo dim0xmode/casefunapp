@@ -194,12 +194,6 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
                   <div className="text-[10px] uppercase tracking-widest text-gray-500">Battles Used</div>
                   <div className="text-lg font-black">{caseData.stats.battlesUsed}</div>
                 </div>
-                <div className="bg-black/30 border border-white/[0.08] rounded-xl p-4">
-                  <div className="text-[10px] uppercase tracking-widest text-gray-500">Actual RTU</div>
-                  <div className="text-lg font-black">
-                    {caseData.stats.actualRtu != null ? `${caseData.stats.actualRtu.toFixed(1)}%` : '—'}
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="text-xs uppercase tracking-widest text-gray-500">No statistics yet</div>
@@ -283,14 +277,10 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
 
         {/* Open Button and Side Controls */}
         <div className={`${isTelegramMiniApp ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-[1fr_auto_1fr] items-center gap-2'} max-w-6xl mx-auto`}>
-          {/* Left Side: Price and RTU */}
+          {/* Left Side: open price */}
           <div className={`flex items-center gap-2 ${isTelegramMiniApp ? 'justify-center' : 'justify-end'}`}>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
               <span className="text-xs font-bold text-gray-300">{formatDecimal(Number(cost))} ₮</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-web3-card/50 border border-gray-700/50 backdrop-blur-sm h-[42px]">
-              <span className="text-xs font-bold text-gray-400">RTU</span>
-              <span className="text-xs font-bold text-gray-300">{caseData.rtu}%</span>
             </div>
           </div>
 

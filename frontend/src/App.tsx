@@ -2574,7 +2574,7 @@ const App = () => {
                 </div>
               </div>
               <div className="px-3 py-1 rounded-full text-xs bg-web3-accent/10 border border-web3-accent/30">
-                {createdCaseNotice.price} ₮ • RTU {createdCaseNotice.rtu}%
+                {createdCaseNotice.price} ₮ • Liquidity {createdCaseNotice.rtu}%
               </div>
               {createdCaseNotice.tokenAddress && (
                 <div className="w-full mt-2 text-[10px] uppercase tracking-widest text-gray-400">
