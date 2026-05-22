@@ -971,37 +971,52 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 justify-items-start">
-              {drops.map((drop) => (
-                <div key={drop.id} className="bg-black/25 border border-white/[0.12] backdrop-blur-xl p-3 rounded-xl w-full max-w-[180px]">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs uppercase tracking-widest text-gray-500">Drop</div>
-                    <button onClick={() => removeDrop(drop.id)} className="text-gray-500 hover:text-web3-danger">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {drops.map((drop, index) => (
+                <div
+                  key={drop.id}
+                  className="bg-black/25 border border-white/[0.12] backdrop-blur-xl p-3 rounded-xl w-full min-w-0"
+                >
+                  <div className="flex items-center justify-between mb-3 gap-2">
+                    <div className="text-xs uppercase tracking-widest text-gray-500">Drop {index + 1}</div>
+                    <button
+                      type="button"
+                      onClick={() => removeDrop(drop.id)}
+                      className="shrink-0 text-gray-500 hover:text-web3-danger"
+                      aria-label="Remove drop"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 gap-3">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drop.value}
-                      onChange={(e) => updateDrop(drop.id, { value: sanitizeDecimalInput(e.target.value) })}
-                      className="px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl"
-                      placeholder="e.g. 100"
-                    />
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] uppercase tracking-widest text-gray-500 shrink-0">Share</span>
+                  <div className="flex flex-col gap-3 min-w-0">
+                    <label className="flex flex-col gap-1 min-w-0">
+                      <span className="text-[10px] uppercase tracking-widest text-gray-500">Value</span>
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={drop.percent}
-                        onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
-                        className="flex-1 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl text-center"
-                        placeholder="0"
-                        aria-label="Drop percent share"
+                        value={drop.value}
+                        onChange={(e) => updateDrop(drop.id, { value: sanitizeDecimalInput(e.target.value) })}
+                        className="w-full min-w-0 px-3 py-2 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl text-sm"
+                        placeholder="e.g. 100"
                       />
-                      <span className="text-sm text-gray-400">%</span>
-                    </div>
+                    </label>
+                    <label className="flex flex-col gap-1 min-w-0">
+                      <span className="text-[10px] uppercase tracking-widest text-gray-500">Share %</span>
+                      <div className="relative w-full min-w-0">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={drop.percent}
+                          onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
+                          className="w-full min-w-0 px-3 py-2 pr-8 rounded-lg bg-black/30 border border-white/[0.12] backdrop-blur-xl text-sm text-center"
+                          placeholder="0"
+                          aria-label={`Drop ${index + 1} percent share`}
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                          %
+                        </span>
+                      </div>
+                    </label>
                   </div>
                 </div>
               ))}
@@ -1033,26 +1048,9 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
             <div className="mt-6">
               <div className="text-xs uppercase tracking-widest text-gray-500 mb-3">Drops Preview</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {normalizedDrops.map((drop) => {
-                  const draft = drops.find((entry) => entry.id === drop.id);
-                  return (
-                    <div key={drop.id} className="flex flex-col items-center gap-2">
-                      <ItemCard item={drop} size="md" currencyPrefix="$" />
-                      <div className="flex items-center gap-1.5 w-full max-w-[140px]">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={draft?.percent ?? ''}
-                          onChange={(e) => updateDrop(drop.id, { percent: sanitizePercentInput(e.target.value) })}
-                          className="flex-1 px-2 py-1.5 rounded-lg bg-black/30 border border-white/[0.12] text-sm text-center"
-                          placeholder="0"
-                          aria-label="Drop percent share"
-                        />
-                        <span className="text-xs text-gray-400">%</span>
-                      </div>
-                    </div>
-                  );
-                })}
+                {normalizedDrops.map((drop) => (
+                  <ItemCard key={drop.id} item={drop} size="md" currencyPrefix="$" />
+                ))}
               </div>
               {rtuHelper && (
                 <div className={`mt-3 rounded-xl border px-3 py-2 text-[11px] uppercase tracking-widest ${
