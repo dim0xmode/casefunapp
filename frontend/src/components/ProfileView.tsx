@@ -1881,15 +1881,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
                               </button>
                               )}
-                              {!isTonCase && tokenAddress && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddTokenToWallet(caseInfo)}
-                                  className="w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
-                                >
-                                  + Wallet
-                                </button>
-                              )}
                             </div>
                           );
                         })}
@@ -1942,15 +1933,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               >
                                 {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
                               </button>
-                              )}
-                              {!isTonCase && tokenAddress && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddTokenToWallet(caseInfo)}
-                                  className="w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
-                                >
-                                  Add token to wallet
-                                </button>
                               )}
                             </div>
                           );
