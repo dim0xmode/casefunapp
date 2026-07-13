@@ -1982,14 +1982,46 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="grid grid-cols-4 gap-2">
                         {pagedClaimed.map((item, index) => {
                           if (!item || !item.id) return null;
-                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" compactContent className={miniUpgradeIconCardClass} />;
+                          const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+                          const tokenAddress = caseInfo?.tokenAddress || '';
+                          const isTonCase = caseInfo?.chainType === 'TON';
+                          return (
+                            <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-1">
+                              <ItemCard item={item} size="sm" currencyPrefix="$" compactContent className={miniUpgradeIconCardClass} />
+                              {!isTonCase && tokenAddress && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddTokenToWallet(caseInfo)}
+                                  className="w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
+                                >
+                                  + Wallet
+                                </button>
+                              )}
+                            </div>
+                          );
                         })}
                       </div>
                     ) : (
                       <ItemGrid className="auto-rows-max gap-3">
                         {pagedClaimed.map((item, index) => {
                           if (!item || !item.id) return null;
-                          return <ItemCard key={`${item.id}-${index}`} item={item} size="sm" currencyPrefix="$" />;
+                          const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+                          const tokenAddress = caseInfo?.tokenAddress || '';
+                          const isTonCase = caseInfo?.chainType === 'TON';
+                          return (
+                            <div key={`${item.id}-${index}`} className="flex flex-col items-center gap-2">
+                              <ItemCard item={item} size="sm" currencyPrefix="$" />
+                              {!isTonCase && tokenAddress && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddTokenToWallet(caseInfo)}
+                                  className="w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
+                                >
+                                  Add token to wallet
+                                </button>
+                              )}
+                            </div>
+                          );
                         })}
                       </ItemGrid>
                     )}
