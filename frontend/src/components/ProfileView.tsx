@@ -494,18 +494,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     for (const item of claimedItems) {
       if (!item) continue;
       const currencyKey = item.currency || 'UNKNOWN';
-      const existing = groups.get(currencyKey);
+      // Group by the actual on-chain token (address), NOT the ticker. Two
+      // different tokens can share the same ticker (e.g. two "$BOT" cases) but
+      // are distinct contracts with distinct balances — merging them by ticker
+      // would show a wrong combined amount and break "add token to wallet".
+      const caseInfo = item.caseId ? casesById.get(item.caseId) : undefined;
+      const tokenAddr = (caseInfo?.tokenAddress || (caseInfo as any)?.tonTokenAddress || '').toLowerCase();
+      const groupKey = tokenAddr ? `addr:${tokenAddr}` : `cur:${currencyKey}`;
+      const existing = groups.get(groupKey);
       if (!existing) {
-        groups.set(currencyKey, {
+        groups.set(groupKey, {
           ...item,
-          id: `claimed-${currencyKey}`,
+          id: `claimed-${groupKey}`,
           name: `${Number(item.value || 0)} ${currencyKey}`,
           value: Number(item.value || 0),
           count: 1,
         });
       } else {
         const nextValue = Number(existing.value || 0) + Number(item.value || 0);
-        groups.set(currencyKey, {
+        groups.set(groupKey, {
           ...existing,
           value: nextValue,
           name: `${nextValue} ${currencyKey}`,
@@ -519,7 +526,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       const bValue = Number(b?.value) || 0;
       return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
     });
-  }, [claimedItems, sortOrder]);
+  }, [claimedItems, sortOrder, casesById]);
 
   const formatAddress = (address?: string | null) => {
     if (!address) return '';
