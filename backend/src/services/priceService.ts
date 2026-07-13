@@ -12,6 +12,8 @@ let cachedPrice: { value: NativePrice; expiresAt: number } | null = null;
 let inflightPriceFetch: Promise<NativePrice | null> | null = null;
 let cachedTonPrice: { value: NativePrice; expiresAt: number } | null = null;
 let inflightTonPriceFetch: Promise<NativePrice | null> | null = null;
+let cachedBotPrice: { value: NativePrice; expiresAt: number } | null = null;
+let inflightBotPriceFetch: Promise<NativePrice | null> | null = null;
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   return await Promise.race<T>([
@@ -111,4 +113,56 @@ export const getTonUsdPrice = async (): Promise<NativePrice | null> => {
   })();
 
   return inflightTonPriceFetch;
+};
+
+// The BOT testnet coin has no market price of its own; we value it using the
+// market price of Wrapped BOT (WBOT), which is what trades on-chain. In the UI
+// the asset is still labeled simply "BOT".
+const BOT_PRICE_FALLBACK = 9.7; // ~$9.7 per WBOT — used if CoinGecko unavailable.
+
+/**
+ * Fetch BOT/USD price (via Wrapped BOT, CoinGecko id `wrapped-bot`).
+ * Cached for 10s. Falls back to a sane default so testnet top-ups keep
+ * working when CoinGecko is unavailable or rate-limited.
+ */
+export const getBotUsdPrice = async (): Promise<NativePrice | null> => {
+  const now = Date.now();
+  if (cachedBotPrice && cachedBotPrice.expiresAt > now) {
+    return cachedBotPrice.value;
+  }
+  if (inflightBotPriceFetch) {
+    return inflightBotPriceFetch;
+  }
+
+  inflightBotPriceFetch = (async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS);
+      try {
+        const resp = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=wrapped-bot&vs_currencies=usd',
+          { signal: controller.signal }
+        );
+        if (!resp.ok) throw new Error(`coingecko_${resp.status}`);
+        const data: any = await resp.json();
+        const price = Number(data?.['wrapped-bot']?.usd);
+        if (!Number.isFinite(price) || price <= 0) throw new Error('invalid_price');
+
+        const next: NativePrice = { price, updatedAt: Date.now() };
+        cachedBotPrice = { value: next, expiresAt: Date.now() + PRICE_CACHE_TTL_MS };
+        return next;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      if (cachedBotPrice?.value) return cachedBotPrice.value;
+      const fallback: NativePrice = { price: BOT_PRICE_FALLBACK, updatedAt: Date.now() };
+      cachedBotPrice = { value: fallback, expiresAt: Date.now() + PRICE_CACHE_TTL_MS };
+      return fallback;
+    } finally {
+      inflightBotPriceFetch = null;
+    }
+  })();
+
+  return inflightBotPriceFetch;
 };

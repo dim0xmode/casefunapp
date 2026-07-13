@@ -81,13 +81,16 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
 
   const chainBadge = (chainType?: string) => {
     const isTon = chainType === 'TON';
+    const isBot = chainType === 'BOT';
     return (
       <span className={`absolute top-1.5 right-1.5 z-20 px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-wider border ${
         isTon
           ? 'bg-blue-500/20 border-blue-400/40 text-blue-300'
-          : 'bg-purple-500/20 border-purple-400/40 text-purple-300'
+          : isBot
+            ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+            : 'bg-purple-500/20 border-purple-400/40 text-purple-300'
       }`}>
-        {isTon ? 'TON' : 'EVM'}
+        {isTon ? 'TON' : isBot ? 'BOT' : 'EVM'}
       </span>
     );
   };

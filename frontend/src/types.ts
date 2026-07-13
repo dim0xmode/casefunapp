@@ -39,7 +39,7 @@ export interface Case {
   imageMeta?: ImageMeta;
   tokenAddress?: string;
   tonTokenAddress?: string;
-  chainType?: 'EVM' | 'TON';
+  chainType?: 'EVM' | 'TON' | 'BOT';
   tokenDecimals?: number;
   mintedAt?: number;
   totalSupply?: number;

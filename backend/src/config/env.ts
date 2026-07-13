@@ -19,6 +19,18 @@ export const config = {
   treasuryPrivateKey: process.env.TREASURY_PRIVATE_KEY || process.env.PRIVATE_KEY || '',
   treasuryPayoutAddress: process.env.TREASURY_PAYOUT_ADDRESS || '',
   confirmations: parseInt(process.env.CONFIRMATIONS || '1', 10),
+  // BOT Chain (Bohr testnet) — EVM-compatible L1, Chain ID 968.
+  botRpcUrl: process.env.BOT_RPC_URL || '',
+  botChainId: parseInt(process.env.BOT_CHAIN_ID || '968', 10),
+  botTreasuryAddress: process.env.BOT_TREASURY_ADDRESS || '',
+  botTokenFactoryAddress: process.env.BOT_TOKEN_FACTORY_ADDRESS || '',
+  botTreasuryPrivateKey:
+    process.env.BOT_TREASURY_PRIVATE_KEY ||
+    process.env.TREASURY_PRIVATE_KEY ||
+    process.env.PRIVATE_KEY ||
+    '',
+  botTreasuryPayoutAddress: process.env.BOT_TREASURY_PAYOUT_ADDRESS || '',
+  botConfirmations: parseInt(process.env.BOT_CONFIRMATIONS || process.env.CONFIRMATIONS || '1', 10),
   twitterClientId: process.env.TWITTER_CLIENT_ID || '',
   twitterClientSecret: process.env.TWITTER_CLIENT_SECRET || '',
   twitterRedirectUri: process.env.TWITTER_REDIRECT_URI || '',
@@ -59,3 +71,12 @@ if (config.telegramAuthClientId && !config.telegramAuthClientSecret) {
 
 export const isDevelopment = config.nodeEnv === 'development';
 export const isProduction = config.nodeEnv === 'production';
+
+/** True when BOT Chain (Bohr testnet) is fully configured and usable. */
+export const botConfigured = Boolean(
+  config.botRpcUrl && config.botTreasuryAddress && config.botTokenFactoryAddress,
+);
+
+if (config.botRpcUrl && (!config.botTreasuryAddress || !config.botTokenFactoryAddress)) {
+  console.warn('⚠️  WARNING: BOT Chain config is incomplete (BOT_TREASURY/BOT_TOKEN_FACTORY).');
+}

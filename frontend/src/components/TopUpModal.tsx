@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { addPendingDepositHash, getPendingDepositHashes, removePendingDepositHash } from '../utils/pendingDeposits';
 import { sanitizeDecimalInput } from '../utils/number';
 
-type ChainTab = 'EVM' | 'TON';
+type ChainTab = 'EVM' | 'TON' | 'BOT';
 
 interface TopUpModalProps {
   isOpen: boolean;
@@ -38,11 +38,13 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 }) => {
   const [chain, setChain] = useState<ChainTab>('EVM');
 
-  // EVM state
+  // EVM-family state (shared by EVM + BOT — both are native EVM sends).
   const [usdtAmount, setUsdtAmount] = useState('');
   const [ethAmount, setEthAmount] = useState('');
   const [price, setPrice] = useState<number | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [botPrice, setBotPrice] = useState<number | null>(null);
+  const [botPriceError, setBotPriceError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [pendingHash, setPendingHash] = useState<string | null>(null);
@@ -64,8 +66,29 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const treasuryAddress = String(import.meta.env.VITE_TREASURY_ADDRESS || '');
   const rpcUrl = String(import.meta.env.VITE_RPC_URL || '');
   const explorerUrl = String(import.meta.env.VITE_EXPLORER_URL || '');
+  const botChainId = Number(import.meta.env.VITE_BOT_CHAIN_ID || 968);
+  const botTreasuryAddress = String(import.meta.env.VITE_BOT_TREASURY_ADDRESS || '');
+  const botRpcUrl = String(import.meta.env.VITE_BOT_RPC_URL || 'https://rpc.bohr.life');
+  const botExplorerUrl = String(import.meta.env.VITE_BOT_EXPLORER_URL || 'https://scan.bohr.life');
   const sepoliaFaucetUrl = 'https://sepolia-faucet.pk910.de/';
+  const botFaucetUrl = 'https://faucet.botchain.ai/basic';
   const tonFaucetUrl = 'https://t.me/testgiver_ton_bot';
+
+  // Active EVM-family chain config (EVM or BOT). Both share the same native
+  // send + confirm/scan flow; only the network + price source differ.
+  const isBot = chain === 'BOT';
+  const evmChainId = isBot ? botChainId : chainId;
+  const evmTreasury = isBot ? botTreasuryAddress : treasuryAddress;
+  const evmRpcUrl = isBot ? botRpcUrl : rpcUrl;
+  const evmExplorerUrl = isBot ? botExplorerUrl : explorerUrl;
+  const evmPrice = isBot ? botPrice : price;
+  const evmPriceError = isBot ? botPriceError : priceError;
+  const evmChainName = isBot ? 'BOT Chain Testnet' : 'Sepolia';
+  const evmNativeSymbol = isBot ? 'BOT' : 'ETH';
+  const evmNativeCurrency = isBot
+    ? { name: 'BOT', symbol: 'BOT', decimals: 18 }
+    : { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 };
+  const evmFaucetUrl = isBot ? botFaucetUrl : sepoliaFaucetUrl;
 
   const parsedUsdt = useMemo(() => Number(usdtAmount.replace(/,/g, '.').trim()), [usdtAmount]);
   const parsedEth = useMemo(() => Number(ethAmount.replace(/,/g, '.').trim()), [ethAmount]);
@@ -98,6 +121,23 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     return () => { active = false; };
   }, [isOpen]);
 
+  // Load BOT price (via Wrapped BOT).
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    setBotPriceError(null);
+    api.getBotPrice()
+      .then((response) => {
+        if (!active) return;
+        if (response.data?.price) setBotPrice(response.data.price);
+      })
+      .catch(() => {
+        if (!active) return;
+        setBotPriceError('BOT price feed unavailable');
+      });
+    return () => { active = false; };
+  }, [isOpen]);
+
   // Load TON price + treasury address.
   useEffect(() => {
     if (!isOpen) return;
@@ -121,11 +161,12 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (price && Number.isFinite(parsedUsdt) && parsedUsdt > 0) {
-      const nextEth = parsedUsdt / price;
+    if (chain === 'TON') return;
+    if (evmPrice && Number.isFinite(parsedUsdt) && parsedUsdt > 0) {
+      const nextEth = parsedUsdt / evmPrice;
       setEthAmount(nextEth.toFixed(6));
     }
-  }, [price]);
+  }, [evmPrice, chain]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -143,9 +184,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     if (safeInitial <= 0) return;
     setUsdtAmount(safeInitial.toFixed(2));
     setTonUsdtAmount(safeInitial.toFixed(2));
-    if (price && price > 0) setEthAmount((safeInitial / price).toFixed(6));
+    if (evmPrice && evmPrice > 0) setEthAmount((safeInitial / evmPrice).toFixed(6));
     if (tonPrice && tonPrice > 0) setTonNativeAmount((safeInitial / tonPrice).toFixed(4));
-  }, [isOpen, initialUsdtAmount, price, tonPrice]);
+  }, [isOpen, initialUsdtAmount, evmPrice, tonPrice]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -168,10 +209,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
   const ensureChain = async () => {
     const provider = resolveProvider();
     if (!provider) return false;
-    const targetHex = `0x${chainId.toString(16)}`;
+    const targetHex = `0x${evmChainId.toString(16)}`;
     try {
       const current = await provider.request({ method: 'eth_chainId' });
-      if (current === targetHex || Number(current) === chainId) return true;
+      if (current === targetHex || Number(current) === evmChainId) return true;
       await provider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: targetHex }],
@@ -185,10 +226,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
           params: [
             {
               chainId: targetHex,
-              chainName: 'Sepolia',
-              rpcUrls: rpcUrl ? [rpcUrl] : [],
-              nativeCurrency: { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 },
-              blockExplorerUrls: explorerUrl ? [explorerUrl] : [],
+              chainName: evmChainName,
+              rpcUrls: evmRpcUrl ? [evmRpcUrl] : [],
+              nativeCurrency: evmNativeCurrency,
+              blockExplorerUrls: evmExplorerUrl ? [evmExplorerUrl] : [],
             },
           ],
         });
@@ -203,26 +244,26 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     const next = sanitizeDecimalInput(value, 6);
     setUsdtAmount(next);
     setStatusMessage(null);
-    if (!price) return;
+    if (!evmPrice) return;
     const numeric = Number(next);
     if (!Number.isFinite(numeric) || numeric <= 0) {
       setEthAmount('');
       return;
     }
-    setEthAmount((numeric / price).toFixed(6));
+    setEthAmount((numeric / evmPrice).toFixed(6));
   };
 
   const handleEthChange = (value: string) => {
     const next = sanitizeDecimalInput(value, 6);
     setEthAmount(next);
     setStatusMessage(null);
-    if (!price) return;
+    if (!evmPrice) return;
     const numeric = Number(next);
     if (!Number.isFinite(numeric) || numeric <= 0) {
       setUsdtAmount('');
       return;
     }
-    setUsdtAmount((numeric * price).toFixed(2));
+    setUsdtAmount((numeric * evmPrice).toFixed(2));
   };
 
   const handleTonUsdtChange = (value: string) => {
@@ -253,7 +294,9 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
   const confirmDeposit = async (txHash: string) => {
     try {
-      const response = await api.confirmDeposit(txHash);
+      const response = isBot
+        ? await api.confirmBotDeposit(txHash)
+        : await api.confirmDeposit(txHash);
       if (response.data?.pending) {
         setPendingHash(txHash);
         setStatusMessage(`Waiting confirmations (${response.data.confirmations || 0})`);
@@ -297,7 +340,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       );
       return;
     }
-    if (!treasuryAddress) {
+    if (!evmTreasury) {
       setStatusMessage('Treasury address is missing');
       return;
     }
@@ -307,7 +350,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     try {
       const ok = await ensureChain();
       if (!ok) {
-        setStatusMessage('Switch to Sepolia to continue');
+        setStatusMessage(`Switch to ${evmChainName} to continue`);
         return;
       }
       const ethProvider = new BrowserProvider(activeProvider);
@@ -324,7 +367,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         return;
       }
       const tx = await signer.sendTransaction({
-        to: treasuryAddress,
+        to: evmTreasury,
         value: parseEther(rawEth),
       });
       setPendingHash(tx.hash);
@@ -466,7 +509,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
         <div className="text-xs uppercase tracking-widest text-gray-400 mb-4">Top up balance</div>
 
         <div className="flex gap-1 mb-4 bg-black/30 rounded-xl p-1">
-          {(['EVM', 'TON'] as ChainTab[]).map((c) => (
+          {(['EVM', 'TON', 'BOT'] as ChainTab[]).map((c) => (
             <button
               key={c}
               type="button"
@@ -475,12 +518,12 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                 chain === c ? 'bg-web3-accent text-black' : 'text-gray-400 hover:text-white'
               }`}
             >
-              {c === 'EVM' ? 'EVM (ETH)' : 'TON'}
+              {c === 'EVM' ? 'EVM (ETH)' : c === 'TON' ? 'TON' : 'BOT'}
             </button>
           ))}
         </div>
 
-        {chain === 'EVM' && (
+        {(chain === 'EVM' || chain === 'BOT') && (
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isAuthenticated && (
               <div className="text-[11px] uppercase tracking-widest text-gray-500">
@@ -489,7 +532,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
             )}
             {isAuthenticated && !hasLinkedEvmWallet && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200">
-                Link your EVM wallet first to deposit ETH.
+                Link your EVM wallet first to deposit {evmNativeSymbol}.
                 {onLinkEvmWallet && (
                   <button type="button" onClick={onLinkEvmWallet} className="ml-2 underline text-amber-100">Link now</button>
                 )}
@@ -508,10 +551,10 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
                   </div>
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-gray-500">You pay</div>
-                    <div className="text-sm font-bold text-white">ETH (Sepolia)</div>
+                    <div className="text-sm font-bold text-white">{evmNativeSymbol} ({isBot ? 'BOT Chain' : 'Sepolia'})</div>
                     <div className="text-[10px] text-gray-400 mt-1">
-                      Need test ETH? Use{' '}
-                      <a href={sepoliaFaucetUrl} target="_blank" rel="noreferrer" className="text-web3-accent hover:text-white transition underline decoration-dotted">
+                      Need test {evmNativeSymbol}? Use{' '}
+                      <a href={evmFaucetUrl} target="_blank" rel="noreferrer" className="text-web3-accent hover:text-white transition underline decoration-dotted">
                         faucet
                       </a>.
                     </div>
@@ -548,7 +591,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
               </div>
             </div>
             <div className="text-[10px] uppercase tracking-widest text-gray-500">
-              {price ? `1 ETH ≈ ${price.toFixed(2)} ₮` : priceError || 'Loading price...'}
+              {evmPrice ? `1 ${evmNativeSymbol} ≈ ${evmPrice.toFixed(2)} ₮` : evmPriceError || 'Loading price...'}
             </div>
             {statusMessage && (
               <div className="text-[11px] uppercase tracking-widest text-gray-400">{statusMessage}</div>

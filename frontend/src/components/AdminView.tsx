@@ -138,6 +138,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
 
   const PAGE_SIZE = 12;
   const explorerBase = (import.meta as any).env?.VITE_EXPLORER_URL || 'https://sepolia.etherscan.io';
+  const botExplorerBase = (import.meta as any).env?.VITE_BOT_EXPLORER_URL || 'https://scan.bohr.life';
+  const explorerFor = (chainType?: string) =>
+    (chainType === 'BOT' ? botExplorerBase : explorerBase).replace(/\/$/, '');
 
   const sortList = (items: any[], key: string, dir: 'asc' | 'desc') => {
     const sorted = [...items].sort((a, b) => {
@@ -817,6 +820,51 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                 )}
               </div>
 
+              <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
+                <div className="text-xs uppercase tracking-widest text-gray-500 mb-2 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  BOT Chain Treasury
+                </div>
+                {overview?.botTreasury?.configured === false ? (
+                  <div className="text-xs text-yellow-400/80">
+                    BOT Chain is not configured. Set BOT_RPC_URL / BOT_TREASURY_ADDRESS / BOT_TOKEN_FACTORY_ADDRESS in backend env to enable BOT cases & claims.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2 md:col-span-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Gas Wallet</div>
+                      <div className="text-gray-300 font-mono truncate" title={overview?.botTreasury?.address || ''}>
+                        {overview?.botTreasury?.address ? shortWallet(overview.botTreasury.address) : '-'}
+                      </div>
+                    </div>
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Balance BOT</div>
+                      <div className={`font-bold ${
+                        overview?.botTreasury?.isLow === true ? 'text-red-400' : 'text-web3-success'
+                      }`}>
+                        {overview?.botTreasury?.botBalance == null ? '-' : formatCrypto(overview.botTreasury.botBalance)}
+                      </div>
+                    </div>
+                    <div className="bg-black/20 border border-white/[0.06] rounded-lg p-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-500">Status</div>
+                      <div className={`font-bold ${
+                        overview?.botTreasury?.rpcConnected === false
+                          ? 'text-yellow-400'
+                          : overview?.botTreasury?.isLow
+                          ? 'text-red-400'
+                          : 'text-web3-success'
+                      }`}>
+                        {overview?.botTreasury?.rpcConnected === false
+                          ? 'RPC Offline'
+                          : overview?.botTreasury?.isLow
+                          ? `LOW (< ${Number(overview?.botTreasury?.lowThresholdBot || 0.03).toFixed(3)} BOT)`
+                          : 'OK'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="bg-black/30 border border-white/[0.08] rounded-xl p-3">
                   <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Top Spenders</div>
@@ -1095,12 +1143,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="font-mono truncate">{`${payoutTxHash.slice(0, 10)}...${payoutTxHash.slice(-8)}`}</span>
                                 <a
-                                  href={`${explorerBase.replace(/\/$/, '')}/tx/${payoutTxHash}`}
+                                  href={`${explorerFor((caseItem as any).chainType)}/tx/${payoutTxHash}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-web3-accent hover:text-white transition uppercase tracking-widest text-[10px]"
                                 >
-                                  Etherscan
+                                  {(caseItem as any).chainType === 'BOT' ? 'Explorer' : 'Etherscan'}
                                 </a>
                               </div>
                             ) : (
@@ -1782,8 +1830,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
           {!loading && !error && activeTab === 'rewards' && (
             <div className="space-y-4">
               {(() => {
-                const DEPOSIT_AMOUNT_TYPES_FE = ['DEPOSIT_AMOUNT_EVM','DEPOSIT_AMOUNT_TON'];
-                const DEPOSIT_COUNT_TYPES_FE = ['DEPOSIT_COUNT_ANY','DEPOSIT_COUNT_EVM','DEPOSIT_COUNT_TON'];
+                const DEPOSIT_AMOUNT_TYPES_FE = ['DEPOSIT_AMOUNT_EVM','DEPOSIT_AMOUNT_TON','DEPOSIT_AMOUNT_BOT'];
+                const DEPOSIT_COUNT_TYPES_FE = ['DEPOSIT_COUNT_ANY','DEPOSIT_COUNT_EVM','DEPOSIT_COUNT_TON','DEPOSIT_COUNT_BOT'];
                 const COUNT_TYPES_FE = ['OPEN_CASES','OPEN_SPECIFIC_CASE','DO_UPGRADES','CREATE_BATTLES','JOIN_BATTLES','CLAIM_TOKENS','CREATE_CASES', ...DEPOSIT_COUNT_TYPES_FE];
                 const isCaseFun = [...COUNT_TYPES_FE, ...DEPOSIT_AMOUNT_TYPES_FE].includes(newRewardTask.type);
                 const isAmountTask = DEPOSIT_AMOUNT_TYPES_FE.includes(newRewardTask.type);
@@ -1869,9 +1917,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
                       <optgroup label="Deposits">
                         <option value="DEPOSIT_AMOUNT_EVM">Deposit X USDT via EVM</option>
                         <option value="DEPOSIT_AMOUNT_TON">Deposit X USDT via TON</option>
+                        <option value="DEPOSIT_AMOUNT_BOT">Deposit X USDT via BOT</option>
                         <option value="DEPOSIT_COUNT_ANY">Make N deposits (any chain)</option>
                         <option value="DEPOSIT_COUNT_EVM">Make N EVM deposits</option>
                         <option value="DEPOSIT_COUNT_TON">Make N TON deposits</option>
+                        <option value="DEPOSIT_COUNT_BOT">Make N BOT Chain deposits</option>
                       </optgroup>
                     </select>
                   </div>
@@ -2021,8 +2071,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ currentUser }) => {
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-widest text-gray-500">All Reward Tasks</div>
                 {((data as any)?.tasks || []).map((task: any) => {
-                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', VISIT_LINK: 'Visit link', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases', DEPOSIT_AMOUNT_EVM: 'Deposit USDT (EVM)', DEPOSIT_AMOUNT_TON: 'Deposit USDT (TON)', DEPOSIT_COUNT_ANY: 'Deposits (any chain)', DEPOSIT_COUNT_EVM: 'Deposits (EVM)', DEPOSIT_COUNT_TON: 'Deposits (TON)' };
-                  const isDepositAmount = task.type === 'DEPOSIT_AMOUNT_EVM' || task.type === 'DEPOSIT_AMOUNT_TON';
+                  const TYPE_LABELS: Record<string, string> = { LIKE_TWEET: 'Like post', REPOST_TWEET: 'Repost', COMMENT_TWEET: 'Comment', FOLLOW_TWITTER: 'Follow X', SUBSCRIBE_TELEGRAM: 'Join TG', LINK_TWITTER: 'Link Twitter', LINK_TELEGRAM: 'Link Telegram', VISIT_LINK: 'Visit link', OPEN_CASES: 'Open cases', OPEN_SPECIFIC_CASE: 'Open specific case', DO_UPGRADES: 'Upgrades', CREATE_BATTLES: 'Create battles', JOIN_BATTLES: 'Play battles', CLAIM_TOKENS: 'Claim tokens', CREATE_CASES: 'Create cases', DEPOSIT_AMOUNT_EVM: 'Deposit USDT (EVM)', DEPOSIT_AMOUNT_TON: 'Deposit USDT (TON)', DEPOSIT_AMOUNT_BOT: 'Deposit USDT (BOT)', DEPOSIT_COUNT_ANY: 'Deposits (any chain)', DEPOSIT_COUNT_EVM: 'Deposits (EVM)', DEPOSIT_COUNT_TON: 'Deposits (TON)', DEPOSIT_COUNT_BOT: 'Deposits (BOT)' };
+                  const isDepositAmount = task.type === 'DEPOSIT_AMOUNT_EVM' || task.type === 'DEPOSIT_AMOUNT_TON' || task.type === 'DEPOSIT_AMOUNT_BOT';
                   const isCF = task.category === 'CASEFUN';
                   const taskTab = task.tab === 'PARTNERSHIPS' ? 'PARTNERSHIPS' : 'REWARDS';
                   const isEditing = editingTask?.id === task.id;

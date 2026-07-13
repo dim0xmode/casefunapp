@@ -2,18 +2,34 @@ import { ethers } from 'ethers';
 import prisma from '../config/database.js';
 import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { getTokenFactoryContract, getTreasuryContract } from './blockchain.js';
-import { getEthUsdPrice } from './priceService.js';
-import { evmQueue } from './chainQueue.js';
+import { getEvmChain, EvmChainKey } from './blockchain.js';
+import { getBotUsdPrice, getEthUsdPrice } from './priceService.js';
+import { botQueue, evmQueue } from './chainQueue.js';
 
-export const deployCaseToken = async (name: string, symbol: string) => {
-  const factory = getTokenFactoryContract();
+/** Resolve the EVM chain key for a case (defaults to the main EVM chain). */
+const chainKeyForCase = (chainType?: string | null): EvmChainKey =>
+  chainType === 'BOT' ? 'BOT' : 'EVM';
+
+/** Per-chain FIFO queue so BOT and EVM don't block one another. */
+const queueForChain = (key: EvmChainKey) => (key === 'BOT' ? botQueue : evmQueue);
+
+/** Native price feed used to value case-revenue payouts on a given chain. */
+const nativePriceForChain = (key: EvmChainKey) =>
+  key === 'BOT' ? getBotUsdPrice() : getEthUsdPrice();
+
+export const deployCaseToken = async (
+  name: string,
+  symbol: string,
+  chainKey: EvmChainKey = 'EVM',
+) => {
+  const chain = getEvmChain(chainKey);
+  const factory = chain.getTokenFactoryContract();
   if (!factory) {
     throw new AppError('Token factory is not configured', 500);
   }
-  const receipt = await evmQueue.enqueue(`deployCaseToken:${symbol}`, async () => {
+  const receipt = await queueForChain(chainKey).enqueue(`deployCaseToken:${chainKey}:${symbol}`, async () => {
     const tx = await factory.createToken(name, symbol);
-    return tx.wait(config.confirmations);
+    return tx.wait(chain.confirmations);
   });
   const parsed = receipt?.logs
     .map((log: any) => {
@@ -55,6 +71,9 @@ export const mintCaseIfNeeded = async (caseId: string) => {
     throw new AppError('Case is not expired', 400);
   }
 
+  const chainKey = chainKeyForCase((caseInfo as any).chainType);
+  const chain = getEvmChain(chainKey);
+
   const totalAgg = await prisma.inventoryItem.aggregate({
     where: { caseId, status: 'ACTIVE' },
     _sum: { value: true },
@@ -62,14 +81,14 @@ export const mintCaseIfNeeded = async (caseId: string) => {
   const totalValue = Number(totalAgg._sum.value || 0);
 
   if (totalValue > 0) {
-    const treasury = getTreasuryContract();
+    const treasury = chain.getTreasuryContract();
     if (!treasury) {
       throw new AppError('Treasury is not configured', 500);
     }
     const amount = ethers.parseUnits(totalValue.toFixed(6), caseInfo.tokenDecimals || 18);
-    await evmQueue.enqueue(`mintCase:${caseId}`, async () => {
-      const tx = await treasury.mintToken(caseInfo.tokenAddress, config.treasuryAddress, amount);
-      return tx.wait(config.confirmations);
+    await queueForChain(chainKey).enqueue(`mintCase:${chainKey}:${caseId}`, async () => {
+      const tx = await treasury.mintToken(caseInfo.tokenAddress, chain.treasuryAddress, amount);
+      return tx.wait(chain.confirmations);
     });
   }
 
@@ -96,7 +115,10 @@ export const payoutCaseRevenue = async (caseId: string) => {
     return caseInfo;
   }
 
-  const payoutAddress = config.treasuryPayoutAddress || config.bootstrapAdminWallet;
+  const chainKey = chainKeyForCase((caseInfo as any).chainType);
+  const chain = getEvmChain(chainKey);
+
+  const payoutAddress = chain.payoutAddress;
   if (!payoutAddress) {
     throw new AppError('Payout address not configured', 500);
   }
@@ -109,7 +131,7 @@ export const payoutCaseRevenue = async (caseId: string) => {
     return caseInfo;
   }
 
-  const priceInfo = await getEthUsdPrice();
+  const priceInfo = await nativePriceForChain(chainKey);
   if (!priceInfo) {
     throw new AppError('Price feed unavailable', 503);
   }
@@ -119,15 +141,15 @@ export const payoutCaseRevenue = async (caseId: string) => {
     return caseInfo;
   }
 
-  const treasury = getTreasuryContract();
+  const treasury = chain.getTreasuryContract();
   if (!treasury) {
     throw new AppError('Treasury is not configured', 500);
   }
 
   const amountWei = ethers.parseEther(payoutEth.toFixed(6));
-  const tx = await evmQueue.enqueue(`payoutCase:${caseId}`, async () => {
+  const tx = await queueForChain(chainKey).enqueue(`payoutCase:${chainKey}:${caseId}`, async () => {
     const sent = await treasury.withdraw(payoutAddress, amountWei);
-    await sent.wait(config.confirmations);
+    await sent.wait(chain.confirmations);
     return sent;
   });
 

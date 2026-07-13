@@ -296,11 +296,13 @@ const verifyTelegramSubscription = async (
 // (DEPOSIT_AMOUNT_*). Both share the same code path and are tracked on
 // the existing RewardTask + RewardClaim infrastructure.
 const DEPOSIT_TYPES = new Set([
-  'DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON',
-  'DEPOSIT_COUNT_ANY', 'DEPOSIT_COUNT_EVM', 'DEPOSIT_COUNT_TON',
+  'DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON', 'DEPOSIT_AMOUNT_BOT',
+  'DEPOSIT_COUNT_ANY', 'DEPOSIT_COUNT_EVM', 'DEPOSIT_COUNT_TON', 'DEPOSIT_COUNT_BOT',
 ]);
 
-const DEPOSIT_AMOUNT_TYPES = new Set(['DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON']);
+const DEPOSIT_AMOUNT_TYPES = new Set([
+  'DEPOSIT_AMOUNT_EVM', 'DEPOSIT_AMOUNT_TON', 'DEPOSIT_AMOUNT_BOT',
+]);
 
 const CASEFUN_ACTION_TYPES = new Set([
   'OPEN_CASES', 'OPEN_SPECIFIC_CASE', 'DO_UPGRADES',
@@ -412,6 +414,10 @@ const countUserActions = async (
       return prisma.deposit.count({
         where: { userId, status: 'confirmed', chainType: 'TON', createdAt: { gte: since } },
       });
+    case 'DEPOSIT_COUNT_BOT':
+      return prisma.deposit.count({
+        where: { userId, status: 'confirmed', chainType: 'BOT', createdAt: { gte: since } },
+      });
     case 'DEPOSIT_AMOUNT_EVM': {
       const agg = await prisma.deposit.aggregate({
         _sum: { amountUsdt: true },
@@ -423,6 +429,13 @@ const countUserActions = async (
       const agg = await prisma.deposit.aggregate({
         _sum: { amountUsdt: true },
         where: { userId, status: 'confirmed', chainType: 'TON', createdAt: { gte: since } },
+      });
+      return Number(agg._sum.amountUsdt || 0);
+    }
+    case 'DEPOSIT_AMOUNT_BOT': {
+      const agg = await prisma.deposit.aggregate({
+        _sum: { amountUsdt: true },
+        where: { userId, status: 'confirmed', chainType: 'BOT', createdAt: { gte: since } },
       });
       return Number(agg._sum.amountUsdt || 0);
     }
@@ -1052,6 +1065,10 @@ export const adminCreateRewardTask = async (
         title: `Deposit ${formatAmount(targetAmountNum || 1)} USDT via TON`,
         description: 'Top up your CaseFun balance using TON',
       },
+      DEPOSIT_AMOUNT_BOT: {
+        title: `Deposit ${formatAmount(targetAmountNum || 1)} USDT via BOT`,
+        description: 'Top up your CaseFun balance using BOT Chain',
+      },
       DEPOSIT_COUNT_ANY: {
         title: `Make ${targetCountNum || 1} deposits`,
         description: 'Top up your balance from any supported chain',
@@ -1063,6 +1080,10 @@ export const adminCreateRewardTask = async (
       DEPOSIT_COUNT_TON: {
         title: `Make ${targetCountNum || 1} TON deposits`,
         description: 'Top up your balance via TON',
+      },
+      DEPOSIT_COUNT_BOT: {
+        title: `Make ${targetCountNum || 1} BOT Chain deposits`,
+        description: 'Top up your balance via BOT Chain',
       },
     };
 

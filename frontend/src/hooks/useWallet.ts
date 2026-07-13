@@ -164,7 +164,15 @@ export const useWallet = () => {
     return Number(network.chainId);
   };
 
-  const ensureChain = async (chainId: number, rpcUrl?: string, explorerUrl?: string) => {
+  const ensureChain = async (
+    chainId: number,
+    rpcUrl?: string,
+    explorerUrl?: string,
+    opts?: {
+      chainName?: string;
+      nativeCurrency?: { name: string; symbol: string; decimals: number };
+    },
+  ) => {
     const p = resolveProvider();
     if (!p) return false;
     const targetHex = `0x${chainId.toString(16)}`;
@@ -180,9 +188,9 @@ export const useWallet = () => {
           method: 'wallet_addEthereumChain',
           params: [{
             chainId: targetHex,
-            chainName: 'Sepolia',
+            chainName: opts?.chainName || 'Sepolia',
             rpcUrls: rpcUrl ? [rpcUrl] : [],
-            nativeCurrency: { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 },
+            nativeCurrency: opts?.nativeCurrency || { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 },
             blockExplorerUrls: explorerUrl ? [explorerUrl] : [],
           }],
         });

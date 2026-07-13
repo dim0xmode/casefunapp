@@ -331,10 +331,11 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     const timer = setTimeout(() => setSplashDone(true), 3400);
     return () => clearTimeout(timer);
   }, []);
-  const [topUpChain, setTopUpChain] = useState<'EVM' | 'TON'>('EVM');
+  const [topUpChain, setTopUpChain] = useState<'EVM' | 'TON' | 'BOT'>('EVM');
   const [topUpUsdt, setTopUpUsdt] = useState('');
   const [topUpEth, setTopUpEth] = useState('');
   const [ethPrice, setEthPrice] = useState<number | null>(null);
+  const [botPrice, setBotPrice] = useState<number | null>(null);
   const [topUpBusy, setTopUpBusy] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<string | null>(null);
   const [topUpPendingHash, setTopUpPendingHash] = useState<string | null>(null);
@@ -668,12 +669,25 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   // ── Top-up logic ────────────────────────────────────────────────────────────
   const chainId = Number(import.meta.env.VITE_CHAIN_ID || 11155111);
   const treasuryAddress = String(import.meta.env.VITE_TREASURY_ADDRESS || '');
+  const botChainId = Number(import.meta.env.VITE_BOT_CHAIN_ID || 968);
+  const botTreasuryAddress = String(import.meta.env.VITE_BOT_TREASURY_ADDRESS || '');
+  const botFaucetUrl = 'https://faucet.botchain.ai/basic';
+
+  // Active EVM-family top-up config (EVM or BOT). Both are native EVM sends.
+  const isBotTopUp = topUpChain === 'BOT';
+  const evmChainId = isBotTopUp ? botChainId : chainId;
+  const evmTreasury = isBotTopUp ? botTreasuryAddress : treasuryAddress;
+  const evmPrice = isBotTopUp ? botPrice : ethPrice;
+  const evmNativeSymbol = isBotTopUp ? 'BOT' : 'ETH';
 
   useEffect(() => {
     if (activeTab !== 'topup') return;
     let cancelled = false;
     api.getEthPrice()
       .then((r) => { if (!cancelled && r.data?.price) setEthPrice(r.data.price); })
+      .catch(() => {});
+    api.getBotPrice()
+      .then((r) => { if (!cancelled && r.data?.price) setBotPrice(r.data.price); })
       .catch(() => {});
     api.getTonPrice()
       .then((r) => { if (!cancelled && r.data?.price) setTonPrice(r.data.price); })
@@ -693,25 +707,25 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
   const handleTopUpUsdtChange = (value: string) => {
     const clean = value.replace(/[^\d.,]/g, '');
     setTopUpUsdt(clean); setTopUpStatus(null);
-    if (!ethPrice) return;
+    if (!evmPrice) return;
     const num = Number(clean.replace(/,/g, '.'));
     if (!Number.isFinite(num) || num <= 0) { setTopUpEth(''); return; }
-    setTopUpEth((num / ethPrice).toFixed(6));
+    setTopUpEth((num / evmPrice).toFixed(6));
   };
 
   const handleTopUpEthChange = (value: string) => {
     const clean = value.replace(/[^\d.,]/g, '');
     setTopUpEth(clean); setTopUpStatus(null);
-    if (!ethPrice) return;
+    if (!evmPrice) return;
     const num = Number(clean.replace(/,/g, '.'));
     if (!Number.isFinite(num) || num <= 0) { setTopUpUsdt(''); return; }
-    setTopUpUsdt((num * ethPrice).toFixed(2));
+    setTopUpUsdt((num * evmPrice).toFixed(2));
   };
 
   const pollForDeposit = async (): Promise<boolean> => {
     for (let i = 0; i < 20; i++) {
       try {
-        const r = await api.scanDeposit();
+        const r = isBotTopUp ? await api.scanBotDeposit() : await api.scanDeposit();
         if (r.data?.found && r.data?.pending) {
           setTopUpStatus(`Found! Waiting confirmations (${r.data.confirmations || 0})…`);
           await new Promise((ok) => setTimeout(ok, 5000));
@@ -737,12 +751,12 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
     if (!Number.isFinite(ethNum) || ethNum <= 0) return;
     const hasLinkedEvmWallet = Boolean(user?.walletAddress && user.walletAddress.toLowerCase().startsWith('0x'));
     if (!hasLinkedEvmWallet) {
-      setTopUpStatus('Link an EVM wallet first to deposit ETH.');
+      setTopUpStatus(`Link an EVM wallet first to deposit ${evmNativeSymbol}.`);
       return;
     }
-    if (!treasuryAddress) { setTopUpStatus('Treasury address not configured.'); return; }
+    if (!evmTreasury) { setTopUpStatus('Treasury address not configured.'); return; }
     const weiValue = parseEther(rawEth);
-    const deepLink = `https://metamask.app.link/send/${treasuryAddress}@${chainId}?value=${weiValue.toString()}`;
+    const deepLink = `https://metamask.app.link/send/${evmTreasury}@${evmChainId}?value=${weiValue.toString()}`;
     setTopUpBusy(true);
     setTopUpStatus('Opening wallet…');
     const tg = (window as any)?.Telegram?.WebApp;
@@ -1361,7 +1375,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
           {/* Chain switcher */}
           <div className="flex gap-1 bg-black/30 rounded-xl p-1 border border-white/[0.06]">
-            {(['EVM', 'TON'] as const).map((c) => (
+            {(['EVM', 'TON', 'BOT'] as const).map((c) => (
               <button
                 key={c}
                 type="button"
@@ -1370,16 +1384,16 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                   topUpChain === c ? 'bg-web3-accent text-black' : 'text-gray-400 active:scale-95'
                 }`}
               >
-                {c === 'EVM' ? 'EVM (ETH)' : 'TON'}
+                {c === 'EVM' ? 'EVM (ETH)' : c === 'TON' ? 'TON' : 'BOT'}
               </button>
             ))}
             </div>
 
-          {topUpChain === 'EVM' && (
+          {(topUpChain === 'EVM' || topUpChain === 'BOT') && (
             <>
               {!hasLinkedEvmWallet && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-                  Link your EVM wallet first to deposit ETH.
+                  Link your EVM wallet first to deposit {evmNativeSymbol}.
                   {onLinkEvmWallet && (
                     <button type="button" onClick={onLinkEvmWallet} className="ml-2 underline text-amber-100 font-bold">
                       Link now
@@ -1416,7 +1430,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
 
                 <div>
                   <label className="text-xs font-medium block mb-2 text-gray-500">
-                    You pay (ETH Sepolia)
+                    You pay ({isBotTopUp ? 'BOT Chain' : 'ETH Sepolia'})
                   </label>
             <input
                     type="text" inputMode="decimal" value={topUpEth}
@@ -1425,7 +1439,7 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                     className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/[0.08] focus:outline-none focus:border-web3-accent/40 text-white font-mono text-lg"
             />
                   <div className="mt-1.5 text-xs text-gray-500">
-            {ethPrice ? `1 ETH ≈ ${ethPrice.toFixed(2)} ₮` : 'Loading price…'}
+            {evmPrice ? `1 ${evmNativeSymbol} ≈ ${evmPrice.toFixed(2)} ₮` : 'Loading price…'}
                   </div>
                 </div>
           </div>
@@ -1460,9 +1474,9 @@ export const TelegramMiniAppView: React.FC<TelegramMiniAppViewProps> = ({
                 </button>
               )}
 
-              <a href="https://sepolia-faucet.pk910.de/" target="_blank" rel="noreferrer"
+              <a href={isBotTopUp ? botFaucetUrl : 'https://sepolia-faucet.pk910.de/'} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-web3-accent transition">
-                Need test ETH? Sepolia faucet <ExternalLink size={11} />
+                Need test {evmNativeSymbol}? {isBotTopUp ? 'BOT faucet' : 'Sepolia faucet'} <ExternalLink size={11} />
               </a>
             </>
           )}

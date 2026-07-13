@@ -62,3 +62,4 @@ class ChainQueue {
 
 export const evmQueue = new ChainQueue('evm', 300);
 export const tonQueue = new ChainQueue('ton', 300);
+export const botQueue = new ChainQueue('bot', 300);

@@ -83,13 +83,15 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   onOpenTelegramLink,
 }) => {
   const [name, setName] = useState('');
-  const [chainType, setChainType] = useState<'EVM' | 'TON'>('EVM');
+  const [chainType, setChainType] = useState<'EVM' | 'TON' | 'BOT'>('EVM');
   const [tokenTicker, setTokenTicker] = useState('');
   const [price, setPrice] = useState('');
   const [rtu, setRtu] = useState('');
   const [tokenPrice, setTokenPrice] = useState('');
   const [openDurationHours, setOpenDurationHours] = useState(24);
   const durationOptions = [
+    // Admins get a 1-minute option to quickly test the expire → mint → claim flow.
+    ...(isAdmin ? [{ label: '1m (test)', value: 1 / 60 }] : []),
     { label: '2h', value: 2 },
     { label: '6h', value: 6 },
     { label: '12h', value: 12 },
@@ -646,11 +648,27 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
                     TON
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setChainType('BOT')}
+                  className={`flex-1 px-4 py-3 rounded-xl border font-bold uppercase tracking-wider text-xs transition-all ${
+                    chainType === 'BOT'
+                      ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-300 shadow-[0_0_20px_rgba(52,211,153,0.25)]'
+                      : 'border-white/[0.12] bg-black/30 text-gray-400 hover:border-emerald-400/30 hover:text-emerald-300/70'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${chainType === 'BOT' ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
+                    BOT
+                  </span>
+                </button>
               </div>
               <div className="text-[10px] text-gray-500 mt-2">
                 {chainType === 'EVM'
                   ? 'Token will be deployed on Sepolia testnet (ERC-20).'
-                  : 'Token will be deployed on TON testnet (TEP-74 Jetton).'}
+                  : chainType === 'TON'
+                    ? 'Token will be deployed on TON testnet (TEP-74 Jetton).'
+                    : 'Token will be deployed on BOT Chain testnet (ERC-20).'}
               </div>
             </div>
             <div className={`grid grid-cols-1 ${isTelegramMiniApp ? 'gap-3' : 'md:grid-cols-2 gap-4'}`}>

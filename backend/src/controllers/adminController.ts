@@ -4,7 +4,8 @@ import { ethers } from 'ethers';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getDynamicOpenRtuPercent } from '../services/rtuPolicyService.js';
-import { provider, treasurySigner } from '../services/blockchain.js';
+import { getEvmChain, provider, treasurySigner } from '../services/blockchain.js';
+import { botConfigured } from '../config/env.js';
 import { resolveBattleDrops } from '../services/battleResolveService.js';
 import { getTonTreasuryStatus } from '../services/tonService.js';
 
@@ -1209,6 +1210,51 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // BOT Chain gas wallet — EVM-compatible, so mirrors the EVM gasWallet block.
+    let botTreasury: {
+      configured: boolean;
+      address: string | null;
+      botBalance: number | null;
+      treasuryBotBalance: number | null;
+      lowThresholdBot: number;
+      isLow: boolean | null;
+      rpcConnected: boolean;
+    } = {
+      configured: botConfigured,
+      address: null,
+      botBalance: null,
+      treasuryBotBalance: null,
+      lowThresholdBot: GAS_LOW_THRESHOLD_ETH,
+      isLow: null,
+      rpcConnected: false,
+    };
+
+    if (botConfigured) {
+      const botChain = getEvmChain('BOT');
+      const botSigner = botChain.treasurySigner;
+      if (botChain.provider && botSigner?.address) {
+        try {
+          const [signerBalanceRaw, treasuryBalanceRaw] = await Promise.all([
+            botChain.provider.getBalance(botSigner.address),
+            botChain.provider.getBalance(botChain.treasuryAddress || botSigner.address),
+          ]);
+          const botBalance = Number(ethers.formatEther(signerBalanceRaw));
+          const treasuryBotBalance = Number(ethers.formatEther(treasuryBalanceRaw));
+          botTreasury = {
+            configured: true,
+            address: botSigner.address,
+            botBalance,
+            treasuryBotBalance,
+            lowThresholdBot: GAS_LOW_THRESHOLD_ETH,
+            isLow: botBalance < GAS_LOW_THRESHOLD_ETH,
+            rpcConnected: true,
+          };
+        } catch {
+          botTreasury = { ...botTreasury, rpcConnected: false };
+        }
+      }
+    }
+
     let tonTreasury: {
       configured: boolean;
       address: string | null;
@@ -1262,6 +1308,7 @@ export const getOverview = async (req: Request, res: Response, next: NextFunctio
         topUsersBySpend: topUsersWithInfo,
         gasWallet,
         tonTreasury,
+        botTreasury,
       },
     });
   } catch (error) {

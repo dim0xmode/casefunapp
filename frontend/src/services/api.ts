@@ -276,6 +276,23 @@ class ApiClient {
     });
   }
 
+  async getBotPrice() {
+    return this.request<{ price: number; updatedAt: number }>('/wallet/bot/price');
+  }
+
+  async confirmBotDeposit(txHash: string) {
+    return this.request<{ balance?: number; pending?: boolean; confirmations?: number }>('/wallet/bot/deposit/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ txHash }),
+    });
+  }
+
+  async scanBotDeposit() {
+    return this.request<{ found?: boolean; balance?: number; pending?: boolean; confirmations?: number; txHash?: string }>('/wallet/bot/deposit/scan', {
+      method: 'POST',
+    });
+  }
+
   async claimToken(caseId: string) {
     return this.request<{ amount: number; txHash: string; tokenAddress: string }>('/token/claim', {
       method: 'POST',

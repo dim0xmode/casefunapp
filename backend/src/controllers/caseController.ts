@@ -235,7 +235,7 @@ export const createCase = async (
       chainType: rawChainType,
     } = req.body;
 
-    const chainType = rawChainType === 'TON' ? 'TON' : 'EVM';
+    const chainType = rawChainType === 'TON' ? 'TON' : rawChainType === 'BOT' ? 'BOT' : 'EVM';
 
     if (!name || !currency || !price || !drops || drops.length === 0) {
       return next(new AppError('Missing required fields', 400));
@@ -363,7 +363,12 @@ export const createCase = async (
         return next(new AppError(`Failed to deploy TON token: ${msg.slice(0, 120)}`, 500));
       }
     } else {
-      tokenAddress = await deployCaseToken(normalizedName, normalizedTicker);
+      // EVM and BOT Chain are both EVM-compatible; deploy on the selected chain.
+      tokenAddress = await deployCaseToken(
+        normalizedName,
+        normalizedTicker,
+        chainType === 'BOT' ? 'BOT' : 'EVM',
+      );
     }
 
     const newCase = await prisma.$transaction(async (tx) => {

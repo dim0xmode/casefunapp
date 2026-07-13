@@ -3,13 +3,39 @@ import { ethers } from 'ethers';
 import prisma from '../config/database.js';
 import { config } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { getEthUsdPrice, getTonUsdPrice } from '../services/priceService.js';
-import { normalizeAddress, provider } from '../services/blockchain.js';
+import { getBotUsdPrice, getEthUsdPrice, getTonUsdPrice } from '../services/priceService.js';
+import { EvmChainKey, getEvmChain, normalizeAddress } from '../services/blockchain.js';
 import {
   findRecentDepositFromAddress,
   getTonTreasuryWallet,
   tonAddressesEqual,
 } from '../services/tonService.js';
+
+/**
+ * A generalized EVM deposit context so the same confirm/scan logic serves any
+ * EVM-compatible chain (main EVM, BOT Chain). Native deposits are valued using
+ * the chain's price feed (Chainlink for EVM, CoinGecko WBOT for BOT).
+ */
+interface EvmDepositCtx {
+  chainKey: EvmChainKey;
+  provider: ethers.JsonRpcProvider | null;
+  treasuryAddress: string;
+  chainId: number;
+  confirmations: number;
+  getPrice: () => Promise<{ price: number; updatedAt: number } | null>;
+}
+
+const evmDepositCtx = (chainKey: EvmChainKey): EvmDepositCtx => {
+  const chain = getEvmChain(chainKey);
+  return {
+    chainKey,
+    provider: chain.provider,
+    treasuryAddress: chain.treasuryAddress,
+    chainId: chain.chainId,
+    confirmations: chain.confirmations,
+    getPrice: chainKey === 'BOT' ? getBotUsdPrice : getEthUsdPrice,
+  };
+};
 
 export const getEthPrice = async (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -23,15 +49,28 @@ export const getEthPrice = async (_req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const getBotPrice = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const price = await getBotUsdPrice();
+    if (!price) {
+      return next(new AppError('BOT price feed unavailable', 503));
+    }
+    res.json({ status: 'success', data: price });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const recordConfirmedDeposit = async (params: {
+  ctx: EvmDepositCtx;
   userId: string;
   txHash: string;
   ethAmount: number;
   confirmations: number;
   blockNumber: number;
 }) => {
-  const { userId, txHash, ethAmount, confirmations, blockNumber } = params;
-  const priceInfo = await getEthUsdPrice();
+  const { ctx, userId, txHash, ethAmount, confirmations, blockNumber } = params;
+  const priceInfo = await ctx.getPrice();
   if (!priceInfo) {
     throw new AppError('Price feed unavailable', 503);
   }
@@ -46,13 +85,15 @@ const recordConfirmedDeposit = async (params: {
       data: {
         userId,
         txHash,
-        chainId: Number(config.chainId),
+        chainId: Number(ctx.chainId),
+        chainType: ctx.chainKey,
         amountEth: ethAmount,
         amountUsdt: usdtAmount,
         confirmations,
         blockNumber,
         status: 'confirmed',
         metadata: {
+          chain: ctx.chainKey,
           price: priceInfo.price,
           updatedAt: priceInfo.updatedAt,
         },
@@ -67,6 +108,7 @@ const recordConfirmedDeposit = async (params: {
         currency: 'USDT',
         metadata: {
           txHash,
+          chain: ctx.chainKey,
           amountEth: ethAmount,
           price: priceInfo.price,
         },
@@ -82,7 +124,12 @@ const recordConfirmedDeposit = async (params: {
   };
 };
 
-export const confirmDeposit = async (req: Request, res: Response, next: NextFunction) => {
+const confirmEvmDeposit = async (
+  ctx: EvmDepositCtx,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const userId = (req as any).userId;
     const { txHash } = req.body;
@@ -105,6 +152,7 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
       });
     }
 
+    const { provider } = ctx;
     if (!provider) {
       return next(new AppError('Blockchain provider not configured', 500));
     }
@@ -124,11 +172,11 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
     if (!tx) {
       return next(new AppError('Transaction not found', 404));
     }
-    if (Number(network.chainId) !== Number(config.chainId)) {
+    if (Number(network.chainId) !== Number(ctx.chainId)) {
       return next(new AppError('Wrong network', 400));
     }
 
-    if (!tx.to || normalizeAddress(tx.to) !== normalizeAddress(config.treasuryAddress)) {
+    if (!tx.to || normalizeAddress(tx.to) !== normalizeAddress(ctx.treasuryAddress)) {
       return next(new AppError('Invalid deposit target', 400));
     }
     if (normalizeAddress(tx.from) !== normalizeAddress(user.walletAddress)) {
@@ -142,7 +190,7 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
 
     const currentBlock = await provider.getBlockNumber();
     const confirmations = currentBlock - receipt.blockNumber + 1;
-    if (confirmations < config.confirmations) {
+    if (confirmations < ctx.confirmations) {
       return res.status(202).json({
         status: 'success',
         data: {
@@ -158,6 +206,7 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
     }
 
     const updated = await recordConfirmedDeposit({
+      ctx,
       userId,
       txHash,
       ethAmount,
@@ -180,7 +229,12 @@ export const confirmDeposit = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-export const scanDeposit = async (req: Request, res: Response, next: NextFunction) => {
+const scanEvmDeposit = async (
+  ctx: EvmDepositCtx,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const userId = (req as any).userId;
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -189,10 +243,11 @@ export const scanDeposit = async (req: Request, res: Response, next: NextFunctio
     if (!user.hasLinkedWallet || !user.walletAddress) {
       return next(new AppError('Link wallet first', 400));
     }
+    const { provider } = ctx;
     if (!provider) return next(new AppError('Blockchain provider not configured', 500));
 
     const userAddr = normalizeAddress(user.walletAddress);
-    const treasury = normalizeAddress(config.treasuryAddress);
+    const treasury = normalizeAddress(ctx.treasuryAddress);
     const currentBlock = await provider.getBlockNumber();
     const startBlock = currentBlock - 40;
 
@@ -219,7 +274,7 @@ export const scanDeposit = async (req: Request, res: Response, next: NextFunctio
         }
 
         const confirmations = currentBlock - receipt.blockNumber + 1;
-        if (confirmations < config.confirmations) {
+        if (confirmations < ctx.confirmations) {
           return res.json({
             status: 'success',
             data: { found: true, pending: true, txHash: tx.hash, confirmations },
@@ -227,6 +282,7 @@ export const scanDeposit = async (req: Request, res: Response, next: NextFunctio
         }
 
         const updated = await recordConfirmedDeposit({
+          ctx,
           userId,
           txHash: tx.hash,
           ethAmount,
@@ -249,6 +305,18 @@ export const scanDeposit = async (req: Request, res: Response, next: NextFunctio
     next(error);
   }
 };
+
+export const confirmDeposit = (req: Request, res: Response, next: NextFunction) =>
+  confirmEvmDeposit(evmDepositCtx('EVM'), req, res, next);
+
+export const scanDeposit = (req: Request, res: Response, next: NextFunction) =>
+  scanEvmDeposit(evmDepositCtx('EVM'), req, res, next);
+
+export const confirmBotDeposit = (req: Request, res: Response, next: NextFunction) =>
+  confirmEvmDeposit(evmDepositCtx('BOT'), req, res, next);
+
+export const scanBotDeposit = (req: Request, res: Response, next: NextFunction) =>
+  scanEvmDeposit(evmDepositCtx('BOT'), req, res, next);
 
 // ──────────────────────────────────────────────────────────────────────────
 // TON Deposit Flow (mirrors the EVM flow above)

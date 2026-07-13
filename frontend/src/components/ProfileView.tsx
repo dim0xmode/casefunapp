@@ -572,6 +572,78 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  // Add a case's ERC-20 token to the user's wallet (EVM / BOT Chain) so they can
+  // see the balance and confirm whether a claim actually arrived. TON jettons
+  // aren't ERC-20, so this only applies to EVM-family chains.
+  const handleAddTokenToWallet = async (caseInfo?: Case) => {
+    if (!caseInfo?.tokenAddress) return;
+    const provider = (window as any)?.ethereum;
+    if (!provider?.request) {
+      setClaimError('Wallet not found. Open in a wallet browser or install MetaMask.');
+      return;
+    }
+
+    const isBot = caseInfo.chainType === 'BOT';
+    const targetChainId = isBot
+      ? Number(import.meta.env.VITE_BOT_CHAIN_ID || 968)
+      : Number(import.meta.env.VITE_CHAIN_ID || 11155111);
+    const rpcUrl = isBot
+      ? String(import.meta.env.VITE_BOT_RPC_URL || 'https://rpc.bohr.life')
+      : String(import.meta.env.VITE_RPC_URL || '');
+    const explorerUrl = isBot
+      ? String(import.meta.env.VITE_BOT_EXPLORER_URL || 'https://scan.bohr.life')
+      : String(import.meta.env.VITE_EXPLORER_URL || '');
+    const targetHex = `0x${targetChainId.toString(16)}`;
+
+    try {
+      // Make sure the wallet is on the token's chain so it shows up correctly.
+      try {
+        const current = await provider.request({ method: 'eth_chainId' });
+        if (current !== targetHex && Number(current) !== targetChainId) {
+          try {
+            await provider.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: targetHex }],
+            });
+          } catch (switchErr: any) {
+            if (switchErr?.code === 4902) {
+              await provider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: targetHex,
+                  chainName: isBot ? 'BOT Chain Testnet' : 'Sepolia',
+                  rpcUrls: rpcUrl ? [rpcUrl] : [],
+                  nativeCurrency: isBot
+                    ? { name: 'BOT', symbol: 'BOT', decimals: 18 }
+                    : { name: 'SepoliaETH', symbol: 'SEP', decimals: 18 },
+                  blockExplorerUrls: explorerUrl ? [explorerUrl] : [],
+                }],
+              });
+            }
+          }
+        }
+      } catch {
+        // Non-fatal — still try to watch the asset on the current chain.
+      }
+
+      await provider.request({
+        method: 'wallet_watchAsset',
+        params: {
+          type: 'ERC20',
+          options: {
+            address: caseInfo.tokenAddress,
+            symbol: (caseInfo.tokenTicker || 'TOKEN').slice(0, 11),
+            decimals: caseInfo.tokenDecimals || 18,
+          },
+        },
+      });
+    } catch (error: any) {
+      if (error?.code !== 4001) {
+        setClaimError(error?.message || 'Could not add token to wallet');
+      }
+    }
+  };
+
   const handleClaimToken = async (caseId?: string) => {
     if (!caseId || !onClaimToken) return;
     setClaimError(null);
@@ -1809,6 +1881,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
                               </button>
                               )}
+                              {!isTonCase && tokenAddress && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddTokenToWallet(caseInfo)}
+                                  className="w-full text-[8px] uppercase tracking-widest rounded-md px-1.5 py-1.5 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
+                                >
+                                  + Wallet
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1861,6 +1942,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               >
                                 {canClaim ? (isClaiming ? 'Claiming...' : 'Claim') : 'Not available'}
                               </button>
+                              )}
+                              {!isTonCase && tokenAddress && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddTokenToWallet(caseInfo)}
+                                  className="w-full text-[10px] uppercase tracking-widest rounded-lg px-3 py-2 border border-web3-accent/25 bg-web3-accent/5 text-web3-accent transition hover:bg-web3-accent/15"
+                                >
+                                  Add token to wallet
+                                </button>
                               )}
                             </div>
                           );
