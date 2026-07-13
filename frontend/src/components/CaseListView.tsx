@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { serverNow } from '../utils/serverClock';
 import { Case } from '../types';
 import { SearchInput } from './ui/SearchInput';
 import { ImageWithMeta } from './ui/ImageWithMeta';
@@ -27,6 +28,13 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
   onSelectReward,
 }) => {
   const [searchFilter, setSearchFilter] = useState('');
+  // Re-render every second so open-window countdowns update live and expired
+  // cases move to the Unavailable tab without needing an unrelated re-render.
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setClockTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const sanitizeSearchInput = (value: string) => {
     return value.replace(/[^a-zA-Z0-9$ ]/g, '');
@@ -40,7 +48,7 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
   const isCaseExpired = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    return endAt <= Date.now();
+    return endAt <= serverNow();
   };
   const { ownCases, allCases } = useMemo(() => {
     const searchTrimmed = searchFilter.trim();
@@ -67,15 +75,19 @@ export const CaseListView: React.FC<CaseListViewProps> = ({
     const sorted = base.sort((a, b) => b.price - a.price);
     const own = sorted.filter(c => c.creatorName === userName);
     return { ownCases: own, allCases: sorted };
-  }, [cases, searchFilter, userName, viewMode]);
+  }, [cases, searchFilter, userName, viewMode, clockTick]);
 
   const getRemainingTime = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    const msLeft = endAt - Date.now();
+    const msLeft = endAt - serverNow();
     if (msLeft <= 0) return 'Expired';
     const hours = Math.floor(msLeft / (60 * 60 * 1000));
     const minutes = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours <= 0) {
+      const seconds = Math.floor((msLeft % (60 * 1000)) / 1000);
+      return `${minutes}m ${seconds}s`;
+    }
     return `${hours}h ${minutes}m`;
   };
 

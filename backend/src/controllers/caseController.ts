@@ -175,7 +175,7 @@ export const getAllCases = async (
 
     res.json({
       status: 'success',
-      data: { cases: casesWithStats },
+      data: { cases: casesWithStats, serverTime: Date.now() },
     });
   } catch (error) {
     next(error);

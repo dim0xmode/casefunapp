@@ -21,6 +21,7 @@ import { BrowserProvider, getAddress, hexlify, toUtf8Bytes } from 'ethers';
 import { api, resolveAssetUrl } from './services/api';
 import { getPendingDepositHashes, removePendingDepositHash } from './utils/pendingDeposits';
 import { playCaseCreatedCelebration, playDullClick } from './utils/audio';
+import { syncServerTime, serverNow } from './utils/serverClock';
 import type { TelegramWalletOption } from './utils/walletConnect';
 import {
   TELEGRAM_PREFERRED_WALLET_STORAGE_KEY,
@@ -1508,6 +1509,7 @@ const App = () => {
     const loadCases = async () => {
       try {
         const response = await api.getCases();
+        syncServerTime((response.data as any)?.serverTime);
         if (response.data?.cases) {
           setCases(response.data.cases.map(mapCaseFromApi));
         }
@@ -1727,7 +1729,7 @@ const App = () => {
     if (!caseData) return true;
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    return endAt <= Date.now();
+    return endAt <= serverNow();
   };
 
   const activeInventory = useMemo(

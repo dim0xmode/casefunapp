@@ -90,14 +90,11 @@ export const CreateCaseView: React.FC<CreateCaseViewProps> = ({
   const [tokenPrice, setTokenPrice] = useState('');
   const [openDurationHours, setOpenDurationHours] = useState(24);
   const durationOptions = [
-    // Admins get short options to test the expire → mint → claim flow. 1m expires
-    // almost immediately (open it right after creating); 5m/15m give a usable
-    // window to find + open the case before it expires.
+    // Admins get short options to test the expire → mint → claim flow.
     ...(isAdmin
       ? [
           { label: '1m (test)', value: 1 / 60 },
-          { label: '5m (test)', value: 5 / 60 },
-          { label: '15m (test)', value: 15 / 60 },
+          { label: '3m (test)', value: 3 / 60 },
         ]
       : []),
     { label: '2h', value: 2 },

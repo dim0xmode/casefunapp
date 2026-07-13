@@ -5,6 +5,7 @@ import { CaseRoulette, SPIN_DURATION_MS } from './CaseRoulette';
 import { ItemCard } from './ItemCard';
 import { AdminActionButton } from './ui/AdminActionButton';
 import { formatShortfallUp, formatTokenValue, formatDecimal } from '../utils/number';
+import { serverNow } from '../utils/serverClock';
 
 // Open Modes
 type OpenMode = 'normal' | 'fast' | 'instant';
@@ -59,10 +60,14 @@ export const CaseOpeningView: React.FC<CaseOpeningViewProps> = ({
   const getRemainingTime = () => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    const msLeft = endAt - Date.now();
+    const msLeft = endAt - serverNow();
     if (msLeft <= 0) return 'Expired';
     const hours = Math.floor(msLeft / (60 * 60 * 1000));
     const minutes = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000));
+    if (hours <= 0) {
+      const seconds = Math.floor((msLeft % (60 * 1000)) / 1000);
+      return `${minutes}m ${seconds}s`;
+    }
     return `${hours}h ${minutes}m`;
   };
 

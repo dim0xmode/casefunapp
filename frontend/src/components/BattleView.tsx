@@ -10,6 +10,7 @@ import { AdminActionButton } from './ui/AdminActionButton';
 import { CaseIcon } from './CaseIcon';
 import { ImageWithMeta } from './ui/ImageWithMeta';
 import { formatShortfallUp, formatTokenValue } from '../utils/number';
+import { serverNow } from '../utils/serverClock';
 import { api } from '../services/api';
 
 const BOT_NAMES = ['Apex', 'SniperX', 'Valkyrie', 'Titan', 'Shadow', 'Nova', 'Orion', 'Helix'];
@@ -100,7 +101,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   //   3) second render in the same frame
   // The two paints back-to-back visibly flicker the nav bar in TG WebView.
   const [botBattles, setBotBattles] = useState<BattleEntry[]>(() => {
-    const now = Date.now();
+    const now = serverNow();
     const pool = cases.filter((c) => {
       if (!c.openDurationHours || !c.createdAt) return true;
       return (c.createdAt + c.openDurationHours * 60 * 60 * 1000) > now;
@@ -178,7 +179,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const isCaseExpired = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    return endAt <= Date.now();
+    return endAt <= serverNow();
   };
 
   const totalCost = selectedCases.reduce((sum, c) => sum + c.price, 0);
@@ -978,7 +979,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
   const getRemainingTime = (caseData: Case) => {
     if (!caseData.openDurationHours || !caseData.createdAt) return null;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    const msLeft = endAt - Date.now();
+    const msLeft = endAt - serverNow();
     if (msLeft <= 0) return 'Expired';
     const hours = Math.floor(msLeft / (60 * 60 * 1000));
     const minutes = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000));

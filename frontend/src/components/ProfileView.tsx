@@ -16,6 +16,7 @@ import { usePagination } from '../hooks/usePagination';
 import { useSearchFilter } from '../hooks/useSearchFilter';
 import { api } from '../services/api';
 import { formatTokenValue, getLevelInfo, formatCfp } from '../utils/number';
+import { serverNow } from '../utils/serverClock';
 
 const formatWalletAddress = (address: string): string => {
   if (!address) return '';
@@ -419,7 +420,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (!caseData) return true;
     if (!caseData.openDurationHours || !caseData.createdAt) return false;
     const endAt = caseData.createdAt + caseData.openDurationHours * 60 * 60 * 1000;
-    return endAt <= Date.now();
+    return endAt <= serverNow();
   };
 
   const activeInventory = useMemo(() => {
