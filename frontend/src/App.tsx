@@ -933,6 +933,31 @@ const App = () => {
     if (!response.data) {
       throw new Error('Claim failed');
     }
+
+    // The backend now processes the on-chain payout in the background to avoid
+    // proxy timeouts (Cloudflare 504). Poll until it completes or fails.
+    if (response.data.status !== 'completed') {
+      const deadline = Date.now() + 5 * 60 * 1000; // up to 5 minutes
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (Date.now() > deadline) {
+          throw new Error('Claim is taking longer than expected. It will finish in the background — check back shortly.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        try {
+          const statusResp = await api.getClaimStatus(caseId);
+          const status = statusResp.data?.status;
+          if (status === 'completed') break;
+          if (status === 'failed') {
+            throw new Error(statusResp.data?.error || 'Claim failed on-chain');
+          }
+        } catch (err: any) {
+          // Ignore transient network errors while polling; keep waiting.
+          if (err?.message && /failed on-chain/i.test(err.message)) throw err;
+        }
+      }
+    }
+
     await loadProfile();
   };
 

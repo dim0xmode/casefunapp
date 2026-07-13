@@ -294,10 +294,16 @@ class ApiClient {
   }
 
   async claimToken(caseId: string) {
-    return this.request<{ amount: number; txHash: string; tokenAddress: string }>('/token/claim', {
+    return this.request<{ status: 'pending' | 'completed'; claimId?: string; amount: number; txHash: string | null; tokenAddress: string }>('/token/claim', {
       method: 'POST',
       body: JSON.stringify({ caseId }),
-    }, 120_000);
+    }, 30_000);
+  }
+
+  async getClaimStatus(caseId: string) {
+    return this.request<{ status: 'none' | 'pending' | 'completed' | 'failed'; claimId?: string; amount?: number; txHash?: string | null; tokenAddress?: string; error?: string }>(
+      `/token/claim/status/${caseId}`,
+    );
   }
 
   async upgradeItem(itemIds: string[], multiplier: number) {
